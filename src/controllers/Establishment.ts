@@ -13,7 +13,8 @@ const createEstablishment = async (req: Request, res: Response) => {
 
   try {
     // Vérifier si le propriétaire existe dans la base de données
-    const owner = await Owner.findById(ownerId);
+    const owner = req.body.owner;
+
     if (!owner) {
       return res.status(404).json({ message: "Owner not found" });
     }

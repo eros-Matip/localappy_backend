@@ -19,7 +19,7 @@ const OwnerIsAuthenticated = async (
     const token = req.headers.authorization.replace("Bearer ", "");
 
     // Trouver l'Owner correspondant au token
-    const ownerFinded = await Owner.findOne({ token });
+    const ownerFinded = await Owner.findOne({ token: token });
 
     if (!ownerFinded) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -28,6 +28,8 @@ const OwnerIsAuthenticated = async (
     // Récupérer l'ID de la ressource depuis l'URL
     const resourceId = req.originalUrl.split("/").pop();
     const resourceType = req.originalUrl.split("/")[1];
+    const ressourceCall = req.originalUrl.split("/")[2];
+    console.log("ressourceCall", ressourceCall);
 
     if (!resourceId) {
       return res.status(400).json({ error: "Resource ID not found in URL" });
@@ -62,25 +64,9 @@ const OwnerIsAuthenticated = async (
           )
       );
 
-      if (!establishmentExists) {
+      if (!establishmentExists && ressourceCall !== "create") {
         return res.status(403).json({
           error: "Forbidden, owner does not have access to this event",
-        });
-      }
-    }
-
-    // Pour les établissements (si resourceType est 'establishment')
-    if (resourceType === "establishment") {
-      const establishmentExists = ownerFinded.establishments.some(
-        (establishment) =>
-          (Object(establishment)._id as mongoose.Types.ObjectId).equals(
-            resourceId
-          )
-      );
-
-      if (!establishmentExists) {
-        return res.status(403).json({
-          error: "Forbidden, owner does not have access to this establishment",
         });
       }
     }

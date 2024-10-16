@@ -4,7 +4,6 @@ import OwnerIsAuthenticated from "../middlewares/OwnerIsAuthenticated";
 
 const router = express.Router();
 
-router.post("/create", OwnerIsAuthenticated, controller.createEvent);
 router.post(
   "/createForAnEstablishment/:establishmentId",
   OwnerIsAuthenticated,
@@ -14,11 +13,7 @@ router.get("/get/:eventId", controller.readEvent);
 router.get("/get/", controller.readAll);
 router.get("/getAllByZip/:postalCode", controller.getEventsByPostalCode);
 router.put("/update/:eventId", OwnerIsAuthenticated, controller.updateEvent);
-router.put(
-  "/updateAllFromJSON/",
-  OwnerIsAuthenticated,
-  controller.updateOrCreateEventsFromJSON
-);
 router.delete("/delete/:eventId", OwnerIsAuthenticated, controller.deleteEvent);
 
+router.delete("/deleteDuplicateEvents", controller.deleteDuplicateEvents);
 export default router;

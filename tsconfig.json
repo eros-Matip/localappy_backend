@@ -94,6 +94,6 @@
   },
   "exclude": [
     "node_modules",
-    "Events/objects"
+    "Events",
   ]
 }
