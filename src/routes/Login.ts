@@ -1,53 +1,75 @@
-import { Request, Response } from "express";
-import Retour from "../library/Retour";
-import Owner from "../models/Owner";
+import express, { Request, Response } from "express";
 import Customer from "../models/Customer";
 const SHA256 = require("crypto-js/sha256");
 const encBase64 = require("crypto-js/enc-base64");
+const uid2 = require("uid2");
+import Retour from "../library/Retour";
+import AdminIsAuthenticated from "../middlewares/IsAuthenticated";
 
-const loginRoute = async (req: Request, res: Response) => {
-  try {
-    const { email, password } = req.body;
+const router = express.Router();
 
-    const ownerFinded = await Owner.findOne({ email: email });
-    const customerFinded = await Customer.findOne({ email: email }).populate(
-      "themesFavorites"
-    );
+// Route POST pour "/login" avec le middleware AdminIsAuthenticated
+router.post(
+  "/login",
+  AdminIsAuthenticated,
+  async (req: Request, res: Response) => {
+    try {
+      // Vérification si le middleware a déjà trouvé un utilisateur via le token
+      if (req.body.admin) {
+        const customerFindedByToken = req.body.admin;
 
-    if (ownerFinded) {
-      const hashToLog: string = SHA256(password + ownerFinded.salt).toString(
-        encBase64
-      );
-      if (hashToLog === ownerFinded.hash) {
-        Retour.log(
-          `${ownerFinded.account.firstname} ${ownerFinded.account.name} is logged`
-        );
-        return res.status(200).json({ message: "Logged", ownerFinded });
-      } else {
-        Retour.error("not authorized to connect");
-        return res.status(401).json({ message: "not authorized to connect" });
+        // Renvoyer les informations si l'utilisateur est authentifié par token
+        return res.status(200).json({
+          message: "Logged in with token",
+          customer: customerFindedByToken,
+        });
       }
-    } else if (customerFinded) {
-      const hashToLog: string = SHA256(password + customerFinded.salt).toString(
+
+      // Si pas de token ou token invalide, procéder à la connexion par email et mot de passe
+      const { email, password } = req.body;
+
+      if (!email || !password) {
+        return res
+          .status(400)
+          .json({ message: "Email and password are required" });
+      }
+
+      // Recherche de l'utilisateur par email
+      const customerFinded = await Customer.findOne({ email });
+      if (!customerFinded) {
+        Retour.error("Account was not found");
+        return res.status(401).json({ message: "Account was not found" });
+      }
+
+      // Vérification du mot de passe
+      const hashToLog = SHA256(password + customerFinded.salt).toString(
         encBase64
       );
+
       if (hashToLog === customerFinded.hash) {
         Retour.log(
           `${customerFinded.account.firstname} ${customerFinded.account.name} is logged`
         );
-        return res.status(200).json({ message: "Logged", customerFinded });
-      } else {
-        Retour.error("not authorized to connect");
-        return res.status(401).json({ message: "not authorized to connect" });
-      }
-    } else {
-      Retour.error("Account was not found");
-      return res.status(401).json({ message: "Account was not found" });
-    }
-  } catch (error) {
-    Retour.error({ message: "error catched", error });
-    return res.status(500).json({ message: "error catched", error });
-  }
-};
 
-export default loginRoute;
+        const newToken: string = uid2(29);
+        customerFinded.token = newToken;
+
+        // Sauvegarder le nouveau token si modifié
+        await customerFinded.save();
+
+        return res.status(200).json({
+          message: "Logged in with email and password",
+          customer: customerFinded,
+        });
+      } else {
+        Retour.error("Invalid password");
+        return res.status(401).json({ message: "Invalid password" });
+      }
+    } catch (error) {
+      Retour.error({ message: "Error caught", error });
+      return res.status(500).json({ message: "Error caught", error });
+    }
+  }
+);
+
+export default router;

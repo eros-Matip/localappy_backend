@@ -95,7 +95,7 @@ const startServer = () => {
   router.use("/owner/", OwnerRoutes);
   router.use("/establishment/", EstablishmentRoutes);
   router.use("/customer/", CustomerRoutes);
-  router.use("/login", LoginRoute);
+  router.use(LoginRoute);
   /** Healthcheck */
   router.all(
     "/test",
