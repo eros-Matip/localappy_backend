@@ -10,7 +10,9 @@ const loginRoute = async (req: Request, res: Response) => {
     const { email, password } = req.body;
 
     const ownerFinded = await Owner.findOne({ email: email });
-    const customerFinded = await Customer.findOne({ email: email });
+    const customerFinded = await Customer.findOne({ email: email }).populate(
+      "themesFavorites"
+    );
 
     if (ownerFinded) {
       const hashToLog: string = SHA256(password + ownerFinded.salt).toString(
