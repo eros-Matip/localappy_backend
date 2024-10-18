@@ -23,7 +23,8 @@ export default interface ICustomer extends Document {
   bills: [{ type: Types.ObjectId; ref: "Bill" }];
   eventsAttended: [{ type: Types.ObjectId; ref: "Event" }]; // Référence vers les événements auxquels le client a participé
   eventsFavorites: [{ type: Types.ObjectId; ref: "Event" }];
-  favorites: [{ type: Types.ObjectId; ref: "Etablishment" }]; // Référence vers les établissements favoris du client
+  themesFavorites: [{ type: Types.ObjectId; ref: "Theme" }];
+  establishmentFavorites: [{ type: Types.ObjectId; ref: "Etablishment" }]; // Référence vers les établissements favoris du client
   token: string;
   hash: string;
   salt: string;

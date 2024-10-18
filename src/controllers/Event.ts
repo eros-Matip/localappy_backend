@@ -183,9 +183,9 @@ const getEventsByPostalCode = async (
     );
 
     return res.status(200).json({
-      pastEvents, // Événements passés
-      currentEvents, // Événements en cours aujourd'hui
-      upcomingEvents, // Événements à venir
+      pastEvents,
+      currentEvents,
+      upcomingEvents,
     });
   } catch (error) {
     console.error(

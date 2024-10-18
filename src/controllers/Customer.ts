@@ -122,20 +122,37 @@ const readAll = async (req: Request, res: Response) => {
 };
 
 const updateCustomer = async (req: Request, res: Response) => {
-  const customerId = req.params.customerId;
-  const customer = await Customer.findById(customerId);
-  if (!customer) {
-    return res.status(404).json({ message: "Customer was not found" });
-  } else {
-    customer.set(req.body);
-    return customer
-      .save()
-      .then((customer) => res.status(201).json({ customer: customer }))
-      .finally(() => {})
-      .catch((error) => {
-        Retour.error("Error catched");
-        return res.status(500).json({ message: "Error catched", error });
-      });
+  try {
+    const customerId = req.params.customerId;
+    const customer = await Customer.findById(customerId);
+
+    if (!customer) {
+      return res.status(404).json({ message: "Customer was not found" });
+    }
+
+    const { allInfos, newThemesFavorites } = req.body;
+    console.log("newThemesFavorites", newThemesFavorites);
+
+    if (!allInfos && !newThemesFavorites) {
+      Retour.error("Nothing has changed");
+      return res.status(400).json({ message: "Nothing has changed" });
+    }
+
+    // Mise à jour des données du client
+    if (Array.isArray(newThemesFavorites)) {
+      Object(customer).themesFavorites = newThemesFavorites;
+    }
+
+    if (allInfos) {
+      customer.set(allInfos);
+    }
+
+    await customer.save();
+
+    return res.status(200).json({ customer });
+  } catch (error) {
+    Retour.error("Error caught");
+    return res.status(500).json({ message: "Error caught", error });
   }
 };
 

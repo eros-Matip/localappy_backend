@@ -23,7 +23,10 @@ const customerSchema = new Schema<ICustomer>({
   bills: [{ type: Schema.Types.ObjectId, ref: "Bill" }],
   eventsAttended: [{ type: Schema.Types.ObjectId, ref: "Event" }], // Référence vers les événements auxquels le client a participé
   eventsFavorites: [{ type: Schema.Types.ObjectId, ref: "Event" }],
-  favorites: [{ type: Schema.Types.ObjectId, ref: "Etablishment" }], // Référence vers les établissements favoris du client
+  themesFavorites: [{ type: Schema.Types.ObjectId, ref: "Theme" }],
+  establishmentFavorites: [
+    { type: Schema.Types.ObjectId, ref: "Etablishment" },
+  ], // Référence vers les établissements favoris du client
   token: String,
   hash: String,
   salt: String,

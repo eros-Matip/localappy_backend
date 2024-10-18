@@ -44,6 +44,8 @@ import LoginRoute from "./routes/Login";
 // FUNCTIONS
 import Logging from "./library/Logging";
 import AdminIsAuthenticated from "./middlewares/IsAuthenticated";
+import Event from "./models/Event";
+import Theme from "./models/Theme";
 
 // The server start only if mongo is already connected
 const startServer = () => {
@@ -99,6 +101,74 @@ const startServer = () => {
     "/test",
     async (req: Request, res: Response, next: NextFunction) => {
       let num = 10;
+      let typeArr: string[] = [];
+      let themeColors: { [key: string]: string } = {};
+
+      // Fonction pour générer une couleur aléatoire en hexadécimal
+      const generateRandomColor = (): string => {
+        const letters = "0123456789ABCDEF";
+        let color = "#";
+        for (let i = 0; i < 6; i++) {
+          color += letters[Math.floor(Math.random() * 16)];
+        }
+        return color;
+      };
+      // Récupérer tous les thèmes des événements
+      const allEvents = await Event.find().select("theme");
+
+      // Ajouter chaque thème à `typeArr` s'il n'est pas déjà présent et ne commence pas par 'schema:'
+      allEvents.forEach((event) => {
+        const themes = event.theme as unknown as string[];
+        if (Array.isArray(themes)) {
+          themes.forEach((theme) => {
+            const themeString = String(theme);
+            if (
+              !themeString.startsWith("schema:") &&
+              !typeArr.includes(themeString)
+            ) {
+              typeArr.push(themeString);
+            }
+          });
+        }
+      });
+
+      console.log("Themes without duplicates:", typeArr);
+
+      // Récupérer les couleurs déjà utilisées pour les thèmes dans la base de données
+      const existingThemes = await Theme.find().select("color");
+      const usedColors = new Set(existingThemes.map((t) => t.color));
+
+      // Parcourir chaque thème dans `typeArr` et créer un nouveau `Theme` si nécessaire
+      for (const theme of typeArr) {
+        // Vérifier si le thème existe déjà dans la base de données
+        const existingTheme = await Theme.findOne({ theme });
+        if (!existingTheme) {
+          // Générer une couleur unique pour le thème
+          let newColor: string;
+          do {
+            newColor = generateRandomColor();
+          } while (usedColors.has(newColor));
+
+          // Créer et sauvegarder le nouveau thème
+          const newTheme = new Theme({
+            theme,
+            color: newColor,
+            icon: "default_icon.png", // Vous pouvez remplacer par une valeur par défaut ou une valeur provenant de `req.body`
+          });
+
+          await newTheme.save();
+          themeColors[newTheme.theme] = newTheme.color;
+          usedColors.add(newColor);
+
+          console.log("New theme created:", newTheme);
+        } else {
+          // Si le thème existe déjà, ajouter sa couleur à `themeColors`
+          themeColors[existingTheme.theme] = existingTheme.color;
+        }
+      }
+
+      console.log("Themes with colors:", themeColors);
+
       const start = setInterval(() => {
         console.log("num", num);
         num--;
