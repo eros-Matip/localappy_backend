@@ -14,6 +14,10 @@ const OwnerSchema = new Schema<IOwner>({
       ref: "Establishment",
     },
   ],
+  picture: {
+    url: String,
+    public_id: String,
+  },
   isValidated: { type: Boolean, default: false },
   token: { type: String }, // Optionnel, par exemple pour stocker un token JWT
   hash: { type: String, required: true }, // Hash du mot de passe, requis pour l'authentification

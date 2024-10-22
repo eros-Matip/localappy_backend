@@ -16,8 +16,9 @@ router.post(
     try {
       // Vérification si le middleware a déjà trouvé un utilisateur via le token
       if (req.body.admin) {
-        const customerFindedByToken = req.body.admin;
-
+        const customerFindedByToken = await Customer.findById(
+          req.body.admin
+        ).populate("themesFavorites");
         // Renvoyer les informations si l'utilisateur est authentifié par token
         return res.status(200).json({
           message: "Logged in with token",

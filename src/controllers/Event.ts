@@ -4,9 +4,159 @@ import { NextFunction, Request, Response } from "express";
 import Event from "../models/Event"; // Assure-toi que le modèle Event est importé correctement
 import Retour from "../library/Retour";
 import Establishment from "../models/Establishment";
+import path from "path";
+import { readFile } from "fs/promises";
 
 // Utiliser promisify pour rendre les fonctions fs asynchrones
 
+const AllEvents = require("../../Events/index.json");
+
+// Fonction de création d'événements
+const createEventFromJSON = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    // Chemin de base où se trouvent les fichiers
+    const basePath = path.join(__dirname, "..", "..", "events", "objects");
+
+    for (const event of AllEvents) {
+      const fullPath = path.join(basePath, event.file);
+      const fileData = await readFile(fullPath, "utf-8");
+      const eventData = JSON.parse(fileData);
+
+      const title = eventData["rdfs:label"]?.fr?.[0] || "Titre par défaut";
+      const startingDate = eventData["schema:startDate"]?.[0] || new Date();
+      const endingDate = eventData["schema:endDate"]?.[0] || new Date();
+
+      // Récupération de la description en français depuis `hasDescription`
+      const description =
+        eventData["hasDescription"]?.[0]?.["dc:description"]?.fr?.[0] ||
+        eventData["rdfs:comment"]?.fr?.[0] ||
+        "Description non disponible";
+
+      // Récupérer l'adresse
+      const addressData = eventData["isLocatedAt"]?.[0]?.["schema:address"];
+      let address = "Adresse par défaut";
+      if (addressData && Array.isArray(addressData)) {
+        const firstAddress = addressData[0];
+        const streetAddress = Array.isArray(
+          firstAddress["schema:streetAddress"]
+        )
+          ? firstAddress["schema:streetAddress"].join(", ")
+          : firstAddress["schema:streetAddress"] || "Rue inconnue";
+        const postalCode =
+          firstAddress["schema:postalCode"] || "Code postal inconnu";
+        const addressLocality =
+          firstAddress["schema:addressLocality"] || "Ville inconnue";
+        address = `${streetAddress}, ${postalCode}, ${addressLocality}`;
+      }
+
+      const theme = eventData["@type"] || "Thème inconnu";
+
+      // Récupération des images
+      let image = "Image par défaut";
+      if (
+        eventData.hasMainRepresentation &&
+        Array.isArray(eventData.hasMainRepresentation)
+      ) {
+        const mainRepresentation = eventData.hasMainRepresentation[0];
+        const resource = mainRepresentation["ebucore:hasRelatedResource"]?.[0];
+        image = resource?.["ebucore:locator"] || "Image par défaut";
+      }
+
+      const color = eventData.color || "#000000";
+
+      // Récupération du numéro de téléphone et de l'email depuis `hasContact`
+      let phone = "Téléphone inconnu";
+      let email = "Email inconnu";
+      if (eventData.hasContact && Array.isArray(eventData.hasContact)) {
+        const contactInfo = eventData.hasContact[0];
+        phone = contactInfo["schema:telephone"]?.[0] || "Téléphone inconnu";
+        email = contactInfo["schema:email"]?.[0] || "Email inconnu";
+      }
+
+      // Organisateur
+      const organizerData = eventData["hasBeenCreatedBy"];
+      const organizer = {
+        legalName:
+          organizerData?.["schema:legalName"] || "Organisateur inconnu",
+        email, // Ajout de l'email récupéré ici
+        phone, // Ajout du téléphone récupéré ici
+      };
+
+      // Gestion simplifiée du prix et de la spécification du prix
+      let price = 0;
+      let priceCurrency = "EUR"; // Devise par défaut
+
+      if (eventData["offers"] && Array.isArray(eventData["offers"])) {
+        const offer = eventData["offers"][0]; // On prend la première offre
+        if (offer && offer["schema:priceSpecification"]?.[0]) {
+          const priceSpec = offer["schema:priceSpecification"][0];
+          price = parseFloat(priceSpec?.["schema:price"]) || 0;
+          priceCurrency = priceSpec?.["schema:priceCurrency"] || "EUR";
+        }
+      }
+
+      try {
+        const responseApiGouv = await axios.get(
+          `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(
+            address
+          )}`
+        );
+        const features = responseApiGouv.data.features;
+
+        if (!features || features.length === 0 || !features[0].geometry) {
+          throw new Error("Coordonnées non disponibles");
+        }
+
+        const coordinates = features[0].geometry.coordinates;
+
+        if (!coordinates || coordinates.length < 2) {
+          throw new Error("Coordonnées incomplètes");
+        }
+
+        // Création de l'événement avec tous les champs du modèle
+        const newEvent = new Event({
+          title,
+          theme,
+          startingDate: new Date(startingDate),
+          endingDate: new Date(endingDate),
+          address,
+          location: {
+            lat: coordinates[1],
+            lng: coordinates[0],
+          },
+          image,
+          description, // Description en français récupérée
+          color,
+          price, // Ajout du prix
+          priceSpecification: {
+            minPrice: price,
+            maxPrice: price,
+            priceCurrency,
+          },
+          organizer, // Ajout de l'organisateur avec le téléphone et l'email récupérés
+        });
+
+        await newEvent.save();
+        Retour.info(`Événement créé avec succès: ${newEvent.title}`);
+      } catch (error) {
+        console.error("Erreur lors de la récupération des coordonnées:", error);
+      }
+    }
+
+    return res
+      .status(201)
+      .json({ message: "Tous les événements créés avec succès" });
+  } catch (error) {
+    console.error("Erreur lors de la création des événements:", error);
+    return res
+      .status(500)
+      .json({ message: "Erreur lors de la création des événements", error });
+  }
+};
 const createEventForAnEstablishment = async (req: Request, res: Response) => {
   try {
     const {
