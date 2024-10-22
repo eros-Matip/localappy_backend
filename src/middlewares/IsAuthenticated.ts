@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import Customer from "../models/Customer";
+import Retour from "../library/Retour";
 const uid2 = require("uid2");
 
 const AdminIsAuthenticated = async (
@@ -17,8 +18,10 @@ const AdminIsAuthenticated = async (
   // Vérifier la présence du header d'autorisation
   if (req.headers.authorization) {
     const token = req.headers.authorization.replace("Bearer ", "");
-    const CustomerFinded = await Customer.findOne({ token });
-    console.log("Token received:", token);
+    const CustomerFinded = await Customer.findOne({ token }).populate({
+      path: "themesFavorites",
+      model: "Theme",
+    });
 
     // Si un utilisateur est trouvé avec ce token
     if (CustomerFinded) {
@@ -29,6 +32,9 @@ const AdminIsAuthenticated = async (
 
         // Sauvegarder le nouveau token si modifié
         await CustomerFinded.save();
+        Retour.info(
+          `Customer ${CustomerFinded.account.firstname} ${CustomerFinded.account.name} logged by token `
+        );
         return res.status(200).json({
           message: "Token valid",
           customer: CustomerFinded,
@@ -39,6 +45,7 @@ const AdminIsAuthenticated = async (
       req.body.admin = CustomerFinded;
       // Vérifier le statut premium si requis par d'autres routes
       if (!CustomerFinded.premiumStatus && !isLoginRoute) {
+        Retour.warn("Unauthorized, premium status required");
         return res
           .status(401)
           .json({ error: "Unauthorized, premium status required" });
@@ -46,10 +53,12 @@ const AdminIsAuthenticated = async (
 
       return next();
     } else {
+      Retour.error("Invalid token");
       return res.status(401).json({ error: "Invalid token" });
     }
   } else {
     // Si aucune autorisation n'est fournie et que ce n'est pas "/login"
+    Retour.error("Unauthorized, token is required");
     return res.status(401).json({ error: "Unauthorized, token is required" });
   }
 };

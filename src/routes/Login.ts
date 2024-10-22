@@ -18,7 +18,7 @@ router.post(
       if (req.body.admin) {
         const customerFindedByToken = await Customer.findById(
           req.body.admin
-        ).populate("themesFavorites");
+        ).populate({ path: "themesFavorites", model: "Theme" });
         // Renvoyer les informations si l'utilisateur est authentifié par token
         return res.status(200).json({
           message: "Logged in with token",
@@ -36,7 +36,10 @@ router.post(
       }
 
       // Recherche de l'utilisateur par email
-      const customerFinded = await Customer.findOne({ email });
+      const customerFinded = await Customer.findOne({ email }).populate({
+        path: "themesFavorites",
+        model: "Theme",
+      });
       if (!customerFinded) {
         Retour.error("Account was not found");
         return res.status(401).json({ message: "Account was not found" });
