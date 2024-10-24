@@ -347,6 +347,95 @@ const getEventsByPostalCode = async (
   }
 };
 
+const getEventsByPosition = async (req: Request, res: Response) => {
+  try {
+    const { latitude, longitude } = req.body;
+
+    if (!latitude || !longitude) {
+      return res.status(400).json({
+        message: "La latitude et la longitude sont requises.",
+      });
+    }
+
+    const lat = parseFloat(latitude as string);
+    const lon = parseFloat(longitude as string);
+
+    // Vérifier la validité des coordonnées
+    if (isNaN(lat) || isNaN(lon)) {
+      return res.status(400).json({
+        message: "Les coordonnées fournies ne sont pas valides.",
+      });
+    }
+
+    // Rayon de recherche en kilomètres (exemple : 10 km)
+    const radiusInKm = req.body.radius || 10;
+
+    // Utiliser une agrégation pour calculer la distance en utilisant la formule de Haversine
+    const events = await Event.aggregate([
+      {
+        $addFields: {
+          distance: {
+            $sqrt: {
+              $add: [
+                {
+                  $pow: [{ $subtract: ["$location.lat", lat] }, 2],
+                },
+                {
+                  $pow: [{ $subtract: ["$location.lng", lon] }, 2],
+                },
+              ],
+            },
+          },
+        },
+      },
+      {
+        $match: {
+          distance: { $lte: radiusInKm / 111.12 }, // Conversion km en degrés (approximation)
+        },
+      },
+      {
+        $sort: { distance: 1 },
+      },
+    ]);
+
+    if (events.length === 0) {
+      return res
+        .status(404)
+        .json({ message: "Aucun événement trouvé autour de cette position." });
+    }
+
+    // Date et heure actuelles
+    const currentDate = new Date();
+
+    // Séparer les événements en trois catégories : passés, présents (aujourd'hui) et à venir
+    const pastEvents = events.filter(
+      (event) => new Date(event.endingDate) < currentDate
+    );
+    const upcomingEvents = events.filter(
+      (event) => new Date(event.startingDate) > currentDate
+    );
+    const currentEvents = events.filter(
+      (event) =>
+        new Date(event.startingDate) <= currentDate &&
+        new Date(event.endingDate) >= currentDate
+    );
+
+    return res.status(200).json({
+      pastEvents,
+      currentEvents,
+      upcomingEvents,
+    });
+  } catch (error) {
+    console.error(
+      "Erreur lors de la récupération des événements par position:",
+      error
+    );
+    return res
+      .status(500)
+      .json({ message: "Erreur interne du serveur", error });
+  }
+};
+
 const updateEvent = async (req: Request, res: Response, next: NextFunction) => {
   const eventId = req.params.eventId;
 
@@ -513,6 +602,7 @@ export default {
   readEvent,
   readAll,
   getEventsByPostalCode,
+  getEventsByPosition,
   updateEvent,
   deleteEvent,
   deleteDuplicateEvents,
