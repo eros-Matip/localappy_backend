@@ -12,7 +12,7 @@ router.post(
 router.get("/get/:eventId", controller.readEvent);
 router.get("/get/", controller.readAll);
 router.get("/getAllByZip/:postalCode", controller.getEventsByPostalCode);
-router.get("/getAllByLocalisation", controller.getEventsByPosition);
+router.post("/getAllByLocalisation", controller.getEventsByPosition);
 router.put("/update/:eventId", OwnerIsAuthenticated, controller.updateEvent);
 router.delete("/delete/:eventId", OwnerIsAuthenticated, controller.deleteEvent);
 router.delete("/deleteDuplicateEvents", controller.deleteDuplicateEvents);
