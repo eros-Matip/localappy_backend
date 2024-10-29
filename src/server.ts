@@ -103,7 +103,6 @@ const startServer = () => {
       let num = 10;
       let typeArr: string[] = [];
       let themeColors: { [key: string]: string } = {};
-
       // Fonction pour générer une couleur aléatoire en hexadécimal
       const generateRandomColor = (): string => {
         const letters = "0123456789ABCDEF";

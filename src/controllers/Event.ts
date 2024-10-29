@@ -4,10 +4,11 @@ import { NextFunction, Request, Response } from "express";
 import Event from "../models/Event"; // Assure-toi que le modèle Event est importé correctement
 import Retour from "../library/Retour";
 import Establishment from "../models/Establishment";
-import path from "path";
-import { readFile } from "fs/promises";
+// import path from "path";
+// import { readFile } from "fs/promises";
 
 // Utiliser promisify pour rendre les fonctions fs asynchrones
+// const AllEvents = require("../../Events/index.json");
 
 // Fonction de création d'événements
 // const createEventFromJSON = async (
@@ -25,10 +26,6 @@ import { readFile } from "fs/promises";
 //       const eventData = JSON.parse(fileData);
 
 //       const title = eventData["rdfs:label"]?.fr?.[0] || "Titre par défaut";
-//       const startingDate = eventData["schema:startDate"]?.[0] || new Date();
-//       const endingDate = eventData["schema:endDate"]?.[0] || new Date();
-
-//       // Récupération de la description en français depuis `hasDescription`
 //       const description =
 //         eventData["hasDescription"]?.[0]?.["dc:description"]?.fr?.[0] ||
 //         eventData["rdfs:comment"]?.fr?.[0] ||
@@ -115,31 +112,44 @@ import { readFile } from "fs/promises";
 //           throw new Error("Coordonnées incomplètes");
 //         }
 
-//         // Création de l'événement avec tous les champs du modèle
-//         const newEvent = new Event({
-//           title,
-//           theme,
-//           startingDate: new Date(startingDate),
-//           endingDate: new Date(endingDate),
-//           address,
-//           location: {
-//             lat: coordinates[1],
-//             lng: coordinates[0],
-//           },
-//           image,
-//           description, // Description en français récupérée
-//           color,
-//           price, // Ajout du prix
-//           priceSpecification: {
-//             minPrice: price,
-//             maxPrice: price,
-//             priceCurrency,
-//           },
-//           organizer, // Ajout de l'organisateur avec le téléphone et l'email récupérés
-//         });
+//         // Parcourir chaque période pour les événements récurrents
+//         for (const period of eventData["takesPlaceAt"] || []) {
+//           const startDate = period["startDate"] || "Date de début inconnue";
+//           const endDate = period["endDate"] || "Date de fin inconnue";
+//           const startTime = period["startTime"] || "00:00:00"; // Heure par défaut si non définie
+//           const endTime = period["endTime"] || "23:59:59"; // Heure par défaut si non définie
 
-//         await newEvent.save();
-//         Retour.info(`Événement créé avec succès: ${newEvent.title}`);
+//           const startingDateTime = new Date(`${startDate}T${startTime}`);
+//           const endingDateTime = new Date(`${endDate}T${endTime}`);
+
+//           // Création de l'événement avec tous les champs du modèle
+//           const newEvent = new Event({
+//             title,
+//             theme,
+//             startingDate: startingDateTime,
+//             endingDate: endingDateTime,
+//             address,
+//             location: {
+//               lat: coordinates[1],
+//               lng: coordinates[0],
+//             },
+//             image,
+//             description, // Description en français récupérée
+//             color,
+//             price, // Ajout du prix
+//             priceSpecification: {
+//               minPrice: price,
+//               maxPrice: price,
+//               priceCurrency,
+//             },
+//             organizer, // Ajout de l'organisateur avec le téléphone et l'email récupérés
+//           });
+
+//           await newEvent.save();
+//           Retour.info(
+//             `Événement créé avec succès: ${newEvent.title} pour la date ${startingDateTime.toISOString()}`
+//           );
+//         }
 //       } catch (error) {
 //         console.error("Erreur lors de la récupération des coordonnées:", error);
 //       }
@@ -598,6 +608,7 @@ const deleteDuplicateEvents = async (req: Request, res: Response) => {
 };
 
 export default {
+  // createEventFromJSON,
   createEventForAnEstablishment,
   readEvent,
   readAll,

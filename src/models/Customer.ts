@@ -19,7 +19,7 @@ const customerSchema = new Schema<ICustomer>({
     url: String,
     public_id: String,
   },
-  premiumStatus: Boolean, // Statut premium du client (adhérent ou non)
+  premiumStatus: { type: Boolean, default: false }, // Statut premium du client (adhérent ou non)
   membership: {
     startDate: Date, // (Optionnel) Date d'adhésion au compte premium
     endDate: Date, // (Optionnel) Date de fin de l'adhésion premium

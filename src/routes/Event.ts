@@ -3,7 +3,7 @@ import controller from "../controllers/Event";
 import OwnerIsAuthenticated from "../middlewares/OwnerIsAuthenticated";
 
 const router = express.Router();
-
+// router.post("/create/", controller.createEventFromJSON);
 router.post(
   "/createForAnEstablishment/:establishmentId",
   OwnerIsAuthenticated,
