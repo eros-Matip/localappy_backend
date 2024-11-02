@@ -187,8 +187,6 @@ const createEventForAnEstablishment = async (req: Request, res: Response) => {
     const establishmentFinded = await Establishment.findById(
       req.params.establishmentId
     );
-    console.log("establishmentFinded", establishmentFinded);
-
     if (!establishmentFinded) {
       Retour.error("Establishment not found");
       return res.status(404).json({ message: "Establishment not found" });

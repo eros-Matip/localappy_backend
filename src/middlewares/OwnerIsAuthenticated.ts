@@ -29,7 +29,6 @@ const OwnerIsAuthenticated = async (
     const resourceId = req.originalUrl.split("/").pop();
     const resourceType = req.originalUrl.split("/")[1];
     const ressourceCall = req.originalUrl.split("/")[2];
-    console.log("ressourceCall", ressourceCall);
 
     if (!resourceId) {
       return res.status(400).json({ error: "Resource ID not found in URL" });

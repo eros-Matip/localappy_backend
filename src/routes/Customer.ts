@@ -12,6 +12,11 @@ router.put(
   AdminIsAuthenticated,
   controller.updateCustomer
 );
+router.put(
+  "/addingOrRemoveFavorites",
+  AdminIsAuthenticated,
+  controller.addingOrRemoveFavorites
+);
 router.delete("/delete", AdminIsAuthenticated, controller.deleteCustomer);
 
 export default router;

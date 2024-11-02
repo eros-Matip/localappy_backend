@@ -1,3 +1,4 @@
+import { ObjectId } from "bson";
 import { Types } from "mongoose";
 import { Document } from "mongoose";
 
@@ -27,9 +28,34 @@ export default interface ICustomer extends Document {
   };
   bills: [{ type: Types.ObjectId; ref: "Bill" }];
   eventsAttended: [{ type: Types.ObjectId; ref: "Event" }]; // Référence vers les événements auxquels le client a participé
-  eventsFavorites: [{ type: Types.ObjectId; ref: "Event" }];
-  themesFavorites: [{ type: Types.ObjectId; ref: "Theme" }];
-  establishmentFavorites: [{ type: Types.ObjectId; ref: "Etablishment" }]; // Référence vers les établissements favoris du client
+  eventsFavorites: [
+    {
+      equals(objectId: Types.ObjectId): unknown;
+      type: Types.ObjectId;
+      ref: "Event";
+    },
+  ];
+  themesFavorites: [
+    {
+      equals(objectId: Types.ObjectId): unknown;
+      type: Types.ObjectId;
+      ref: "Theme";
+    },
+  ];
+  establishmentFavorites: [
+    {
+      equals(objectId: Types.ObjectId): unknown;
+      type: Types.ObjectId;
+      ref: "Etablishment";
+    },
+  ]; // Référence vers les établissements favoris du client
+  customersFavorites: [
+    {
+      equals(objectId: ObjectId): unknown;
+      type: Types.ObjectId;
+      ref: "Customer";
+    },
+  ];
   token: string;
   hash: string;
   salt: string;
