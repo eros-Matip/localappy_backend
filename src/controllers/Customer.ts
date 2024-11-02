@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 const SHA256 = require("crypto-js/sha256");
 const encBase64 = require("crypto-js/enc-base64");
 const uid2 = require("uid2");
+const cloudinary = require("cloudinary");
 
 // Models
 import Customer from "../models/Customer";
@@ -129,32 +130,46 @@ const updateCustomer = async (req: Request, res: Response) => {
   try {
     const customerId = req.params.customerId;
     const customer = await Customer.findById(customerId);
-
     if (!customer) {
       return res.status(404).json({ message: "Customer was not found" });
     }
 
-    const { allInfos, newThemesFavorites } = req.body;
-
-    if (!allInfos && !newThemesFavorites) {
-      Retour.error("Nothing has changed");
+    const { allInfos } = req.body;
+    const fileKeys = req.files ? Object(req.files).file : [];
+    if (!allInfos && !fileKeys.length) {
+      console.error("Nothing has changed");
       return res.status(400).json({ message: "Nothing has changed" });
     }
 
-    // Mise à jour des données du client
-    if (Array.isArray(newThemesFavorites)) {
-      Object(customer).themesFavorites = newThemesFavorites;
-    }
-
+    // Mise à jour des informations textuelles si présentes
     if (allInfos) {
       customer.set(allInfos);
     }
 
+    // Si un fichier est présent dans la requête, upload sur Cloudinary
+    if (fileKeys.length) {
+      // Boucle pour gérer plusieurs fichiers potentiels (le dernier sera pris en compte pour la photo de profil)
+      for (const file of fileKeys) {
+        const result = await cloudinary.v2.uploader.upload(file.path, {
+          folder: "customer_profiles",
+        });
+
+        // Mise à jour de la photo de profil avec le dernier fichier téléchargé
+        customer.picture = {
+          public_id: result.public_id,
+          url: result.secure_url,
+        };
+      }
+    }
+
+    // Sauvegarde des modifications
     await customer.save();
 
-    return res.status(200).json({ customer });
+    return res
+      .status(200)
+      .json({ message: "Customer picture's updated", customer });
   } catch (error) {
-    Retour.error("Error caught");
+    console.error("Error updating customer:", error);
     return res.status(500).json({ message: "Error caught", error });
   }
 };
