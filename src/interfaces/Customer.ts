@@ -19,6 +19,7 @@ export default interface ICustomer extends Document {
     url: string;
     public_id: string;
   };
+  descriptif: string;
   premiumStatus: boolean; // Statut premium du client (adhérent ou non)
   membership: {
     startDate?: Date; // (Optionnel) Date d'adhésion au compte premium
