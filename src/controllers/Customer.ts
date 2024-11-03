@@ -28,15 +28,7 @@ const createCustomer = async (req: Request, res: Response) => {
     } = req.body;
 
     // Vérification que les champs requis sont remplis
-    if (
-      !email ||
-      !name ||
-      !firstname ||
-      !phoneNumber ||
-      !address ||
-      !city ||
-      !zip
-    ) {
+    if (!email || !name || !firstname) {
       Retour.error("Some value is missing");
       return res.status(400).json({ message: "Some value is missing" });
     }
@@ -59,13 +51,31 @@ const createCustomer = async (req: Request, res: Response) => {
     const salt: string = uid2(26);
     const hash: string = SHA256(password + salt).toString(encBase64);
 
-    // Appel à l'API gouvernementale pour récupérer les coordonnées de l'adresse
-    const responseApiGouv = await axios.get(
-      `https://api-adresse.data.gouv.fr/search/?q=${address} ${zip} ${city}`
-    );
+    // Coordonnées par défaut (null si l'adresse n'est pas fournie)
+    let latitude: number | null = null;
+    let longitude: number | null = null;
 
-    const latitude = responseApiGouv.data.features[0].geometry.coordinates[1];
-    const longitude = responseApiGouv.data.features[0].geometry.coordinates[0];
+    // Si l'adresse est fournie, appel à l'API gouvernementale pour récupérer les coordonnées
+    if (address && city && zip) {
+      try {
+        const responseApiGouv = await axios.get(
+          `https://api-adresse.data.gouv.fr/search/?q=${address} ${zip} ${city}`
+        );
+
+        // Vérifie que l'API a retourné des données valides
+        if (responseApiGouv.data.features.length > 0) {
+          latitude = responseApiGouv.data.features[0].geometry.coordinates[1];
+          longitude = responseApiGouv.data.features[0].geometry.coordinates[0];
+        } else {
+          Retour.error("No coordinates found for the provided address");
+        }
+      } catch (apiError) {
+        Retour.error("Error calling government API for address coordinates");
+        return res
+          .status(500)
+          .json({ message: "Error with address API", error: apiError });
+      }
+    }
 
     // Création d'un nouveau client
     const customer = new Customer({
@@ -77,15 +87,13 @@ const createCustomer = async (req: Request, res: Response) => {
         address,
         zip,
         city,
-        location: {
-          lng: longitude,
-          lat: latitude,
-        },
+        location:
+          latitude && longitude ? { lng: longitude, lat: latitude } : undefined,
       },
       premiumStatus: false,
       bills: [],
-      eventsAttended: [], // Référence vers les événements auxquels le client a participé
-      favorites: [], // Référence vers les établissements favoris du client
+      eventsAttended: [],
+      favorites: [],
       token,
       hash,
       salt,
@@ -97,8 +105,8 @@ const createCustomer = async (req: Request, res: Response) => {
     // Réponse avec le client créé
     return res.status(201).json({ message: "Customer created", customer });
   } catch (error) {
-    Retour.error("Error catched");
-    return res.status(500).json({ message: "Error catched", error });
+    Retour.error("Error caught during customer creation");
+    return res.status(500).json({ message: "Error caught", error });
   }
 };
 
