@@ -376,7 +376,7 @@ const getEventsByPosition = async (req: Request, res: Response) => {
     }
 
     // Rayon de recherche en kilomètres (exemple : 10 km)
-    const radiusInKm = req.body.radius || 10;
+    const radiusInKm = req.body.radius || 50;
 
     // Utiliser une agrégation pour calculer la distance en utilisant la formule de Haversine
     const events = await Event.aggregate([
@@ -526,6 +526,83 @@ const updateEvent = async (req: Request, res: Response, next: NextFunction) => {
   }
 };
 
+const getEventByDate = async (req: Request, res: Response) => {
+  try {
+    const { latitude, longitude, radius } = req.body;
+
+    const currentDate = new Date();
+    const startOfMonth = new Date(
+      currentDate.getFullYear(),
+      currentDate.getMonth(),
+      1
+    );
+    const endOfMonth = new Date(
+      currentDate.getFullYear(),
+      currentDate.getMonth() + 1,
+      0
+    );
+
+    // Vérifier que les coordonnées sont fournies si on souhaite filtrer par distance
+    if (!latitude || !longitude) {
+      return res.status(400).json({
+        message:
+          "La latitude et la longitude sont requises pour filtrer par position.",
+      });
+    }
+
+    const lat = parseFloat(latitude as string);
+    const lon = parseFloat(longitude as string);
+    const radiusInKm = radius ? parseFloat(radius as string) : 50;
+
+    if (isNaN(lat) || isNaN(lon)) {
+      return res.status(400).json({
+        message: "Les coordonnées fournies ne sont pas valides.",
+      });
+    }
+
+    // Utiliser une agrégation pour ajouter la distance et filtrer par date, distance, et type de position
+    const events = await Event.aggregate([
+      {
+        $addFields: {
+          distance: {
+            $sqrt: {
+              $add: [
+                { $pow: [{ $subtract: ["$location.lat", lat] }, 2] },
+                { $pow: [{ $subtract: ["$location.lng", lon] }, 2] },
+              ],
+            },
+          },
+        },
+      },
+      {
+        $match: {
+          startingDate: { $gte: startOfMonth, $lte: endOfMonth },
+          distance: { $lte: radiusInKm / 111.12 }, // Conversion km en degrés
+        },
+      },
+      {
+        $sort: { distance: 1 },
+      },
+    ]);
+
+    if (events.length === 0) {
+      return res.status(404).json({
+        message: "Aucun événement trouvé pour cette date et position.",
+      });
+    }
+
+    return res.status(200).json(events);
+  } catch (error) {
+    console.error(
+      "Erreur lors de la récupération des événements par date et position:",
+      error
+    );
+    return res
+      .status(500)
+      .json({ message: "Erreur interne du serveur", error });
+  }
+};
+
 // Fonction pour supprimer un événement
 const deleteEvent = async (req: Request, res: Response, next: NextFunction) => {
   const eventId = req.params.eventId;
@@ -612,6 +689,7 @@ export default {
   readAll,
   getEventsByPostalCode,
   getEventsByPosition,
+  getEventByDate,
   updateEvent,
   deleteEvent,
   deleteDuplicateEvents,

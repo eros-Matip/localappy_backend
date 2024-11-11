@@ -13,6 +13,7 @@ router.get("/get/:eventId", controller.readEvent);
 router.get("/get/", controller.readAll);
 router.get("/getAllByZip/:postalCode", controller.getEventsByPostalCode);
 router.post("/getAllByLocalisation", controller.getEventsByPosition);
+router.post("/getAllByDate/:month", controller.getEventByDate);
 router.put("/update/:eventId", OwnerIsAuthenticated, controller.updateEvent);
 router.delete("/delete/:eventId", OwnerIsAuthenticated, controller.deleteEvent);
 router.delete("/deleteDuplicateEvents", controller.deleteDuplicateEvents);
