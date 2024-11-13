@@ -275,7 +275,7 @@ const createEventForAnEstablishment = async (req: Request, res: Response) => {
 };
 
 // Fonction pour lire un événement spécifique
-const readEvent = (req: Request, res: Response, next: NextFunction) => {
+const readEvent = async(req: Request, res: Response, next: NextFunction) => {
   const eventId = req.params.eventId;
 
   return Event.findById(eventId)
@@ -288,7 +288,7 @@ const readEvent = (req: Request, res: Response, next: NextFunction) => {
 };
 
 // Fonction pour lire tous les événements
-const readAll = (req: Request, res: Response, next: NextFunction) => {
+const readAll =async (req: Request, res: Response, next: NextFunction) => {
   return Event.find()
     .then((events) => res.status(200).json({ message: events }))
     .catch((error) => res.status(500).json({ error: error.message }));

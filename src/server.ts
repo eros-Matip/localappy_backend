@@ -40,6 +40,7 @@ import OwnerRoutes from "./routes/Owner";
 import EstablishmentRoutes from "./routes/Establishment";
 import CustomerRoutes from "./routes/Customer";
 import LoginRoute from "./routes/Login";
+import socialLoginRoute from "./routes/LoginBySocial";
 
 // FUNCTIONS
 import Logging from "./library/Logging";
@@ -95,7 +96,9 @@ const startServer = () => {
   router.use("/owner/", OwnerRoutes);
   router.use("/establishment/", EstablishmentRoutes);
   router.use("/customer/", CustomerRoutes);
+  router.use("/customer/", CustomerRoutes);
   router.use(LoginRoute);
+  router.use(socialLoginRoute);
   /** Healthcheck */
 
   router.all(
