@@ -195,7 +195,6 @@ const addingOrRemoveFavorites = async (req: Request, res: Response) => {
       action,
     } = req.body;
 
-    // Vérification des données reçues
     if (!admin || !admin._id) {
       return res.status(400).json({ message: "Admin ID is required" });
     }
@@ -217,13 +216,11 @@ const addingOrRemoveFavorites = async (req: Request, res: Response) => {
 
     const customer = await Customer.findById(admin._id);
     if (!customer) {
-      Retour.error("Customer was not found");
       return res.status(404).json({ message: "Customer was not found" });
     }
 
     const invalidIds: { type: string; id: string }[] = [];
 
-    // Fonction pour ajouter ou retirer un favori d'un tableau donné
     const handleFavorites = async (
       arr: string[],
       customerFavorites: mongoose.Types.ObjectId[],
@@ -239,12 +236,24 @@ const addingOrRemoveFavorites = async (req: Request, res: Response) => {
               if (!customerFavorites.includes(objectId)) {
                 customerFavorites.push(objectId);
               }
+              // Ajouter le client dans `favorieds` de l'événement
+              if (type === "Event") {
+                await model.findByIdAndUpdate(id, {
+                  $addToSet: { favorieds: customer._id },
+                });
+              }
             } else if (action === "remove") {
               const index = customerFavorites.findIndex((favId) =>
                 favId.equals(objectId)
               );
               if (index !== -1) {
-                customerFavorites.splice(index, 1); // Supprime l'ID du tableau
+                customerFavorites.splice(index, 1);
+              }
+              // Retirer le client de `favorieds` de l'événement
+              if (type === "Event") {
+                await model.findByIdAndUpdate(id, {
+                  $pull: { favorieds: customer._id },
+                });
               }
             }
           } else {
@@ -256,7 +265,6 @@ const addingOrRemoveFavorites = async (req: Request, res: Response) => {
       }
     };
 
-    // Traitement des favoris
     if (eventsFavoritesArr) {
       await handleFavorites(
         eventsFavoritesArr,
@@ -290,7 +298,6 @@ const addingOrRemoveFavorites = async (req: Request, res: Response) => {
       );
     }
 
-    // Si des IDs invalides ont été trouvés, renvoie une réponse avec la liste
     if (invalidIds.length > 0) {
       return res.status(400).json({
         message: "Some IDs do not correspond to valid entries",
@@ -301,7 +308,6 @@ const addingOrRemoveFavorites = async (req: Request, res: Response) => {
     await customer.save();
     return res.status(200).json("Favorites updated");
   } catch (error) {
-    Retour.error("Error occurred while updating favorites");
     return res
       .status(500)
       .json({ message: "Error occurred while updating favorites", error });

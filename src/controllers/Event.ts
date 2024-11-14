@@ -1,14 +1,15 @@
-import axios from "axios";
 import { NextFunction, Request, Response } from "express";
+import axios from "axios";
 
 import Event from "../models/Event"; // Assure-toi que le modèle Event est importé correctement
 import Retour from "../library/Retour";
 import Establishment from "../models/Establishment";
-// import path from "path";
-// import { readFile } from "fs/promises";
+
+import path from "path";
+import { readFile } from "fs/promises";
 
 // Utiliser promisify pour rendre les fonctions fs asynchrones
-// const AllEvents = require("../../Events/index.json");
+const AllEvents = require("../../Events/index.json");
 
 // Fonction de création d'événements
 // const createEventFromJSON = async (
@@ -166,6 +167,188 @@ import Establishment from "../models/Establishment";
 //   }
 // };
 
+const updateOrCreateEventFromJSON = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    // Chemin de base où se trouvent les fichiers
+    const basePath = path.join(__dirname, "..", "..", "events", "objects");
+
+    for (const event of AllEvents) {
+      const fullPath = path.join(basePath, event.file);
+      const fileData = await readFile(fullPath, "utf-8");
+      const eventData = JSON.parse(fileData);
+
+      // Récupérer le titre et la description
+      const title = eventData["rdfs:label"]?.fr?.[0] || "Titre par défaut";
+      const description =
+        eventData["hasDescription"]?.[0]?.["dc:description"]?.fr?.[0] ||
+        eventData["rdfs:comment"]?.fr?.[0] ||
+        "Description non disponible";
+
+      // Récupérer l'adresse
+      const addressData = eventData["isLocatedAt"]?.[0]?.["schema:address"];
+      let address = "Adresse par défaut";
+      if (addressData && Array.isArray(addressData)) {
+        const firstAddress = addressData[0];
+        const streetAddress = Array.isArray(
+          firstAddress["schema:streetAddress"]
+        )
+          ? firstAddress["schema:streetAddress"].join(", ")
+          : firstAddress["schema:streetAddress"] || "Rue inconnue";
+        const postalCode =
+          firstAddress["schema:postalCode"] || "Code postal inconnu";
+        const addressLocality =
+          firstAddress["schema:addressLocality"] || "Ville inconnue";
+        address = `${streetAddress}, ${postalCode}, ${addressLocality}`;
+      }
+
+      // Récupérer le thème
+      const theme = eventData["@type"] || "Thème inconnu";
+
+      // Récupérer l'image
+      let image = "Image par défaut";
+      if (
+        eventData.hasMainRepresentation &&
+        Array.isArray(eventData.hasMainRepresentation)
+      ) {
+        const mainRepresentation = eventData.hasMainRepresentation[0];
+        const resource = mainRepresentation["ebucore:hasRelatedResource"]?.[0];
+        image = resource?.["ebucore:locator"] || "Image par défaut";
+      }
+
+      const color = eventData.color || "#000000";
+
+      // Récupérer le téléphone et l'email depuis `hasContact`
+      let phone = "Téléphone inconnu";
+      let email = "Email inconnu";
+      if (eventData.hasContact && Array.isArray(eventData.hasContact)) {
+        const contactInfo = eventData.hasContact[0];
+        phone = contactInfo["schema:telephone"]?.[0] || "Téléphone inconnu";
+        email = contactInfo["schema:email"]?.[0] || "Email inconnu";
+      }
+
+      // Organisateur
+      const organizerData = eventData["hasBeenCreatedBy"];
+      const organizer = {
+        legalName:
+          organizerData?.["schema:legalName"] || "Organisateur inconnu",
+        email,
+        phone,
+      };
+
+      // Gestion du prix
+      let price: number = 0;
+      let priceCurrency = "EUR";
+
+      if (eventData["offers"] && Array.isArray(eventData["offers"])) {
+        const offer = eventData["offers"][0];
+        if (offer && offer["schema:priceSpecification"]?.[0]) {
+          const priceSpec = offer["schema:priceSpecification"][0];
+          price = parseFloat(priceSpec?.["schema:price"]) || 0;
+          priceCurrency = priceSpec?.["schema:priceCurrency"] || "EUR";
+        }
+      }
+
+      try {
+        const responseApiGouv = await axios.get(
+          `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(address)}`
+        );
+        const features = responseApiGouv.data.features;
+
+        if (!features || features.length === 0 || !features[0].geometry) {
+          throw new Error("Coordonnées non disponibles");
+        }
+
+        const coordinates = features[0].geometry.coordinates;
+        if (!coordinates || coordinates.length < 2) {
+          throw new Error("Coordonnées incomplètes");
+        }
+
+        // Gestion des événements récurrents
+        for (const period of eventData["takesPlaceAt"] || []) {
+          const startDate = period["startDate"] || "Date de début inconnue";
+          const endDate = period["endDate"] || "Date de fin inconnue";
+          const startTime = period["startTime"] || "00:00:00";
+          const endTime = period["endTime"] || "23:59:59";
+
+          const startingDateTime = new Date(`${startDate}T${startTime}`);
+          const endingDateTime = new Date(`${endDate}T${endTime}`);
+
+          // Vérifier si un événement existe avec le même titre et date de début
+          const existingEvent = await Event.findOne({
+            title,
+            startingDate: startingDateTime,
+          });
+
+          if (existingEvent) {
+            // Mettre à jour l'événement existant
+            existingEvent.description = description;
+            existingEvent.address = address;
+            existingEvent.location = {
+              lat: coordinates[1],
+              lng: coordinates[0],
+            };
+            existingEvent.image = [image];
+            existingEvent.color = color;
+            existingEvent.priceSpecification = {
+              minPrice: price,
+              maxPrice: price,
+              priceCurrency,
+            };
+            existingEvent.organizer = Object(organizer);
+
+            await existingEvent.save();
+            console.info(`Événement mis à jour : ${existingEvent.title}`);
+          } else {
+            // Créer un nouvel événement
+            const newEvent = new Event({
+              title,
+              theme,
+              startingDate: startingDateTime,
+              endingDate: endingDateTime,
+              address,
+              location: { lat: coordinates[1], lng: coordinates[0] },
+              image,
+              description,
+              color,
+              price,
+              priceSpecification: {
+                minPrice: price,
+                maxPrice: price,
+                priceCurrency,
+              },
+              organizer,
+            });
+
+            await newEvent.save();
+            console.info(`Événement créé avec succès : ${newEvent.title}`);
+          }
+        }
+      } catch (error) {
+        console.error("Erreur lors de la récupération des coordonnées:", error);
+      }
+    }
+
+    return res
+      .status(201)
+      .json({ message: "Tous les événements ont été traités avec succès." });
+  } catch (error) {
+    console.error(
+      "Erreur lors de la création ou mise à jour des événements:",
+      error
+    );
+    return res
+      .status(500)
+      .json({
+        message: "Erreur lors de la création ou mise à jour des événements",
+        error,
+      });
+  }
+};
+
 const createEventForAnEstablishment = async (req: Request, res: Response) => {
   try {
     const {
@@ -275,7 +458,7 @@ const createEventForAnEstablishment = async (req: Request, res: Response) => {
 };
 
 // Fonction pour lire un événement spécifique
-const readEvent = async(req: Request, res: Response, next: NextFunction) => {
+const readEvent = async (req: Request, res: Response, next: NextFunction) => {
   const eventId = req.params.eventId;
 
   return Event.findById(eventId)
@@ -288,7 +471,7 @@ const readEvent = async(req: Request, res: Response, next: NextFunction) => {
 };
 
 // Fonction pour lire tous les événements
-const readAll =async (req: Request, res: Response, next: NextFunction) => {
+const readAll = async (req: Request, res: Response, next: NextFunction) => {
   return Event.find()
     .then((events) => res.status(200).json({ message: events }))
     .catch((error) => res.status(500).json({ error: error.message }));
@@ -691,6 +874,7 @@ export default {
   getEventsByPosition,
   getEventByDate,
   updateEvent,
+  updateOrCreateEventFromJSON,
   deleteEvent,
   deleteDuplicateEvents,
 };
