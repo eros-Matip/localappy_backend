@@ -19,13 +19,10 @@ export default interface IEvent extends Document {
   favorieds: [{ type: Types.ObjectId; ref: "Customer" }];
   acceptedPaymentMethod: [String];
   organizer: {
-    establishment: {
-      type: Types.ObjectId;
-      ref: "Establishment";
-    };
-    legalName: { type: String; default: "Organisateur inconnu" };
-    email: { type: String; default: "Email inconnu" };
-    phone: { type: String; default: "Téléphone inconnu" };
+    establishment: Types.ObjectId;
+    legalName: string;
+    email: string;
+    phone: string;
   };
   image: [String];
   description: String;

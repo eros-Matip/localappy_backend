@@ -34,10 +34,16 @@ router.post("/socialLogin", async (req: Request, res: Response) => {
     }
 
     // Vérifiez si l'utilisateur existe déjà dans la base de données
-    let customer = await Customer.findOne({ email: userData.email }).populate({
-      path: "themesFavorites",
-      model: "Theme",
-    });
+    let customer = await Customer.findOne({ email: userData.email }).populate([
+      {
+        path: "themesFavorites",
+        model: "Theme",
+      },
+      {
+        path: "eventsFavorites",
+        model: "Event",
+      },
+    ]);
 
     // Si l'utilisateur n'existe pas, créez un nouveau compte
     if (!customer) {

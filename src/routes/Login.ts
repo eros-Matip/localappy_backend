@@ -36,10 +36,16 @@ router.post(
       }
 
       // Recherche de l'utilisateur par email
-      const customerFinded = await Customer.findOne({ email }).populate({
-        path: "themesFavorites",
-        model: "Theme",
-      });
+      const customerFinded = await Customer.findOne({ email }).populate([
+        {
+          path: "themesFavorites",
+          model: "Theme",
+        },
+        {
+          path: "eventsFavorites",
+          model: "Event",
+        },
+      ]);
       if (!customerFinded) {
         Retour.error("Account was not found");
         return res.status(401).json({ message: "Account was not found" });
