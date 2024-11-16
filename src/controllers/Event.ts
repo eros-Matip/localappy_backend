@@ -10,7 +10,7 @@ import Establishment from "../models/Establishment";
 
 // Utiliser promisify pour rendre les fonctions fs asynchrones
 
-const AllEvents = require("../../Events/index.json");
+// const AllEvents = require("../../Events/index.json");
 
 // Fonction de création d'événements
 // const createEventFromJSON = async (
