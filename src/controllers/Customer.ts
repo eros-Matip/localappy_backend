@@ -225,42 +225,45 @@ const addingOrRemoveFavorites = async (req: Request, res: Response) => {
       arr: string[],
       customerFavorites: mongoose.Types.ObjectId[],
       model: any,
-      type: string
+      type: string,
+      field?: string
     ) => {
-      for (const id of arr) {
-        if (mongoose.isValidObjectId(id)) {
-          const exists = await model.exists({ _id: id });
-          if (exists) {
-            const objectId = new mongoose.Types.ObjectId(id);
-            if (action === "add") {
-              if (!customerFavorites.includes(objectId)) {
-                customerFavorites.push(objectId);
-              }
-              // Ajouter le client dans `favorieds` de l'événement
-              if (type === "Event") {
-                await model.findByIdAndUpdate(id, {
-                  $addToSet: { favorieds: customer._id },
-                });
-              }
-            } else if (action === "remove") {
-              const index = customerFavorites.findIndex((favId) =>
-                favId.equals(objectId)
-              );
-              if (index !== -1) {
-                customerFavorites.splice(index, 1);
-              }
-              // Retirer le client de `favorieds` de l'événement
-              if (type === "Event") {
-                await model.findByIdAndUpdate(id, {
-                  $pull: { favorieds: customer._id },
-                });
-              }
+      for (const value of arr) {
+        let target;
+        if (field) {
+          target = await model.findOne({ [field]: value }); // Recherche par champ (ex : theme)
+        } else if (mongoose.isValidObjectId(value)) {
+          target = await model.findById(value); // Recherche par ID
+        }
+
+        if (target) {
+          const objectId = target._id;
+          if (action === "add") {
+            if (!customerFavorites.some((favId) => favId.equals(objectId))) {
+              customerFavorites.push(objectId);
             }
-          } else {
-            invalidIds.push({ type, id });
+            // Ajouter le client dans `favorieds` de l'événement
+            if (type === "Event") {
+              await model.findByIdAndUpdate(objectId, {
+                $addToSet: { favorieds: customer._id },
+              });
+            }
+          } else if (action === "remove") {
+            const index = customerFavorites.findIndex((favId) =>
+              favId.equals(objectId)
+            );
+            if (index !== -1) {
+              customerFavorites.splice(index, 1);
+            }
+            // Retirer le client de `favorieds` de l'événement
+            if (type === "Event") {
+              await model.findByIdAndUpdate(objectId, {
+                $pull: { favorieds: customer._id },
+              });
+            }
           }
         } else {
-          invalidIds.push({ type, id });
+          invalidIds.push({ type, id: value });
         }
       }
     };
@@ -278,7 +281,8 @@ const addingOrRemoveFavorites = async (req: Request, res: Response) => {
         themesFavoritesArr,
         Object(customer).themesFavorites,
         Theme,
-        "Theme"
+        "Theme",
+        "theme" // Recherche par le champ `theme`
       );
     }
     if (customersFavoritesArr) {
