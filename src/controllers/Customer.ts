@@ -200,7 +200,16 @@ const addingOrRemoveFavorites = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Admin ID is required" });
     }
 
-    const customer = await Customer.findById(admin._id);
+    const customer = await Customer.findById(admin._id).populate([
+      {
+        path: "themesFavorites",
+        model: "Theme",
+      },
+      {
+        path: "eventsFavorites",
+        model: "Event",
+      },
+    ]);
     if (!customer) {
       return res.status(404).json({ message: "Customer was not found" });
     }
