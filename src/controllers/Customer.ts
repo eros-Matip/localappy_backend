@@ -192,11 +192,17 @@ const addingOrRemoveFavorites = async (req: Request, res: Response) => {
       themesFavoritesArr,
       customersFavoritesArr,
       establishmentFavoritesArr,
+      descriptif,
       action,
     } = req.body;
 
     if (!admin || !admin._id) {
       return res.status(400).json({ message: "Admin ID is required" });
+    }
+
+    const customer = await Customer.findById(admin._id);
+    if (!customer) {
+      return res.status(404).json({ message: "Customer was not found" });
     }
 
     if (
@@ -205,18 +211,17 @@ const addingOrRemoveFavorites = async (req: Request, res: Response) => {
       (!customersFavoritesArr || customersFavoritesArr.length === 0) &&
       (!establishmentFavoritesArr || establishmentFavoritesArr.length === 0)
     ) {
-      return res.status(400).json({ message: "No favorites data received" });
+      if (descriptif) {
+        customer.descriptif = descriptif;
+      } else {
+        return res.status(400).json({ message: "No favorites data received" });
+      }
     }
 
     if (!["add", "remove"].includes(action)) {
       return res
         .status(400)
         .json({ message: "Invalid action. Use 'add' or 'remove'." });
-    }
-
-    const customer = await Customer.findById(admin._id);
-    if (!customer) {
-      return res.status(404).json({ message: "Customer was not found" });
     }
 
     const invalidIds: { type: string; id: string }[] = [];
