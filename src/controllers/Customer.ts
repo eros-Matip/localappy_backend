@@ -315,7 +315,7 @@ const addingOrRemoveFavorites = async (req: Request, res: Response) => {
     }
 
     await customer.save();
-    return res.status(200).json("Favorites updated");
+    return res.status(200).json({ message: "Favorites updated", customer });
   } catch (error) {
     return res
       .status(500)
