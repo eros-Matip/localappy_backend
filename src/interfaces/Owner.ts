@@ -13,6 +13,11 @@ export default interface IOwner extends Document {
     url: string;
     public_id: string;
   };
+  cni: {
+    url: string;
+    public_id: string;
+  };
+  customerAccount: { type: Types.ObjectId; ref: "Customer" };
   establishments: [{ type: Types.ObjectId; ref: "Establishment" }]; // Référence vers les établissements de l'owner
   isValidated: { type: Boolean; default: false };
   token: string;

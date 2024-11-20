@@ -5,6 +5,7 @@ const encBase64 = require("crypto-js/enc-base64");
 const uid2 = require("uid2");
 import Retour from "../library/Retour";
 import AdminIsAuthenticated from "../middlewares/IsAuthenticated";
+import Owner from "../models/Owner";
 
 const router = express.Router();
 
@@ -50,6 +51,7 @@ router.post(
         Retour.error("Account was not found");
         return res.status(401).json({ message: "Account was not found" });
       }
+      const ownerFinded = await Owner.findById(customerFinded.ownerAccount);
 
       // Vérification du mot de passe
       const hashToLog = SHA256(password + customerFinded.salt).toString(
@@ -64,6 +66,10 @@ router.post(
         const newToken: string = uid2(29);
         customerFinded.token = newToken;
 
+        if (ownerFinded) {
+          ownerFinded.token = newToken;
+          await ownerFinded.save();
+        }
         // Sauvegarder le nouveau token si modifié
         await customerFinded.save();
 

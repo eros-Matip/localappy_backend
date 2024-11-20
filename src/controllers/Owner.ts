@@ -1,14 +1,22 @@
 import { Request, Response } from "express";
 import Owner from "../models/Owner"; // Modèle Owner
 import Retour from "../library/Retour";
+import Customer from "../models/Customer";
 const SHA256 = require("crypto-js/sha256");
 const encBase64 = require("crypto-js/enc-base64");
 const uid2 = require("uid2");
 // Créer un nouveau propriétaire (Owner)
 const createOwner = async (req: Request, res: Response) => {
   try {
-    const { email, name, firstname, phoneNumber, password, passwordConfirmed } =
-      req.body;
+    const {
+      email,
+      name,
+      firstname,
+      customerId,
+      phoneNumber,
+      password,
+      passwordConfirmed,
+    } = req.body;
 
     const token: string = uid2(26);
     const salt: string = uid2(26);
@@ -35,6 +43,7 @@ const createOwner = async (req: Request, res: Response) => {
     });
 
     if (password && password === passwordConfirmed) {
+      const customerFinded = await Customer.findById(customerId);
       // Sauvegarder dans la base de données
       await owner.save();
       // Retourner le propriétaire créé

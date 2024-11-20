@@ -33,6 +33,7 @@ const customerSchema = new Schema<ICustomer>({
   establishmentFavorites: [
     { type: Schema.Types.ObjectId, ref: "Etablishment" },
   ], // Référence vers les établissements favoris du client
+  ownerAccount: { type: Schema.Types.ObjectId, ref: "Owner" },
   token: String,
   hash: String,
   salt: String,
