@@ -53,6 +53,7 @@ router.post(
           path: "eventsFavorites",
           model: "Event",
         },
+        { path: "ownerAccount", model: "Owner" },
       ]);
       if (!customerFinded) {
         Retour.error("Account was not found");
