@@ -43,13 +43,14 @@ const AdminIsAuthenticated = async (
 
       // Pour les autres routes, ajouter l'utilisateur à req.body et passer à la suite
       req.body.admin = CustomerFinded;
+
       // Vérifier le statut premium si requis par d'autres routes
-      if (!CustomerFinded.premiumStatus && !isLoginRoute) {
-        Retour.warn("Unauthorized, premium status required");
-        return res
-          .status(401)
-          .json({ error: "Unauthorized, premium status required" });
-      }
+      // if (!CustomerFinded.premiumStatus && !isLoginRoute) {
+      //   Retour.warn("Unauthorized, premium status required");
+      //   return res
+      //     .status(401)
+      //     .json({ error: "Unauthorized, premium status required" });
+      // }
 
       return next();
     } else {

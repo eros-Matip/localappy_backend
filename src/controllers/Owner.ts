@@ -6,7 +6,15 @@ const SHA256 = require("crypto-js/sha256");
 const encBase64 = require("crypto-js/enc-base64");
 const uid2 = require("uid2");
 // Créer un nouveau propriétaire (Owner)
-const createOwner = async (req: Request, res: Response) => {
+import twilio from "twilio";
+
+// Twilio configuration
+const accountSid = process.env.TWILIO_ACCOUNT_SID;
+const authToken = process.env.TWILIO_AUTH_TOKEN;
+const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
+const client = twilio(accountSid, authToken);
+
+export const createOwner = async (req: Request, res: Response) => {
   try {
     const {
       email,
@@ -18,17 +26,55 @@ const createOwner = async (req: Request, res: Response) => {
       passwordConfirmed,
     } = req.body;
 
+    if (
+      !email ||
+      !name ||
+      !firstname ||
+      !phoneNumber ||
+      !password ||
+      !passwordConfirmed
+    ) {
+      return res.status(400).json({ error: "All fields are required" });
+    }
+
+    if (password !== passwordConfirmed) {
+      return res.status(400).json({ error: "Passwords do not match" });
+    }
+
+    const ownerFinded = await Owner.findOne({ email });
+    if (ownerFinded) {
+      return res.status(400).json({ error: "Account already exists" });
+    }
+
+    const customerFinded = await Customer.findById(customerId);
+    if (!customerFinded) {
+      return res.status(404).json({ error: "Customer not found" });
+    }
+
+    // Generate password hash and salt
     const token: string = uid2(26);
     const salt: string = uid2(26);
     const hash: string = SHA256(password + salt).toString(encBase64);
 
-    // Créer un nouvel Owner
-    const ownerFinded = await Owner.findOne({ email });
-    if (ownerFinded) {
-      Retour.error("Account finded");
-      return res.status(404).send("Account finded");
+    // Generate a 6-digit verification code
+    const verificationCode = Math.floor(100000 + Math.random() * 900000);
+
+    // Try to send the SMS first
+    try {
+      await client.messages.create({
+        body: `Votre code d'activation est: ${verificationCode}`,
+        from: twilioPhoneNumber,
+        to: `+${phoneNumber}`, // Ensure phoneNumber is in international format
+      });
+    } catch (smsError) {
+      console.error("Twilio error:", smsError);
+      return res.status(500).json({
+        error: "Failed to send SMS verification code",
+        details: smsError,
+      });
     }
 
+    // Create new owner only after successful SMS sending
     const owner = new Owner({
       email,
       account: {
@@ -40,20 +86,19 @@ const createOwner = async (req: Request, res: Response) => {
       hash,
       salt,
       establishments: [],
+      isVerified: false,
+      verificationCode,
+      customerAccount: customerFinded,
     });
 
-    if (password && password === passwordConfirmed) {
-      const customerFinded = await Customer.findById(customerId);
-      // Sauvegarder dans la base de données
-      await owner.save();
-      // Retourner le propriétaire créé
-      Retour.info("Owner created");
-      return res.status(201).json(owner);
-    } else {
-      Retour.error("passwords arent similar");
-      return res.status(404).json("passwords arent similar");
-    }
+    await owner.save();
+
+    return res.status(201).json({
+      message: "Owner created. Verification code sent via SMS.",
+      ownerId: owner._id,
+    });
   } catch (error) {
+    console.error("Error creating owner:", error);
     return res
       .status(500)
       .json({ error: "Failed to create owner", details: error });

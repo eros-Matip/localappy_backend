@@ -41,11 +41,11 @@ import EstablishmentRoutes from "./routes/Establishment";
 import CustomerRoutes from "./routes/Customer";
 import LoginRoute from "./routes/Login";
 import socialLoginRoute from "./routes/LoginBySocial";
+import verifPhoneRoute from "./routes/VerifCode";
 
 // FUNCTIONS
 import Logging from "./library/Logging";
 import AdminIsAuthenticated from "./middlewares/IsAuthenticated";
-import Event from "./models/Event";
 import Theme from "./models/Theme";
 
 // The server start only if mongo is already connected
@@ -99,6 +99,7 @@ const startServer = () => {
   router.use("/customer/", CustomerRoutes);
   router.use(LoginRoute);
   router.use(socialLoginRoute);
+  router.use(verifPhoneRoute);
   /** Healthcheck */
 
   router.all(

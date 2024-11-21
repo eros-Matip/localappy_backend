@@ -56,7 +56,7 @@ export default interface ICustomer extends Document {
       ref: "Customer";
     },
   ];
-  ownerAccount: { type: Types.ObjectId; ref: "Owner" };
+  ownerAccount: Types.ObjectId;
   token: string;
   hash: string;
   salt: string;
