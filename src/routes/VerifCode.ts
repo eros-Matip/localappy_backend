@@ -49,7 +49,7 @@ router.post(
         try {
           await client.messages.create({
             body: `Votre nouveau code de vérification est : ${newVerificationCode}`,
-            from: twilioPhoneNumber,
+            from: "locaLappy",
             to: `+${owner.account.phoneNumber}`, // Assurez-vous que phoneNumber est en format international
           });
 

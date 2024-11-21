@@ -63,7 +63,7 @@ export const createOwner = async (req: Request, res: Response) => {
     try {
       await client.messages.create({
         body: `Votre code d'activation est: ${verificationCode}`,
-        from: twilioPhoneNumber,
+        from: "locaLappy",
         to: `+${phoneNumber}`, // Ensure phoneNumber is in international format
       });
     } catch (smsError) {
