@@ -11,7 +11,6 @@ import twilio from "twilio";
 // Twilio configuration
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
-const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
 const client = twilio(accountSid, authToken);
 
 export const createOwner = async (req: Request, res: Response) => {
@@ -34,20 +33,24 @@ export const createOwner = async (req: Request, res: Response) => {
       !password ||
       !passwordConfirmed
     ) {
+      Retour.error("All fields are required");
       return res.status(400).json({ error: "All fields are required" });
     }
 
     if (password !== passwordConfirmed) {
+      Retour.error("Passwords do not match");
       return res.status(400).json({ error: "Passwords do not match" });
     }
 
     const ownerFinded = await Owner.findOne({ email });
     if (ownerFinded) {
+      Retour.error("Account already exists");
       return res.status(400).json({ error: "Account already exists" });
     }
 
     const customerFinded = await Customer.findById(customerId);
     if (!customerFinded) {
+      Retour.error("Customer not found");
       return res.status(404).json({ error: "Customer not found" });
     }
 
@@ -59,15 +62,26 @@ export const createOwner = async (req: Request, res: Response) => {
     // Generate a 6-digit verification code
     const verificationCode = Math.floor(100000 + Math.random() * 900000);
 
+    // Vérifier et formater le numéro de téléphone si présent
+    const formattedPhoneNumber = phoneNumber
+      .replace(/\D/g, "")
+      .replace(/^0/, "33");
+
+    if (!/^(\+33)[6-7]\d{8}$/.test(formattedPhoneNumber)) {
+      Retour.error("Invalid phone number format");
+      return res.status(400).json({ error: "Invalid phone number format" });
+    }
+
     // Try to send the SMS first
     try {
       await client.messages.create({
         body: `Votre code d'activation est: ${verificationCode}`,
         from: "locaLappy",
-        to: `+${phoneNumber}`, // Ensure phoneNumber is in international format
+        to: `+${formattedPhoneNumber}`, // Ensure phoneNumber is in international format
       });
     } catch (smsError) {
       console.error("Twilio error:", smsError);
+      Retour.error("Twilio error");
       return res.status(500).json({
         error: "Failed to send SMS verification code",
         details: smsError,
@@ -93,12 +107,14 @@ export const createOwner = async (req: Request, res: Response) => {
 
     await owner.save();
 
+    Retour.info("Owner created. Verification code sent via SMS.");
     return res.status(201).json({
       message: "Owner created. Verification code sent via SMS.",
       ownerId: owner._id,
     });
   } catch (error) {
     console.error("Error creating owner:", error);
+    Retour.error("Failed to create owner");
     return res
       .status(500)
       .json({ error: "Failed to create owner", details: error });

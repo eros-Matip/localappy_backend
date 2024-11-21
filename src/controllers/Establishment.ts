@@ -53,6 +53,7 @@ const createEstablishment = async (req: Request, res: Response) => {
 
     // Vérifier que les informations de l'entreprise ont bien été récupérées
     if (!entreprise) {
+      Retour.error("establishment not found in INSEE database");
       return res.status(404).json({
         message: "establishment not found in INSEE database",
       });
@@ -77,6 +78,9 @@ const createEstablishment = async (req: Request, res: Response) => {
     });
 
     if (existingEstablishment) {
+      Retour.error(
+        "An establishment with the same name and location already exists"
+      );
       return res.status(409).json({
         message:
           "An establishment with the same name and location already exists",
