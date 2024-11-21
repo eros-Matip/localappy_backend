@@ -67,7 +67,7 @@ export const createOwner = async (req: Request, res: Response) => {
       .replace(/\D/g, "")
       .replace(/^0/, "33");
 
-    if (!/^(\+33)[6-7]\d{8}$/.test(formattedPhoneNumber)) {
+    if (!/^(33)[6-7]\d{8}$/.test(formattedPhoneNumber)) {
       Retour.error("Invalid phone number format");
       return res.status(400).json({ error: "Invalid phone number format" });
     }
