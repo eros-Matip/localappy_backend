@@ -43,6 +43,7 @@ router.post("/socialLogin", async (req: Request, res: Response) => {
         path: "eventsFavorites",
         model: "Event",
       },
+      { path: "ownerAccount", model: "Owner" },
     ]);
 
     // Si l'utilisateur n'existe pas, créez un nouveau compte
