@@ -18,10 +18,17 @@ const AdminIsAuthenticated = async (
   // Vérifier la présence du header d'autorisation
   if (req.headers.authorization) {
     const token = req.headers.authorization.replace("Bearer ", "");
-    const CustomerFinded = await Customer.findOne({ token }).populate({
-      path: "themesFavorites",
-      model: "Theme",
-    });
+    const CustomerFinded = await Customer.findOne({ token }).populate([
+      {
+        path: "themesFavorites",
+        model: "Theme",
+      },
+      {
+        path: "eventsFavorites",
+        model: "Event",
+      },
+      { path: "ownerAccount", model: "Owner" },
+    ]);
 
     // Si un utilisateur est trouvé avec ce token
     if (CustomerFinded) {
