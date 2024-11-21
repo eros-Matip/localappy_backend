@@ -19,7 +19,14 @@ router.post(
       if (req.body.admin) {
         const customerFindedByToken = await Customer.findById(
           req.body.admin
-        ).populate({ path: "themesFavorites", model: "Theme" });
+        ).populate([
+          { path: "themesFavorites", model: "Theme" },
+          {
+            path: "eventsFavorites",
+            model: "Event",
+          },
+          { path: "ownerAccount", model: "Owner" },
+        ]);
         // Renvoyer les informations si l'utilisateur est authentifié par token
         return res.status(200).json({
           message: "Logged in with token",
