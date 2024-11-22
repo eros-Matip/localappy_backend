@@ -39,7 +39,10 @@ router.post(
       // Vérifier si le nombre de tentatives est atteint
       if (owner.attempts >= 3) {
         // Générer un nouveau code
-        const newVerificationCode = Math.floor(100000 + Math.random() * 900000);
+        const newVerificationCode = Math.floor(
+          100000 + Math.random() * 900000
+        ).toString(); // Convertir en string
+
         // Mettre à jour le code et réinitialiser les tentatives
         owner.verificationCode = newVerificationCode;
         owner.attempts = 0;
@@ -66,12 +69,12 @@ router.post(
       }
 
       // Vérifier si le code correspond
-      if (owner.verificationCode === parseInt(verificationCode, 10)) {
+      if (owner.verificationCode === verificationCode) {
         customerFinded.ownerAccount = owner._id as mongoose.Types.ObjectId;
         await customerFinded.save();
 
         owner.isVerified = true;
-        owner.verificationCode = null;
+        owner.verificationCode = null; // Réinitialiser après vérification
         owner.attempts = 0;
         await owner.save();
 
@@ -79,7 +82,7 @@ router.post(
           .status(200)
           .json({ message: "Phone number verified successfully" });
       } else {
-        // Incrémenter le nombre de tentatives
+        // Incrémenter les tentatives en cas d'échec
         owner.attempts += 1;
         await owner.save();
 

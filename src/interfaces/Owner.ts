@@ -22,7 +22,7 @@ export default interface IOwner extends Document {
   isValidated: { type: Boolean; default: false };
   isVerified: boolean; // Champ pour indiquer si le compte est vérifié
   attempts: number; // Ajout du champ pour suivre les tentatives
-  verificationCode: number | null;
+  verificationCode: string | null;
   token: string;
   hash: string;
   salt: string;

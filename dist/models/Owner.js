@@ -26,7 +26,7 @@ const OwnerSchema = new mongoose_1.Schema({
     isValidated: { type: Boolean, default: false },
     isVerified: { type: Boolean, default: false },
     attempts: { type: Number, default: 0 },
-    verificationCode: { type: Number, default: null },
+    verificationCode: { type: String, default: null },
     token: { type: String },
     hash: { type: String, required: true },
     salt: { type: String, required: true },
