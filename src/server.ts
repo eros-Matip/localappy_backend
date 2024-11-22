@@ -42,7 +42,8 @@ import CustomerRoutes from "./routes/Customer";
 import LoginRoute from "./routes/Login";
 import socialLoginRoute from "./routes/LoginBySocial";
 import verifPhoneRoute from "./routes/VerifCode";
-
+import ContactRoutes from "./routes/Contact";
+import AdminRoutes from "./routes/Admin";
 // FUNCTIONS
 import Logging from "./library/Logging";
 import AdminIsAuthenticated from "./middlewares/IsAuthenticated";
@@ -98,6 +99,8 @@ const startServer = () => {
   router.use("/establishment/", EstablishmentRoutes);
   router.use("/customer/", CustomerRoutes);
   router.use("/customer/", CustomerRoutes);
+  router.use("/contact/", ContactRoutes);
+  router.use("/admin/", AdminRoutes);
   router.use(LoginRoute);
   router.use(socialLoginRoute);
   router.use(verifPhoneRoute);

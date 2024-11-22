@@ -3,7 +3,7 @@ import Customer from "../models/Customer";
 import Retour from "../library/Retour";
 const uid2 = require("uid2");
 
-const AdminIsAuthenticated = async (
+const CustomerIsAuthenticated = async (
   req: Request,
   res: Response,
   next: NextFunction
@@ -71,4 +71,4 @@ const AdminIsAuthenticated = async (
   }
 };
 
-export default AdminIsAuthenticated;
+export default CustomerIsAuthenticated;
