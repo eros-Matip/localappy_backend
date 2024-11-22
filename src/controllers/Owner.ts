@@ -25,8 +25,8 @@ agenda.define("delete unverified owner", async (job: Job) => {
     const owner = await Owner.findById(ownerId);
 
     if (owner && !owner.isVerified) {
+      Retour.log(`Unverified owner ${owner.email} deleted after 1 hour.`);
       await Owner.findByIdAndDelete(ownerId);
-      Retour.log(`Unverified owner with ID ${ownerId} deleted after 1 hour.`);
     } else if (owner && owner.isVerified) {
       Retour.log(`Owner with ID ${ownerId} is verified. No action taken.`);
     } else {
