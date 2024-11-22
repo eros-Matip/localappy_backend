@@ -7,11 +7,41 @@ const encBase64 = require("crypto-js/enc-base64");
 const uid2 = require("uid2");
 // Créer un nouveau propriétaire (Owner)
 import twilio from "twilio";
+import { Job, Agenda } from "agenda";
+import config from "../config/config";
 
 // Twilio configuration
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
 const client = twilio(accountSid, authToken);
+
+// Configurer Agenda avec MongoDB
+const agenda = new Agenda({ db: { address: `${config.mongooseUrl}` } });
+
+// Définir la tâche de suppression
+agenda.define("delete unverified owner", async (job: Job) => {
+  try {
+    const { ownerId } = job.attrs.data;
+    const owner = await Owner.findById(ownerId);
+
+    if (owner && !owner.isVerified) {
+      await Owner.findByIdAndDelete(ownerId);
+      Retour.log(`Unverified owner with ID ${ownerId} deleted after 1 hour.`);
+    } else if (owner && owner.isVerified) {
+      Retour.log(`Owner with ID ${ownerId} is verified. No action taken.`);
+    } else {
+      Retour.log(`Owner with ID ${ownerId} is verified. No action taken.`);
+    }
+  } catch (error) {
+    Retour.error(
+      `Failed to delete unverified owner with ID ${job.attrs.data.ownerId}`
+    );
+    console.error(
+      `Failed to delete unverified owner with ID ${job.attrs.data.ownerId}:`,
+      error
+    );
+  }
+});
 
 export const createOwner = async (req: Request, res: Response) => {
   try {
@@ -54,15 +84,12 @@ export const createOwner = async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Customer not found" });
     }
 
-    // Generate password hash and salt
     const token: string = uid2(26);
     const salt: string = uid2(26);
     const hash: string = SHA256(password + salt).toString(encBase64);
 
-    // Generate a 6-digit verification code
     const verificationCode = Math.floor(100000 + Math.random() * 900000);
 
-    // Vérifier et formater le numéro de téléphone si présent
     const formattedPhoneNumber = phoneNumber
       .replace(/\D/g, "")
       .replace(/^0/, "33");
@@ -72,12 +99,11 @@ export const createOwner = async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Invalid phone number format" });
     }
 
-    // Try to send the SMS first
     try {
       await client.messages.create({
         body: `Votre code d'activation est: ${verificationCode}`,
         from: "locaLappy",
-        to: `+${formattedPhoneNumber}`, // Ensure phoneNumber is in international format
+        to: `+${formattedPhoneNumber}`,
       });
     } catch (smsError) {
       console.error("Twilio error:", smsError);
@@ -88,7 +114,6 @@ export const createOwner = async (req: Request, res: Response) => {
       });
     }
 
-    // Create new owner only after successful SMS sending
     const owner = new Owner({
       email,
       account: {
@@ -106,6 +131,12 @@ export const createOwner = async (req: Request, res: Response) => {
     });
 
     await owner.save();
+
+    // Planifier la suppression après 1 heure
+    await agenda.start();
+    await agenda.schedule("in 1 hour", "delete unverified owner", {
+      ownerId: owner._id,
+    });
 
     Retour.info("Owner created. Verification code sent via SMS.");
     return res.status(201).json({
@@ -183,4 +214,5 @@ const deleteOwner = async (req: Request, res: Response) => {
       .json({ error: "Failed to delete owner", details: error });
   }
 };
+
 export default { createOwner, getOwnerById, updateOwner, deleteOwner };
