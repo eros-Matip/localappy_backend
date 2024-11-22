@@ -53,6 +53,7 @@ const startServer = () => {
   // Check tous les Jours à 00:00 si nous avons changé de mois.
   cron.schedule("0 0 0 * * *", () => {
     console.log("hello world");
+    // Mettre en place la suppression d'un compte Owner S'il n'est pas vérifié afin de supprimé ce qui sont passé tout de meme
   });
 
   const allowedOrigins = ["http://localhost:3000"];

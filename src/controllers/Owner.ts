@@ -142,6 +142,7 @@ export const createOwner = async (req: Request, res: Response) => {
     return res.status(201).json({
       message: "Owner created. Verification code sent via SMS.",
       ownerId: owner._id,
+      token: owner.token,
     });
   } catch (error) {
     console.error("Error creating owner:", error);
