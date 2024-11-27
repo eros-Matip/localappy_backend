@@ -170,212 +170,212 @@ const AllEvents = require("../../Events/index.json");
 
 // Fonction utilitaire pour normaliser les images
 
-const normalizeImages = (images: any): string[] => {
-  if (!images) return [];
-  try {
-    if (typeof images === "string") {
-      images = JSON.parse(images);
-    }
-    return Array.isArray(images)
-      ? images
-          .flat(Infinity)
-          .filter((img) => typeof img === "string" && img.trim() !== "")
-      : [];
-  } catch (err) {
-    console.error("Erreur de normalisation des images :", err);
-    return [];
-  }
-};
+// const normalizeImages = (images: any): string[] => {
+//   if (!images) return [];
+//   try {
+//     if (typeof images === "string") {
+//       images = JSON.parse(images);
+//     }
+//     return Array.isArray(images)
+//       ? images
+//           .flat(Infinity)
+//           .filter((img) => typeof img === "string" && img.trim() !== "")
+//       : [];
+//   } catch (err) {
+//     console.error("Erreur de normalisation des images :", err);
+//     return [];
+//   }
+// };
 
-export const updateOrCreateEventFromJSON = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  try {
-    const basePath = path.join(__dirname, "..", "..", "events", "objects");
+// export const updateOrCreateEventFromJSON = async (
+//   req: Request,
+//   res: Response,
+//   next: NextFunction
+// ) => {
+//   try {
+//     const basePath = path.join(__dirname, "..", "..", "events", "objects");
 
-    for (const event of AllEvents) {
-      try {
-        // Lecture du fichier JSON
-        const fullPath = path.join(basePath, event.file);
-        const fileData = await readFile(fullPath, "utf-8");
-        const eventData = JSON.parse(fileData);
-        const theme = eventData["@type"] || "Thème inconnu";
+//     for (const event of AllEvents) {
+//       try {
+//         // Lecture du fichier JSON
+//         const fullPath = path.join(basePath, event.file);
+//         const fileData = await readFile(fullPath, "utf-8");
+//         const eventData = JSON.parse(fileData);
+//         const theme = eventData["@type"] || "Thème inconnu";
 
-        // Extraction des données
-        const title = eventData["rdfs:label"]?.fr?.[0] || "Titre par défaut";
-        const description =
-          eventData["hasDescription"]?.[0]?.["dc:description"]?.fr?.[0] ||
-          eventData["rdfs:comment"]?.fr?.[0] ||
-          "Description non disponible";
+//         // Extraction des données
+//         const title = eventData["rdfs:label"]?.fr?.[0] || "Titre par défaut";
+//         const description =
+//           eventData["hasDescription"]?.[0]?.["dc:description"]?.fr?.[0] ||
+//           eventData["rdfs:comment"]?.fr?.[0] ||
+//           "Description non disponible";
 
-        // Extraction et formatage de l'adresse
-        const addressData = eventData["isLocatedAt"]?.[0]?.["schema:address"];
-        let address = "Adresse par défaut";
-        if (addressData && Array.isArray(addressData)) {
-          const firstAddress = addressData[0];
-          const streetAddress = Array.isArray(
-            firstAddress["schema:streetAddress"]
-          )
-            ? firstAddress["schema:streetAddress"].join(", ")
-            : firstAddress["schema:streetAddress"] || "Rue inconnue";
-          const postalCode =
-            firstAddress["schema:postalCode"] || "Code postal inconnu";
-          const addressLocality =
-            firstAddress["schema:addressLocality"] || "Ville inconnue";
-          address = `${streetAddress}, ${postalCode}, ${addressLocality}`;
-        }
+//         // Extraction et formatage de l'adresse
+//         const addressData = eventData["isLocatedAt"]?.[0]?.["schema:address"];
+//         let address = "Adresse par défaut";
+//         if (addressData && Array.isArray(addressData)) {
+//           const firstAddress = addressData[0];
+//           const streetAddress = Array.isArray(
+//             firstAddress["schema:streetAddress"]
+//           )
+//             ? firstAddress["schema:streetAddress"].join(", ")
+//             : firstAddress["schema:streetAddress"] || "Rue inconnue";
+//           const postalCode =
+//             firstAddress["schema:postalCode"] || "Code postal inconnu";
+//           const addressLocality =
+//             firstAddress["schema:addressLocality"] || "Ville inconnue";
+//           address = `${streetAddress}, ${postalCode}, ${addressLocality}`;
+//         }
 
-        // Normalisation des images
-        let image: string[] = [];
-        if (
-          eventData.hasMainRepresentation &&
-          Array.isArray(eventData.hasMainRepresentation)
-        ) {
-          const mainRepresentation = eventData.hasMainRepresentation[0];
-          const resource =
-            mainRepresentation["ebucore:hasRelatedResource"]?.[0]?.[
-              "ebucore:locator"
-            ];
-          image = normalizeImages(resource);
-        }
+//         // Normalisation des images
+//         let image: string[] = [];
+//         if (
+//           eventData.hasMainRepresentation &&
+//           Array.isArray(eventData.hasMainRepresentation)
+//         ) {
+//           const mainRepresentation = eventData.hasMainRepresentation[0];
+//           const resource =
+//             mainRepresentation["ebucore:hasRelatedResource"]?.[0]?.[
+//               "ebucore:locator"
+//             ];
+//           image = normalizeImages(resource);
+//         }
 
-        // Extraction des informations de contact
-        let phone = "Téléphone inconnu";
-        let email = "Email inconnu";
-        if (eventData.hasContact && Array.isArray(eventData.hasContact)) {
-          const contactInfo = eventData.hasContact[0];
-          phone = contactInfo["schema:telephone"]?.[0] || "Téléphone inconnu";
-          email = contactInfo["schema:email"]?.[0] || "Email inconnu";
-        }
+//         // Extraction des informations de contact
+//         let phone = "Téléphone inconnu";
+//         let email = "Email inconnu";
+//         if (eventData.hasContact && Array.isArray(eventData.hasContact)) {
+//           const contactInfo = eventData.hasContact[0];
+//           phone = contactInfo["schema:telephone"]?.[0] || "Téléphone inconnu";
+//           email = contactInfo["schema:email"]?.[0] || "Email inconnu";
+//         }
 
-        // Extraction des informations de l'organisateur
-        const organizerData = eventData["hasBeenCreatedBy"];
-        const organizer = {
-          establishment: organizerData?.establishment || null,
-          legalName:
-            organizerData?.["schema:legalName"] || "Organisateur inconnu",
-          email,
-          phone,
-        };
+//         // Extraction des informations de l'organisateur
+//         const organizerData = eventData["hasBeenCreatedBy"];
+//         const organizer = {
+//           establishment: organizerData?.establishment || null,
+//           legalName:
+//             organizerData?.["schema:legalName"] || "Organisateur inconnu",
+//           email,
+//           phone,
+//         };
 
-        // Gestion des prix
-        let price = 0;
-        let priceCurrency = "EUR";
-        if (eventData["offers"] && Array.isArray(eventData["offers"])) {
-          const offer = eventData["offers"][0];
-          if (offer?.["schema:priceSpecification"]?.[0]) {
-            const priceSpec = offer["schema:priceSpecification"][0];
-            price = parseFloat(priceSpec?.["schema:price"]) || 0;
-            priceCurrency = priceSpec?.["schema:priceCurrency"] || "EUR";
-          }
-        }
+//         // Gestion des prix
+//         let price = 0;
+//         let priceCurrency = "EUR";
+//         if (eventData["offers"] && Array.isArray(eventData["offers"])) {
+//           const offer = eventData["offers"][0];
+//           if (offer?.["schema:priceSpecification"]?.[0]) {
+//             const priceSpec = offer["schema:priceSpecification"][0];
+//             price = parseFloat(priceSpec?.["schema:price"]) || 0;
+//             priceCurrency = priceSpec?.["schema:priceCurrency"] || "EUR";
+//           }
+//         }
 
-        // Géocodage de l'adresse
-        let coordinates = { lat: 0, lng: 0 };
-        try {
-          const responseApiGouv = await axios.get(
-            `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(address)}`
-          );
-          const features = responseApiGouv.data.features;
+//         // Géocodage de l'adresse
+//         let coordinates = { lat: 0, lng: 0 };
+//         try {
+//           const responseApiGouv = await axios.get(
+//             `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(address)}`
+//           );
+//           const features = responseApiGouv.data.features;
 
-          if (features?.[0]?.geometry?.coordinates) {
-            coordinates = {
-              lat: features[0].geometry.coordinates[1],
-              lng: features[0].geometry.coordinates[0],
-            };
-          } else {
-            console.warn(
-              `Coordonnées non disponibles pour l'adresse : ${address}`
-            );
-          }
-        } catch (geoError) {
-          console.error(
-            "Erreur lors de la récupération des coordonnées :",
-            geoError
-          );
-        }
+//           if (features?.[0]?.geometry?.coordinates) {
+//             coordinates = {
+//               lat: features[0].geometry.coordinates[1],
+//               lng: features[0].geometry.coordinates[0],
+//             };
+//           } else {
+//             console.warn(
+//               `Coordonnées non disponibles pour l'adresse : ${address}`
+//             );
+//           }
+//         } catch (geoError) {
+//           console.error(
+//             "Erreur lors de la récupération des coordonnées :",
+//             geoError
+//           );
+//         }
 
-        // Gestion des événements récurrents
-        for (const period of eventData["takesPlaceAt"] || []) {
-          const startingDate = new Date(
-            `${period["startDate"]}T${period["startTime"] || "00:00:00"}`
-          );
-          const endingDate = new Date(
-            `${period["endDate"]}T${period["endTime"] || "23:59:59"}`
-          );
+//         // Gestion des événements récurrents
+//         for (const period of eventData["takesPlaceAt"] || []) {
+//           const startingDate = new Date(
+//             `${period["startDate"]}T${period["startTime"] || "00:00:00"}`
+//           );
+//           const endingDate = new Date(
+//             `${period["endDate"]}T${period["endTime"] || "23:59:59"}`
+//           );
 
-          // Vérification d'existence
-          const existingEvent = await Event.findOne({ title, startingDate });
+//           // Vérification d'existence
+//           const existingEvent = await Event.findOne({ title, startingDate });
 
-          if (existingEvent) {
-            // Vérifiez si des changements sont nécessaires
-            const hasChanges =
-              existingEvent.address !== address ||
-              existingEvent.location.lat !== coordinates.lat ||
-              existingEvent.location.lng !== coordinates.lng ||
-              JSON.stringify(existingEvent.image) !== JSON.stringify(image) ||
-              existingEvent.startingDate.getTime() !== startingDate.getTime() ||
-              existingEvent.endingDate.getTime() !== endingDate.getTime();
+//           if (existingEvent) {
+//             // Vérifiez si des changements sont nécessaires
+//             const hasChanges =
+//               existingEvent.address !== address ||
+//               existingEvent.location.lat !== coordinates.lat ||
+//               existingEvent.location.lng !== coordinates.lng ||
+//               JSON.stringify(existingEvent.image) !== JSON.stringify(image) ||
+//               existingEvent.startingDate.getTime() !== startingDate.getTime() ||
+//               existingEvent.endingDate.getTime() !== endingDate.getTime();
 
-            if (hasChanges) {
-              // Mise à jour
-              existingEvent.description = description;
-              existingEvent.address = address;
-              existingEvent.location = coordinates;
-              existingEvent.image = image.slice(0, 1) as [string];
-              existingEvent.priceSpecification = {
-                minPrice: price,
-                maxPrice: price,
-                priceCurrency,
-              };
-              existingEvent.organizer = organizer;
-              existingEvent.theme = theme;
-              existingEvent.startingDate = startingDate;
-              existingEvent.endingDate = endingDate;
+//             if (hasChanges) {
+//               // Mise à jour
+//               existingEvent.description = description;
+//               existingEvent.address = address;
+//               existingEvent.location = coordinates;
+//               existingEvent.image = image.slice(0, 1) as [string];
+//               existingEvent.priceSpecification = {
+//                 minPrice: price,
+//                 maxPrice: price,
+//                 priceCurrency,
+//               };
+//               existingEvent.organizer = organizer;
+//               existingEvent.theme = theme;
+//               existingEvent.startingDate = startingDate;
+//               existingEvent.endingDate = endingDate;
 
-              await existingEvent.save();
-              console.info(`Événement mis à jour : ${existingEvent.title}`);
-            }
-          } else {
-            // Création
-            const newEvent = new Event({
-              title,
-              description,
-              address,
-              theme,
-              location: coordinates,
-              image,
-              priceSpecification: {
-                minPrice: price,
-                maxPrice: price,
-                priceCurrency,
-              },
-              organizer,
-              startingDate,
-              endingDate,
-            });
+//               await existingEvent.save();
+//               console.info(`Événement mis à jour : ${existingEvent.title}`);
+//             }
+//           } else {
+//             // Création
+//             const newEvent = new Event({
+//               title,
+//               description,
+//               address,
+//               theme,
+//               location: coordinates,
+//               image,
+//               priceSpecification: {
+//                 minPrice: price,
+//                 maxPrice: price,
+//                 priceCurrency,
+//               },
+//               organizer,
+//               startingDate,
+//               endingDate,
+//             });
 
-            await newEvent.save();
-            console.info(`Événement créé avec succès : ${newEvent.title}`);
-          }
-        }
-      } catch (eventError) {
-        console.error(`Erreur avec l'événement : ${event.file}`, eventError);
-      }
-    }
+//             await newEvent.save();
+//             console.info(`Événement créé avec succès : ${newEvent.title}`);
+//           }
+//         }
+//       } catch (eventError) {
+//         console.error(`Erreur avec l'événement : ${event.file}`, eventError);
+//       }
+//     }
 
-    return res
-      .status(201)
-      .json({ message: "Tous les événements ont été traités avec succès." });
-  } catch (error) {
-    console.error("Erreur lors du traitement des événements :", error);
-    return res
-      .status(500)
-      .json({ message: "Erreur lors du traitement des événements", error });
-  }
-};
+//     return res
+//       .status(201)
+//       .json({ message: "Tous les événements ont été traités avec succès." });
+//   } catch (error) {
+//     console.error("Erreur lors du traitement des événements :", error);
+//     return res
+//       .status(500)
+//       .json({ message: "Erreur lors du traitement des événements", error });
+//   }
+// };
 
 const createEventForAnEstablishment = async (req: Request, res: Response) => {
   try {
@@ -902,7 +902,7 @@ export default {
   getEventsByPosition,
   getEventByDate,
   updateEvent,
-  updateOrCreateEventFromJSON,
+  // updateOrCreateEventFromJSON,
   deleteEvent,
   deleteDuplicateEvents,
 };

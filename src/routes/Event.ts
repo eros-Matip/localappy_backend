@@ -4,10 +4,10 @@ import OwnerIsAuthenticated from "../middlewares/OwnerIsAuthenticated";
 
 const router = express.Router();
 // router.post("/create/", controller.createEventFromJSON);
-router.post(
-  "/updateOrCreateEventFromJSON/",
-  controller.updateOrCreateEventFromJSON
-);
+// router.post(
+//   "/updateOrCreateEventFromJSON/",
+//   controller.updateOrCreateEventFromJSON
+// );
 router.post(
   "/createForAnEstablishment/:establishmentId",
   OwnerIsAuthenticated,
