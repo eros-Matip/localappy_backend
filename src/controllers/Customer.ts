@@ -338,7 +338,7 @@ const deleteCustomer = async (req: Request, res: Response) => {
   return Customer.findByIdAndDelete(customerId)
     .then((customer) =>
       customer
-        ? res.status(200).json({ message: "CRE is deleted" })
+        ? res.status(200).json({ message: "Customer is deleted" })
         : res.status(404).json({ message: "Not found" })
     )
     .catch((error) => {

@@ -71,11 +71,9 @@ const createAdmin = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error("Erreur lors de la création de l'administrateur :", error);
-    return res
-      .status(500)
-      .json({
-        error: "Une erreur est survenue, veuillez réessayer plus tard.",
-      });
+    return res.status(500).json({
+      error: "Une erreur est survenue, veuillez réessayer plus tard.",
+    });
   }
 };
 
@@ -101,7 +99,7 @@ const deleteAdmin = async (req: Request, res: Response) => {
   return Admin.findByIdAndDelete(adminId)
     .then((admin) =>
       admin
-        ? res.status(200).json({ message: "CRE is deleted" })
+        ? res.status(200).json({ message: "Admin is deleted" })
         : res.status(404).json({ message: "Not found" })
     )
     .catch((error) => res.status(500).json({ error: error.message }));

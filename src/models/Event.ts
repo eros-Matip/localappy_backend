@@ -25,7 +25,7 @@ const eventSchema = new Schema<IEvent>({
     email: { type: String, default: "Email inconnu" },
     phone: { type: String, default: "Téléphone inconnu" },
   },
-  image: [{ type: String }],
+  image: [String],
   description: String,
   color: String,
 });
