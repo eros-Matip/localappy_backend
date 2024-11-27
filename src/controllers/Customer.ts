@@ -333,13 +333,11 @@ const addingOrRemoveFavorites = async (req: Request, res: Response) => {
 };
 
 const deleteCustomer = async (req: Request, res: Response) => {
-  const customerId = req.params.customerId;
-
-  return Customer.findByIdAndDelete(customerId)
+  return Customer.findByIdAndDelete(req.body.admin)
     .then((customer) =>
       customer
         ? res.status(200).json({ message: "Customer is deleted" })
-        : res.status(404).json({ message: "Not found" })
+        : res.status(404).json({ message: "Customer not found" })
     )
     .catch((error) => {
       Retour.error("Error catched");
