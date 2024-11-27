@@ -5,12 +5,12 @@ import Event from "../models/Event";
 import Retour from "../library/Retour";
 import Establishment from "../models/Establishment";
 
-import path from "path";
-import { readFile } from "fs/promises";
+// import path from "path";
+// import { readFile } from "fs/promises";
 
 // Utiliser promisify pour rendre les fonctions fs asynchrones
 
-const AllEvents = require("../../Events/index.json");
+// const AllEvents = require("../../Events/index.json");
 
 // Fonction de création d'événements
 // const createEventFromJSON = async (
