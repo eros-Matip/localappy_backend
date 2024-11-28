@@ -8,3 +8,4 @@ declare module "jsonwebtoken" {
   ) => { [key: string]: any };
   export { decode, sign, verify };
 }
+declare module "jwks-rsa";
