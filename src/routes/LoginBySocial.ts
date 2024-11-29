@@ -23,10 +23,10 @@ const getKey = (header: any, callback: any) => {
   });
 };
 
-const verifyAppleToken = (idToken: string) => {
+const verifyAppleToken = (accessToken: string) => {
   return new Promise((resolve, reject) => {
     jwt.verify(
-      idToken,
+      accessToken,
       getKey,
       {
         algorithms: ["RS256"],
@@ -43,19 +43,19 @@ const verifyAppleToken = (idToken: string) => {
 };
 
 router.post("/socialLogin", async (req: Request, res: Response) => {
-  const { provider, accessToken, idToken } = req.body;
+  const { provider, accessToken } = req.body;
 
-  if (!provider || (!accessToken && !idToken)) {
-    Retour.error("Provider and accessToken or idToken are required");
+  if (!provider || !accessToken) {
+    Retour.error("Provider and accessToken are required");
     return res
       .status(400)
-      .json({ message: "Provider and accessToken or idToken are required" });
+      .json({ message: "Provider and accessToken are required" });
   }
 
   try {
     let userData: any;
     console.log("provider", provider);
-    console.log("idToken", idToken);
+    console.log("accessToken", accessToken);
 
     if (provider === "google") {
       const googleResponse = await axios.get(
@@ -69,7 +69,7 @@ router.post("/socialLogin", async (req: Request, res: Response) => {
       userData = facebookResponse.data;
     } else if (provider === "apple") {
       try {
-        const decodedToken: any = await verifyAppleToken(idToken);
+        const decodedToken: any = await verifyAppleToken(accessToken);
         const { email, sub: appleUserId } = decodedToken;
 
         console.log("email", email);
