@@ -54,8 +54,6 @@ router.post("/socialLogin", async (req: Request, res: Response) => {
 
   try {
     let userData: any;
-    console.log("provider", provider);
-    console.log("accessToken", accessToken);
 
     if (provider === "google") {
       const googleResponse = await axios.get(
@@ -71,10 +69,6 @@ router.post("/socialLogin", async (req: Request, res: Response) => {
       try {
         const decodedToken: any = await verifyAppleToken(accessToken);
         const { email, sub: appleUserId } = decodedToken;
-
-        console.log("email", email);
-        console.log("appleUserId", appleUserId);
-        console.log("decodedToken", decodedToken);
 
         if (!email) {
           Retour.error("Apple ID token is missing email");
