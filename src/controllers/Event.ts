@@ -1000,7 +1000,7 @@ const getEventsByPosition = async (req: Request, res: Response) => {
       {
         $sort: { distance: 1 },
       },
-    ]);
+    ]).allowDiskUse(true);
 
     if (events.length === 0) {
       return res
