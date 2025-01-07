@@ -4,6 +4,7 @@ export default interface IEstablishment extends Document {
   name: string; // Nom de l’établissement
   type: string; // Type d'activité (café, restaurant, boutique, etc.)
   siret: String;
+  picture: { public_id: string; secure_url: string };
   address: {
     street: string; // Rue de l’établissement
     city: string; // Ville où se trouve l’établissement

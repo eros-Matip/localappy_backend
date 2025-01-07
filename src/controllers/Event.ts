@@ -6,11 +6,20 @@ import Retour from "../library/Retour";
 import Establishment from "../models/Establishment";
 
 // import path from "path";
-// import { readFile } from "fs/promises";
+import * as fs from "fs";
+import chalk from "chalk";
 
 // Utiliser promisify pour rendre les fonctions fs asynchrones
+/**
+ * Génère toutes les occurrences récurrentes pour un événement
+ * @param takesPlaceAt - Liste des périodes de récurrence
+ * @param openingHours - Informations sur les heures d'ouverture (opens, closes)
+ * * @param images - Tableau ou chaîne contenant les URLs d'images
+ * @returns Liste des occurrences avec dates et horaires
+ */
 
 // const AllEvents = require("../../Events/index.json");
+// const AllEventsForParis = require("../../Events/forParis.json");
 
 // Fonction de création d'événements
 // const createEventFromJSON = async (
@@ -168,212 +177,589 @@ import Establishment from "../models/Establishment";
 //   }
 // };
 
-// Fonction utilitaire pour normaliser les images
+// Fonction de validation de l'URL d'image
+const validateImageUrl = async (url: string): Promise<string> => {
+  if (!url || url === "Image par défaut") {
+    console.warn(
+      `URL non valide ou définie comme "Image par défaut" : ${url}.`
+    );
+    return url; // Considérer "Image par défaut" comme valide
+  }
 
-// const normalizeImages = (images: any): string[] => {
-//   if (!images) return [];
-//   try {
-//     if (typeof images === "string") {
-//       images = JSON.parse(images);
-//     }
-//     return Array.isArray(images)
-//       ? images
-//           .flat(Infinity)
-//           .filter((img) => typeof img === "string" && img.trim() !== "")
-//       : [];
-//   } catch (err) {
-//     console.error("Erreur de normalisation des images :", err);
-//     return [];
-//   }
-// };
+  try {
+    new URL(url); // Valide la syntaxe de l'URL
+  } catch (err) {
+    console.warn(`URL invalide : ${url}. Remplacement par 'Image par défaut'.`);
+    return "Image par défaut";
+  }
 
-// export const updateOrCreateEventFromJSON = async (
+  try {
+    const response = await axios.head(url, { timeout: 5000 });
+    if (
+      response.status === 200 &&
+      response.headers["content-type"]?.startsWith("image/")
+    ) {
+      return url; // URL valide
+    } else {
+      console.warn(`L'URL ne pointe pas vers une image valide : ${url}.`);
+      return "Image par défaut";
+    }
+  } catch (err) {
+    if (axios.isAxiosError(err)) {
+      console.warn(
+        `Erreur lors de la vérification de l'URL : ${url}.`,
+        `Status Code : ${err.response?.status || "Inconnu"}`
+      );
+      return "Image par défaut";
+    } else {
+      console.error(
+        `Erreur inattendue lors de la vérification de l'URL : ${url}`,
+        err
+      );
+    }
+    return "Image par défaut";
+  }
+};
+
+function extractImages(fileData: any): string[] {
+  let imageUrls: string[] = [];
+
+  // Rechercher les images dans hasMainRepresentation
+  if (fileData["hasMainRepresentation"]?.[0]?.["ebucore:hasRelatedResource"]) {
+    const resources =
+      fileData["hasMainRepresentation"][0]["ebucore:hasRelatedResource"];
+    resources.forEach((resource: any) => {
+      if (resource["ebucore:locator"]) {
+        imageUrls.push(...resource["ebucore:locator"]);
+      }
+    });
+  }
+
+  // Vérifier d'autres champs potentiels pour les images
+  if (fileData["schema:image"]) {
+    const schemaImages = Array.isArray(fileData["schema:image"])
+      ? fileData["schema:image"]
+      : [fileData["schema:image"]];
+    imageUrls.push(...schemaImages);
+  }
+
+  if (fileData["hasMedia"]) {
+    const mediaResources = fileData["hasMedia"];
+    mediaResources.forEach((media: any) => {
+      if (media["ebucore:locator"]) {
+        imageUrls.push(media["ebucore:locator"]);
+      }
+    });
+  }
+
+  // Transformation des URLs en HTTPS si elles utilisent HTTP
+  imageUrls = imageUrls
+    .filter((url: string) => typeof url === "string" && url.length > 0) // Vérification des chaînes valides
+    .map((url: string) =>
+      url.startsWith("http://") ? url.replace("http://", "https://") : url
+    );
+
+  // Ajouter une valeur par défaut si aucune image n'est trouvée
+  if (imageUrls.length === 0) {
+    imageUrls.push("Image par défaut");
+  }
+
+  return imageUrls;
+}
+
+// Fonctions utilitaires regroupées
+
+function extractAddress(fileData: any): string {
+  const addressData = fileData["isLocatedAt"]?.[0]?.["schema:address"]?.[0];
+  return (
+    [
+      addressData?.["schema:streetAddress"],
+      addressData?.["schema:addressLocality"],
+      addressData?.["schema:postalCode"],
+    ]
+      .filter(Boolean)
+      .join(", ") || "Adresse inconnue"
+  );
+}
+
+function extractDescription(fileData: any): string {
+  return (
+    fileData["hasDescription"]?.[0]?.["dc:description"]?.fr?.[0] ||
+    fileData["rdfs:comment"]?.fr?.[0] ||
+    "Description non disponible"
+  );
+}
+
+function extractCoordinates(fileData: any): {
+  newLat: number | null;
+  newLng: number | null;
+} {
+  const geoData = fileData["isLocatedAt"]?.[0]?.["schema:geo"];
+  if (geoData) {
+    return {
+      newLat: parseFloat(geoData["schema:latitude"]),
+      newLng: parseFloat(geoData["schema:longitude"]),
+    };
+  }
+  return { newLat: null, newLng: null };
+}
+
+async function fetchCoordinates(
+  address: string
+): Promise<{ lat: number; lng: number } | null> {
+  try {
+    console.info(`Recherche des coordonnées pour : ${address}`);
+    const response = await axios.get(
+      `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(address)}`
+    );
+    const feature = response.data.features?.[0];
+    if (feature?.geometry?.coordinates) {
+      console.info(`Coordonnées trouvées : ${feature.geometry.coordinates}`);
+      return {
+        lat: feature.geometry.coordinates[1],
+        lng: feature.geometry.coordinates[0],
+      };
+    }
+    console.warn(`Coordonnées non trouvées pour l'adresse : ${address}`);
+  } catch (error) {
+    console.error("Erreur API géocodage :", error);
+  }
+  return null;
+}
+
+function extractOrganizer(fileData: any): {
+  legalName: string;
+  email: string;
+  phone: string;
+} {
+  return {
+    legalName:
+      fileData["hasBeenCreatedBy"]?.["schema:legalName"] ||
+      "Organisateur inconnu",
+    email:
+      fileData["hasContact"]?.[0]?.["schema:email"]?.[0] ||
+      "contact@unknown.com",
+    phone:
+      fileData["hasContact"]?.[0]?.["schema:telephone"]?.[0] || "0000000000",
+  };
+}
+
+function extractPriceSpecification(fileData: any) {
+  let minPrice: number = 0;
+  let maxPrice: number = 0;
+  let priceCurrency = "EUR"; // Valeur par défaut
+
+  const offers = fileData?.offers || [];
+  console.log("Offers:", offers); // Log des offres
+
+  offers.forEach((offer: any) => {
+    const priceSpecifications = offer["schema:priceSpecification"] || [];
+    console.log("Price Specifications:", priceSpecifications); // Log des spécifications
+
+    priceSpecifications.forEach((spec: any) => {
+      const maxPrices = spec["schema:maxPrice"];
+      const minPrices = spec["schema:minPrice"];
+      const price = spec["schema:price"]; // Nouveau traitement
+      const currency = spec["schema:priceCurrency"];
+
+      console.log(
+        "Max Prices:",
+        maxPrices,
+        "Min Prices:",
+        minPrices,
+        "Price:",
+        price,
+        "Currency:",
+        currency
+      );
+
+      // Si maxPrice ou minPrice ne sont pas définis, utiliser le champ "price"
+      if (!maxPrices && price) {
+        maxPrice = Math.max(maxPrice, parseFloat(price));
+      }
+      if (!minPrices && price) {
+        minPrice =
+          minPrice === 0
+            ? parseFloat(price)
+            : Math.min(minPrice, parseFloat(price));
+      }
+
+      // Récupérer le maximum dans les tableaux
+      if (Array.isArray(maxPrices)) {
+        const maxValues = maxPrices.map(Number).filter((p) => !isNaN(p));
+        if (maxValues.length > 0) {
+          maxPrice = Math.max(maxPrice, ...maxValues);
+        }
+      } else if (!isNaN(parseFloat(maxPrices))) {
+        maxPrice = Math.max(maxPrice, parseFloat(maxPrices));
+      }
+
+      if (Array.isArray(minPrices)) {
+        const minValues = minPrices.map(Number).filter((p) => !isNaN(p));
+        if (minValues.length > 0) {
+          minPrice =
+            minPrice === 0
+              ? Math.min(...minValues)
+              : Math.min(minPrice, ...minValues);
+        }
+      } else if (!isNaN(parseFloat(minPrices))) {
+        const parsedMin = parseFloat(minPrices);
+        minPrice = minPrice === 0 ? parsedMin : Math.min(minPrice, parsedMin);
+      }
+
+      // Mise à jour de la devise si elle existe
+      if (currency) {
+        priceCurrency = currency;
+      }
+    });
+  });
+
+  console.log(
+    "Final Values - Min Price:",
+    minPrice,
+    "Max Price:",
+    maxPrice,
+    "Currency:",
+    priceCurrency
+  );
+
+  return {
+    priceCurrency,
+    minPrice,
+    maxPrice,
+    price: maxPrice, // Utiliser le prix maximum comme prix principal
+  };
+}
+
+// const updateOrCreateEventFromJSON = async (
 //   req: Request,
 //   res: Response,
 //   next: NextFunction
 // ) => {
 //   try {
 //     const basePath = path.join(__dirname, "..", "..", "events", "objects");
+//     // Fonction récursive pour collecter tous les fichiers JSON
+//     // const getAllFiles = (directory: string): string[] => {
+//     //   return fs.readdirSync(directory).flatMap((item) => {
+//     //     const fullPath = path.join(directory, item);
 
-//     for (const event of AllEvents) {
+//     //     if (fs.lstatSync(fullPath).isDirectory()) {
+//     //       // Si c'est un dossier, on rappelle la fonction récursive
+//     //       return getAllFiles(fullPath);
+//     //     }
+
+//     //     // Sinon, vérifier que c'est un fichier JSON
+//     //     if (fullPath.endsWith(".json")) {
+//     //       return fullPath;
+//     //     }
+
+//     //     // Ignorer si ce n'est ni un fichier JSON ni un dossier
+//     //     return [];
+//     //   });
+//     // };
+
+//     // Collecter tous les fichiers JSON dans tous les sous-dossiers
+//     // const AllEvents = getAllFiles(basePath);
+
+//     const updatedEvents: any[] = [];
+//     const createdEvents: any[] = [];
+//     const unmatchedFiles: string[] = [];
+
+//     for (const file of AllEvents) {
 //       try {
-//         // Lecture du fichier JSON
-//         const fullPath = path.join(basePath, event.file);
-//         const fileData = await readFile(fullPath, "utf-8");
-//         const eventData = JSON.parse(fileData);
-//         const theme = eventData["@type"] || "Thème inconnu";
+//         console.info(`Traitement du fichier : ${file}`);
+//         const filePath = path.join(basePath, file.file);
+//         const fileData = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+//         // const fileData = JSON.parse(fs.readFileSync(file, "utf-8"));
+//         // Titre et description
+//         const title = normalizeString(
+//           fileData["rdfs:label"]?.fr?.[0] || "Titre inconnu"
+//         );
+//         const description = extractDescription(fileData);
 
-//         // Extraction des données
-//         const title = eventData["rdfs:label"]?.fr?.[0] || "Titre par défaut";
-//         const description =
-//           eventData["hasDescription"]?.[0]?.["dc:description"]?.fr?.[0] ||
-//           eventData["rdfs:comment"]?.fr?.[0] ||
-//           "Description non disponible";
+//         const mergeDates = (
+//           fileData: any
+//         ): { startDate: string; endDate: string } => {
+//           const takesPlaceAt = fileData["takesPlaceAt"] || [];
+//           let earliestStart: Date | null = null;
+//           let latestEnd: Date | null = null;
 
-//         // Extraction et formatage de l'adresse
-//         const addressData = eventData["isLocatedAt"]?.[0]?.["schema:address"];
-//         let address = "Adresse par défaut";
-//         if (addressData && Array.isArray(addressData)) {
-//           const firstAddress = addressData[0];
-//           const streetAddress = Array.isArray(
-//             firstAddress["schema:streetAddress"]
-//           )
-//             ? firstAddress["schema:streetAddress"].join(", ")
-//             : firstAddress["schema:streetAddress"] || "Rue inconnue";
-//           const postalCode =
-//             firstAddress["schema:postalCode"] || "Code postal inconnu";
-//           const addressLocality =
-//             firstAddress["schema:addressLocality"] || "Ville inconnue";
-//           address = `${streetAddress}, ${postalCode}, ${addressLocality}`;
-//         }
+//           takesPlaceAt.forEach((period: any) => {
+//             try {
+//               // Vérification de la validité des champs requis
+//               if (!period.startDate) {
+//                 console.warn(
+//                   `Période ignorée : startDate manquant dans takesPlaceAt:`,
+//                   period
+//                 );
+//                 return;
+//               }
 
-//         // Normalisation des images
-//         let image: string[] = [];
-//         if (
-//           eventData.hasMainRepresentation &&
-//           Array.isArray(eventData.hasMainRepresentation)
-//         ) {
-//           const mainRepresentation = eventData.hasMainRepresentation[0];
-//           const resource =
-//             mainRepresentation["ebucore:hasRelatedResource"]?.[0]?.[
-//               "ebucore:locator"
-//             ];
-//           image = normalizeImages(resource);
-//         }
+//               // Conversion des dates
+//               const start = new Date(
+//                 `${period.startDate}T${period.startTime || "00:00:00"}`
+//               );
 
-//         // Extraction des informations de contact
-//         let phone = "Téléphone inconnu";
-//         let email = "Email inconnu";
-//         if (eventData.hasContact && Array.isArray(eventData.hasContact)) {
-//           const contactInfo = eventData.hasContact[0];
-//           phone = contactInfo["schema:telephone"]?.[0] || "Téléphone inconnu";
-//           email = contactInfo["schema:email"]?.[0] || "Email inconnu";
-//         }
+//               if (isNaN(start.getTime())) {
+//                 console.warn(
+//                   `Date de début invalide trouvée dans takesPlaceAt:`,
+//                   period
+//                 );
+//                 return;
+//               }
 
-//         // Extraction des informations de l'organisateur
-//         const organizerData = eventData["hasBeenCreatedBy"];
-//         const organizer = {
-//           establishment: organizerData?.establishment || null,
-//           legalName:
-//             organizerData?.["schema:legalName"] || "Organisateur inconnu",
-//           email,
-//           phone,
-//         };
+//               const end = new Date(
+//                 `${period.endDate || period.startDate}T${period.endTime || "23:59:59"}`
+//               );
 
-//         // Gestion des prix
-//         let price = 0;
-//         let priceCurrency = "EUR";
-//         if (eventData["offers"] && Array.isArray(eventData["offers"])) {
-//           const offer = eventData["offers"][0];
-//           if (offer?.["schema:priceSpecification"]?.[0]) {
-//             const priceSpec = offer["schema:priceSpecification"][0];
-//             price = parseFloat(priceSpec?.["schema:price"]) || 0;
-//             priceCurrency = priceSpec?.["schema:priceCurrency"] || "EUR";
-//           }
-//         }
+//               if (isNaN(end.getTime())) {
+//                 console.warn(
+//                   `Date de fin invalide trouvée dans takesPlaceAt:`,
+//                   period
+//                 );
+//                 return;
+//               }
 
-//         // Géocodage de l'adresse
-//         let coordinates = { lat: 0, lng: 0 };
-//         try {
-//           const responseApiGouv = await axios.get(
-//             `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(address)}`
-//           );
-//           const features = responseApiGouv.data.features;
+//               // Mise à jour des limites
+//               if (!earliestStart || start < earliestStart) {
+//                 earliestStart = start;
+//               }
+//               if (!latestEnd || end > latestEnd) {
+//                 latestEnd = end;
+//               }
+//             } catch (error) {
+//               console.error(
+//                 `Erreur lors du traitement de la période :`,
+//                 period,
+//                 error
+//               );
+//             }
+//           });
 
-//           if (features?.[0]?.geometry?.coordinates) {
-//             coordinates = {
-//               lat: features[0].geometry.coordinates[1],
-//               lng: features[0].geometry.coordinates[0],
-//             };
-//           } else {
-//             console.warn(
-//               `Coordonnées non disponibles pour l'adresse : ${address}`
+//           // Vérification explicite avant de retourner les résultats
+//           if (!earliestStart || !latestEnd) {
+//             throw new Error(
+//               "Aucune date valide trouvée dans takesPlaceAt après vérification."
 //             );
 //           }
-//         } catch (geoError) {
-//           console.error(
-//             "Erreur lors de la récupération des coordonnées :",
-//             geoError
-//           );
-//         }
 
-//         // Gestion des événements récurrents
-//         for (const period of eventData["takesPlaceAt"] || []) {
-//           const startingDate = new Date(
-//             `${period["startDate"]}T${period["startTime"] || "00:00:00"}`
-//           );
-//           const endingDate = new Date(
-//             `${period["endDate"]}T${period["endTime"] || "23:59:59"}`
-//           );
+//           // Conversion en chaîne ISO et retour des résultats
+//           return {
+//             startDate: (earliestStart as Date).toISOString(),
+//             endDate: (latestEnd as Date).toISOString(),
+//           };
+//         };
 
-//           // Vérification d'existence
-//           const existingEvent = await Event.findOne({ title, startingDate });
+//         // Coordonnées
+//         let { newLat, newLng } = extractCoordinates(fileData);
 
-//           if (existingEvent) {
-//             // Vérifiez si des changements sont nécessaires
-//             const hasChanges =
-//               existingEvent.address !== address ||
-//               existingEvent.location.lat !== coordinates.lat ||
-//               existingEvent.location.lng !== coordinates.lng ||
-//               JSON.stringify(existingEvent.image) !== JSON.stringify(image) ||
-//               existingEvent.startingDate.getTime() !== startingDate.getTime() ||
-//               existingEvent.endingDate.getTime() !== endingDate.getTime();
+//         // Dates
+//         const { startDate, endDate } = mergeDates(fileData);
 
-//             if (hasChanges) {
-//               // Mise à jour
-//               existingEvent.description = description;
-//               existingEvent.address = address;
-//               existingEvent.location = coordinates;
-//               existingEvent.image = image.slice(0, 1) as [string];
-//               existingEvent.priceSpecification = {
-//                 minPrice: price,
-//                 maxPrice: price,
-//                 priceCurrency,
-//               };
-//               existingEvent.organizer = organizer;
-//               existingEvent.theme = theme;
-//               existingEvent.startingDate = startingDate;
-//               existingEvent.endingDate = endingDate;
+//         // Images
+//         const images = extractImages(fileData);
+//         // Prix
+//         const priceSpecification = extractPriceSpecification(fileData);
+//         console.log("priceSpecification", priceSpecification);
 
-//               await existingEvent.save();
-//               console.info(`Événement mis à jour : ${existingEvent.title}`);
-//             }
-//           } else {
-//             // Création
-//             const newEvent = new Event({
-//               title,
-//               description,
-//               address,
-//               theme,
-//               location: coordinates,
-//               image,
-//               priceSpecification: {
-//                 minPrice: price,
-//                 maxPrice: price,
-//                 priceCurrency,
+//         // Méthodes de paiement
+//         const acceptedPaymentMethod =
+//           fileData["schema:acceptedPaymentMethod"] || [];
+
+//         // Organisateur
+//         const organizer = extractOrganizer(fileData);
+//         // Recherche de l'événement existant
+//         let dbEvent = await Event.findOne({
+//           $and: [
+//             { title: { $regex: new RegExp(`^${escapeRegExp(title)}$`, "i") } },
+//             {
+//               address: {
+//                 $regex: new RegExp(
+//                   `^${escapeRegExp(extractAddress(fileData))}$`,
+//                   "i"
+//                 ),
 //               },
-//               organizer,
-//               startingDate,
-//               endingDate,
-//             });
+//             },
+//             { startingDate: new Date(startDate) },
+//           ],
+//         });
 
-//             await newEvent.save();
-//             console.info(`Événement créé avec succès : ${newEvent.title}`);
-//           }
+//         if (!dbEvent) {
+//           const newEvent = new Event({
+//             title,
+//             description,
+//             address: extractAddress(fileData),
+//             location: { lat: newLat, lng: newLng },
+//             startingDate: startDate,
+//             endingDate: endDate,
+//             image: images,
+//             organizer,
+//             theme: fileData["@type"] || ["Thème inconnu"],
+//             price: priceSpecification.price,
+//             priceSpecification,
+//             acceptedPaymentMethod,
+//           });
+//           await newEvent.save();
+//           createdEvents.push({ id: newEvent._id, title: newEvent.title });
+//           console.info(`Nouvel événement créé : ${newEvent.title}`);
+//         } else {
+//           dbEvent.description = description;
+//           Object(dbEvent).location = { lat: newLat, lng: newLng };
+//           dbEvent.image = images;
+//           dbEvent.price = Object(priceSpecification).price;
+//           dbEvent.priceSpecification = priceSpecification;
+//           dbEvent.acceptedPaymentMethod = acceptedPaymentMethod;
+//           await dbEvent.save();
+//           updatedEvents.push({ id: dbEvent._id, title: dbEvent.title });
+//           console.info(`Événement mis à jour : ${dbEvent.title}`);
 //         }
-//       } catch (eventError) {
-//         console.error(`Erreur avec l'événement : ${event.file}`, eventError);
+//       } catch (error) {
+//         unmatchedFiles.push(file);
+//         console.error(`Erreur lors du traitement du fichier : ${file}`, error);
 //       }
 //     }
 
-//     return res
-//       .status(201)
-//       .json({ message: "Tous les événements ont été traités avec succès." });
+//     return res.status(200).json({
+//       message: "Traitement des événements terminé.",
+//       updatedEvents,
+//       createdEvents,
+//       unmatchedFiles,
+//     });
 //   } catch (error) {
-//     console.error("Erreur lors du traitement des événements :", error);
+//     console.error("Erreur globale :", error);
 //     return res
 //       .status(500)
-//       .json({ message: "Erreur lors du traitement des événements", error });
+//       .json({ message: "Erreur lors du traitement.", error });
+//   }
+// };
+
+const determinePrice = (event: any): number | null => {
+  if (event.price_type === "gratuit") {
+    return 0; // Gratuit => prix 0
+  }
+
+  // Si le prix est spécifié dans price_detail, on essaie d'extraire un montant
+  if (event.price_detail) {
+    const priceMatch = event.price_detail.match(/\d+([.,]\d+)?/);
+    if (priceMatch) {
+      return parseFloat(priceMatch[0].replace(",", "."));
+    }
+  }
+
+  return null; // Sinon, null
+};
+
+// const updateEventForParis = async (req: Request, res: Response) => {
+//   try {
+//     if (!Array.isArray(AllEventsForParis)) {
+//       console.log("Format invalide : les événements ne sont pas un tableau.");
+//       return res
+//         .status(400)
+//         .json({ error: "Invalid format: 'events' must be an array." });
+//     }
+
+//     console.log(`Nombre d'événements à traiter : ${AllEventsForParis.length}`);
+
+//     const insertedEvents = [];
+//     const skippedOccurrences = [];
+
+//     for (const event of AllEventsForParis) {
+//       const occurrences = event.occurrences
+//         ? event.occurrences
+//             .split(";")
+//             .map((occurrence: { split: (arg0: string) => [any, any] }) => {
+//               const [start, end] = occurrence.split("_");
+//               return {
+//                 startingDate: start ? new Date(start) : null,
+//                 endingDate: end ? new Date(end) : null,
+//               };
+//             })
+//         : [
+//             {
+//               startingDate: event.date_start
+//                 ? new Date(event.date_start)
+//                 : null,
+//               endingDate: event.date_end ? new Date(event.date_end) : null,
+//             },
+//           ];
+
+//       for (const occurrence of occurrences) {
+//         try {
+//           const existingEvent = await Event.findOne({
+//             title: event.title,
+//             startingDate: occurrence.startingDate,
+//             endingDate: occurrence.endingDate,
+//           });
+
+//           if (existingEvent) {
+//             console.log(
+//               `Occurrence déjà existante : ${existingEvent.title} (${existingEvent.startingDate} - ${existingEvent.endingDate})`
+//             );
+//             skippedOccurrences.push(existingEvent);
+//             continue;
+//           }
+
+//           const eventToInsert = {
+//             title: event.title || "Titre non disponible",
+//             theme: event.tags || ["Général"],
+//             startingDate: occurrence.startingDate,
+//             endingDate: occurrence.endingDate,
+//             address: `${event.address_street}, ${event.address_city}, ${event.address_zipcode}`,
+//             location: event.lat_lon
+//               ? { lat: event.lat_lon.lat, lng: event.lat_lon.lon }
+//               : { lat: null, lng: null },
+//             price: determinePrice(event), // Détermination du prix
+//             priceSpecification: {
+//               minPrice: null,
+//               maxPrice: null,
+//               priceCurrency: null,
+//             },
+//             favorieds: [],
+//             acceptedPaymentMethod: [],
+//             organizer: {
+//               establishment: null,
+//               legalName: event.address_name || "Organisateur inconnu",
+//               email: event.contact_mail || "Email inconnu",
+//               phone: event.contact_phone || "Téléphone inconnu",
+//             },
+//             image: event.cover_url ? [event.cover_url] : [],
+//             description: event.description || "Description non disponible",
+//             color: null,
+//           };
+
+//           const createdEvent = await Event.create(eventToInsert);
+//           console.log(
+//             `Événement créé : ${createdEvent.title} (ID: ${createdEvent._id})`
+//           );
+//           insertedEvents.push(createdEvent);
+//         } catch (err) {
+//           console.error(
+//             `Erreur lors de la création de l'occurrence pour ${event.title}`
+//           );
+//           console.error(err);
+//         }
+//       }
+//     }
+
+//     console.log(`Total des événements créés : ${insertedEvents.length}`);
+//     console.log(
+//       `Total des occurrences ignorées (déjà existantes) : ${skippedOccurrences.length}`
+//     );
+
+//     res.status(201).json({
+//       message: `${insertedEvents.length} occurrences importées avec succès.`,
+//       skipped: `${skippedOccurrences.length} occurrences déjà existantes ignorées.`,
+//       data: insertedEvents,
+//     });
+//   } catch (error) {
+//     console.error(
+//       "Erreur globale lors de l'importation des occurrences :",
+//       error
+//     );
+//     res.status(500).json({
+//       error: "Erreur lors de l'importation des occurrences.",
+//       details: error,
+//     });
 //   }
 // };
 
@@ -484,7 +870,6 @@ const createEventForAnEstablishment = async (req: Request, res: Response) => {
     });
   }
 };
-
 // Fonction pour lire un événement spécifique
 const readEvent = async (req: Request, res: Response, next: NextFunction) => {
   const eventId = req.params.eventId;
@@ -587,7 +972,7 @@ const getEventsByPosition = async (req: Request, res: Response) => {
     }
 
     // Rayon de recherche en kilomètres (exemple : 10 km)
-    const radiusInKm = req.body.radius || 50;
+    const radiusInKm = req.body.radius || 10;
 
     // Utiliser une agrégation pour calculer la distance en utilisant la formule de Haversine
     const events = await Event.aggregate([
@@ -814,6 +1199,582 @@ const getEventByDate = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * Vérifie les URL d'image pour tous les événements dans la base de données.
+ */
+const verifAllEvent = async (req: Request, res: Response) => {
+  try {
+    const events = await Event.find();
+
+    const invalidEvents: Array<{ eventId: string; invalidUrls: string[] }> = [];
+    const validEvents: Array<{ eventId: string; validUrls: string[] }> = [];
+    const defaultImageEvents: Array<{ eventId: string }> = [];
+
+    let remainingEvents = events.length;
+
+    for (const event of events) {
+      const invalidUrls: string[] = [];
+      const validUrls: string[] = [];
+      let hasDefaultImage = false;
+      let imagesUpdated = false;
+
+      const updatedImages: string[] = [];
+      for (const imgUrl of event.image || []) {
+        const validationResult = await validateImageUrl(imgUrl);
+
+        if (validationResult === "Image par défaut") {
+          hasDefaultImage = true;
+          imagesUpdated = true;
+          updatedImages.push("Image par défaut");
+        } else if (validationResult === imgUrl) {
+          validUrls.push(imgUrl);
+          updatedImages.push(imgUrl);
+        } else {
+          invalidUrls.push(imgUrl);
+          imagesUpdated = true;
+          updatedImages.push("Image par défaut");
+        }
+      }
+
+      if (imagesUpdated) {
+        event.image = updatedImages;
+        await event.save();
+      }
+
+      if (invalidUrls.length > 0) {
+        invalidEvents.push({
+          eventId: event._id.toString(),
+          invalidUrls,
+        });
+      } else if (hasDefaultImage) {
+        defaultImageEvents.push({
+          eventId: event._id.toString(),
+        });
+      } else {
+        validEvents.push({
+          eventId: event._id.toString(),
+          validUrls,
+        });
+      }
+
+      remainingEvents--;
+      console.log(`Événements restants à traiter : ${remainingEvents}`);
+    }
+
+    console.warn("Événements avec des URL invalides :", invalidEvents);
+    console.info("Événements avec uniquement des URL valides :", validEvents);
+    console.info("Événements avec 'Image par défaut' :", defaultImageEvents);
+
+    return res.status(200).json({
+      message: "Vérification terminée.",
+      totalEvents: events.length,
+      invalidEventsCount: invalidEvents.length,
+      validEventsCount: validEvents.length,
+      defaultImageEventsCount: defaultImageEvents.length,
+      invalidEvents,
+      validEvents,
+      defaultImageEvents,
+    });
+  } catch (error) {
+    console.error(
+      "Erreur lors de la vérification des URL des événements :",
+      error
+    );
+    return res.status(500).json({
+      message: "Erreur lors de la vérification des URL des événements.",
+      error,
+    });
+  }
+};
+
+const updateImageUrls = async (req: Request, res: Response) => {
+  try {
+    console.log("Début de la mise à jour des URLs des images...");
+
+    // Étape 1 : Récupérer les événements avec des images contenant http://
+    const events = await Event.find({ "image.0": { $regex: "^http://" } });
+    console.log(`Nombre d'événements trouvés : ${events.length}`);
+
+    if (!events.length) {
+      console.log("Aucun événement à mettre à jour.");
+      return res.status(200).json({
+        message: "Aucun événement à mettre à jour",
+        modifiedCount: 0,
+      });
+    }
+
+    let modifiedCount = 0;
+
+    // Étape 2 : Parcourir les événements et mettre à jour les URLs
+    for (const event of events) {
+      console.log(`Traitement de l'événement ID : ${event._id}`);
+      console.log("URLs avant mise à jour :", event.image);
+
+      // Mise à jour des URLs dans le tableau `image`
+      event.image = event.image.map((url: string) => {
+        if (url.startsWith("http://")) {
+          const updatedUrl = url.replace("http://", "https://");
+          console.log(`URL mise à jour : ${url} -> ${updatedUrl}`);
+          return updatedUrl;
+        }
+        return url;
+      });
+
+      // Sauvegarde de l'événement mis à jour
+      await event.save();
+      console.log(`Événement ID : ${event._id} sauvegardé avec succès.`);
+      modifiedCount++;
+    }
+
+    // Étape 3 : Retourner le résultat final
+    console.log(
+      `Mise à jour terminée. Nombre total d'événements modifiés : ${modifiedCount}`
+    );
+    return res.status(200).json({
+      message: "Mise à jour des URLs des images réussie",
+      modifiedCount,
+    });
+  } catch (error) {
+    console.error("Erreur lors de la mise à jour des URLs des images :", error);
+    return res.status(500).json({
+      message: "Erreur lors de la mise à jour des URLs des images",
+      error,
+    });
+  }
+};
+
+const DEFAULT_IMAGE = "Image par défaut";
+
+const normalizeString = (str: string): string => {
+  return str
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // Enlever les accents
+    .replace(/[’']/g, "") // Enlever les apostrophes
+    .replace(/\s+/g, " ") // Supprimer les espaces multiples
+    .trim()
+    .toLowerCase();
+};
+
+const escapeRegExp = (string: string): string => {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+};
+
+// const updateEventCoordinates = async (
+//   req: Request,
+//   res: Response,
+//   next: NextFunction
+// ) => {
+//   try {
+//     const basePath = path.join(__dirname, "..", "..", "events", "objects");
+
+//     const updatedEvents = [];
+//     const createdEvents = [];
+//     const unmatchedFiles = [];
+
+//     for (const file of AllEvents) {
+//       try {
+//         const filePath = path.join(basePath, file.file);
+//         const fileData = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+
+//         const jsonTitle = normalizeString(
+//           fileData["rdfs:label"]?.fr?.[0] || ""
+//         );
+
+//         const escapedTitle = escapeRegExp(jsonTitle);
+
+//         let dbEvent = await Event.findOne({
+//           title: { $regex: new RegExp(`^${escapedTitle}$`, "i") },
+//         });
+
+//         // Récupération des coordonnées géographiques
+//         const geoData = fileData["isLocatedAt"]?.[0]?.["schema:geo"];
+//         const newLat = geoData ? parseFloat(geoData["schema:latitude"]) : null;
+//         const newLng = geoData ? parseFloat(geoData["schema:longitude"]) : null;
+
+//         if (!newLat || !newLng || isNaN(newLat) || isNaN(newLng)) {
+//           unmatchedFiles.push(file.file);
+//           console.warn(`Coordonnées invalides ou absentes pour : ${file.file}`);
+//           continue;
+//         }
+
+//         // Récupération de l'adresse
+//         const addressData =
+//           fileData["isLocatedAt"]?.[0]?.["schema:address"]?.[0];
+//         const address =
+//           [
+//             addressData?.["schema:streetAddress"]?.[0],
+//             addressData?.["schema:addressLocality"],
+//             addressData?.["schema:postalCode"],
+//           ]
+//             .filter(Boolean)
+//             .join(", ") || "Adresse inconnue";
+
+//         if (!dbEvent) {
+//           // Création d'un nouvel événement
+//           const startingDate = fileData["schema:startDate"]?.[0] || null;
+//           const endingDate = fileData["schema:endDate"]?.[0] || null;
+//           const startTime =
+//             fileData["takesPlaceAt"]?.[0]?.["startTime"] || "00:00:00";
+//           const endTime =
+//             fileData["takesPlaceAt"]?.[0]?.["endTime"] || "23:59:59";
+
+//           // Concaténation de la date et de l'heure pour un format correct
+//           const fullStartingDate = startingDate
+//             ? `${startingDate}T${startTime}`
+//             : null;
+//           const fullEndingDate = endingDate ? `${endingDate}T${endTime}` : null;
+
+//           const images =
+//             fileData["hasMainRepresentation"]?.[0]?.[
+//               "ebucore:hasRelatedResource"
+//             ]?.map((resource: any) => resource["ebucore:locator"]) || [];
+
+//           // Normalisation des URL d'images pour forcer le HTTPS
+//           const httpsImages = images
+//             .flat()
+//             .map((url: string) =>
+//               url.startsWith("http://")
+//                 ? url.replace("http://", "https://")
+//                 : url
+//             );
+
+//           dbEvent = new Event({
+//             title: jsonTitle,
+//             startingDate: fullStartingDate,
+//             endingDate: fullEndingDate,
+//             address,
+//             location: { lat: newLat, lng: newLng },
+//             price:
+//               fileData["offers"]?.[0]?.["schema:priceSpecification"]?.[0]?.[
+//                 "schema:minPrice"
+//               ]?.[0] || 0,
+//             priceSpecification: {
+//               priceCurrency:
+//                 fileData["offers"]?.[0]?.["schema:priceSpecification"]?.[0]?.[
+//                   "schema:priceCurrency"
+//                 ] || "EUR",
+//             },
+//             description:
+//               fileData["rdfs:comment"]?.fr?.[0] || "Description indisponible",
+//             theme: fileData["@type"] || [],
+//             image: httpsImages.length > 0 ? httpsImages : [DEFAULT_IMAGE], // Ajout de l'image par défaut si aucune image
+//             organizer: {
+//               legalName:
+//                 fileData["hasBeenCreatedBy"]?.["schema:legalName"] ||
+//                 "Organisateur inconnu",
+//               email:
+//                 fileData["hasContact"]?.[0]?.["schema:email"]?.[0] ||
+//                 "contact@unknown.com",
+//               phone:
+//                 fileData["hasContact"]?.[0]?.["schema:telephone"]?.[0] ||
+//                 "0000000000",
+//             },
+//             color: "#000000",
+//           });
+
+//           await dbEvent.save();
+//           createdEvents.push({ id: dbEvent._id, title: dbEvent.title });
+//           console.info(`Nouvel événement créé : ${dbEvent.title}`);
+//         } else {
+//           // Mise à jour des coordonnées pour un événement existant
+//           dbEvent.location = { lat: newLat, lng: newLng };
+//           await dbEvent.save();
+//           updatedEvents.push({ id: dbEvent._id, title: dbEvent.title });
+//           console.info(`Coordonnées mises à jour pour : ${dbEvent.title}`);
+//         }
+//       } catch (error) {
+//         unmatchedFiles.push(file.file);
+//         console.error(
+//           `Erreur lors du traitement du fichier : ${file.file}`,
+//           error
+//         );
+//       }
+//     }
+
+//     return res.status(200).json({
+//       message: "Mise à jour des coordonnées terminée.",
+//       updatedEvents,
+//       createdEvents,
+//       unmatchedFiles,
+//     });
+//   } catch (error) {
+//     console.error("Erreur lors de la mise à jour des coordonnées :", error);
+//     return res.status(500).json({
+//       message: "Erreur lors de la mise à jour des coordonnées.",
+//       error,
+//     });
+//   }
+// };
+
+const BATCH_SIZE = 1000; // Taille d'un lot
+const PROGRESS_FILE = "./progress.json"; // Fichier pour suivre l'état du traitement
+
+// Fonction pour sauvegarder la progression
+const saveProgress = (page: number) => {
+  fs.writeFileSync(PROGRESS_FILE, JSON.stringify({ page }), "utf-8");
+};
+
+// Fonction pour charger la progression
+const loadProgress = (): number => {
+  if (fs.existsSync(PROGRESS_FILE)) {
+    const data = fs.readFileSync(PROGRESS_FILE, "utf-8");
+    const { page } = JSON.parse(data);
+    return page || 0;
+  }
+  return 0;
+};
+// Fonction pour comparer les coordonnées avec une tolérance
+const areCoordinatesEqual = (
+  oldLat: number,
+  oldLng: number,
+  newLat: number,
+  newLng: number
+): boolean => {
+  const precision = 1e-6; // Tolérance pour les différences mineures
+  return (
+    Math.abs(oldLat - newLat) < precision &&
+    Math.abs(oldLng - newLng) < precision
+  );
+};
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+// Fonction pour calculer la distance avec la formule de Haversine
+
+const haversineDistance = (
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number
+): number => {
+  const toRad = (x: number) => (x * Math.PI) / 180;
+  const R = 6371; // Rayon de la Terre en km
+
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c;
+};
+
+const BATCH_DELAY_MS = 500; // Délai entre chaque appel en millisecondes
+// Fonction pour nettoyer l'adresse
+const cleanAddress = (address: string): string => {
+  // Liste des mots-clés inutiles (lieux non pertinents)
+  const irrelevantKeywords =
+    /(salle|gymnase|centre|bibliothèque|stade|parc|maison|terrain|foyer|hôtel|église|aréna|théâtre|complexe|jardin|espace)\b.*?(,|$)/gi;
+
+  // Supprimer les segments inutiles
+  let cleanedAddress = address.replace(irrelevantKeywords, "").trim();
+
+  // Vérifier si un code postal est présent
+  const postalCodeRegex = /\b\d{5}\b/;
+  const containsPostalCode = postalCodeRegex.test(cleanedAddress);
+
+  if (!containsPostalCode) {
+    console.warn(`[LOG] Adresse nettoyée invalide : ${cleanedAddress}`);
+    return ""; // Retourner une chaîne vide si le code postal est absent
+  }
+
+  // Extraire les informations utiles : rue, code postal, ville
+  const voieTypes =
+    "(rue|avenue|boulevard|place|impasse|route|chemin|allée|cours|quai|voie|square|pont|faubourg|hameau)";
+  const regex = new RegExp(
+    `(?:.*?,\\s*)?(\\d{0,5}\\s*\\w+(\\s${voieTypes})?)?,?\\s*(\\d{5}),?\\s*([\\w\\s\\-]+)$`,
+    "i"
+  );
+
+  const match = cleanedAddress.match(regex);
+
+  if (match) {
+    const street = match[1]?.trim() || ""; // Rue ou voie (optionnel)
+    const postalCode = match[3]; // Code postal
+    const city = match[4]?.trim(); // Ville
+    return street
+      ? `${street}, ${postalCode}, ${city}`
+      : `${postalCode}, ${city}`;
+  }
+
+  // Si rien n'est extrait, retourne l'adresse nettoyée
+  return cleanedAddress;
+};
+
+const processBatch = async (
+  events: any[],
+  updatedEvents: any[],
+  unmatchedEvents: any[]
+) => {
+  for (const event of events) {
+    try {
+      let fullAddress = event.address?.trim();
+
+      // Nettoyer l'adresse initiale
+      fullAddress = cleanAddress(fullAddress);
+
+      if (!fullAddress) {
+        unmatchedEvents.push({
+          id: event._id,
+          title: event.title,
+          reason: "Adresse manquante ou invalide",
+        });
+        console.warn(`[LOG] Adresse invalide pour : ${event.title}`);
+        continue;
+      }
+
+      const originalAddress = fullAddress;
+
+      // Pause pour éviter de surcharger l'API
+      await delay(BATCH_DELAY_MS);
+
+      // Appel à l'API Adresse
+      const response = await axios.get(
+        "https://api-adresse.data.gouv.fr/search/",
+        { params: { q: fullAddress, limit: 5 }, timeout: 10000 }
+      );
+
+      const features = response.data.features;
+
+      if (!features || features.length === 0) {
+        unmatchedEvents.push({
+          id: event._id,
+          title: event.title,
+          reason: "Aucune coordonnée trouvée",
+        });
+        console.warn(`[LOG] Aucun résultat pour : ${event.title}`);
+        continue;
+      }
+
+      // Vérifier si une correspondance exacte existe
+      const exactMatch = features.find((feature: any) => {
+        const featureLabel = feature.properties.label?.toLowerCase();
+        return featureLabel?.includes(originalAddress.toLowerCase());
+      });
+
+      let bestMatch = exactMatch || features[0];
+
+      if (!exactMatch) {
+        console.warn(
+          `[LOG] Pas de correspondance exacte pour : ${event.title} (${originalAddress})`
+        );
+
+        // Si aucune correspondance exacte, nettoyer davantage l'adresse
+        fullAddress = cleanAddress(fullAddress);
+        console.log(`[LOG] Tentative avec adresse nettoyée : ${fullAddress}`);
+
+        // Refaire une tentative avec l'adresse nettoyée
+        const retryResponse = await axios.get(
+          "https://api-adresse.data.gouv.fr/search/",
+          { params: { q: fullAddress, limit: 5 }, timeout: 10000 }
+        );
+
+        const retryFeatures = retryResponse.data.features;
+        if (retryFeatures && retryFeatures.length > 0) {
+          bestMatch = retryFeatures[0];
+        } else {
+          unmatchedEvents.push({
+            id: event._id,
+            title: event.title,
+            reason: "Aucune coordonnée trouvée après tentative",
+          });
+          console.warn(
+            `[LOG] Aucun résultat après tentative pour : ${event.title}`
+          );
+          continue;
+        }
+      }
+
+      // Extraire les coordonnées
+      const [lng, lat] = bestMatch.geometry.coordinates;
+
+      const oldLocation = event.location || { lat: 0, lng: 0 };
+      const newLocation = { lat, lng };
+
+      const hasChanged = oldLocation.lat !== lat || oldLocation.lng !== lng;
+      const distanceFromOld = haversineDistance(
+        oldLocation.lat,
+        oldLocation.lng,
+        lat,
+        lng
+      );
+
+      if (hasChanged) {
+        event.location = newLocation;
+        await event.save();
+
+        const logColor = distanceFromOld > 100 ? chalk.blue : chalk.green;
+
+        console.log(
+          logColor(
+            `[LOG] Coordonnées modifiées pour : ${event.title} (${oldLocation.lat}, ${oldLocation.lng}) -> (${lat}, ${lng}) | Écart : ${distanceFromOld.toFixed(2)} km`
+          )
+        );
+
+        updatedEvents.push({
+          id: event._id,
+          title: event.title,
+          newLocation,
+        });
+      } else {
+        console.log(
+          chalk.yellow(
+            `[LOG] Coordonnées identiques pour : ${event.title} (${oldLocation.lat}, ${oldLocation.lng}) -> (${lat}, ${lng})`
+          )
+        );
+      }
+    } catch (error) {
+      console.error(
+        chalk.red(`[LOG] Erreur API pour : ${event.title} - ${error}`)
+      );
+      unmatchedEvents.push({
+        id: event._id,
+        title: event.title,
+        reason: "Erreur API",
+      });
+    }
+  }
+};
+
+const getCoordinatesFromAPI = async (req: Request, res: Response) => {
+  try {
+    let page = loadProgress(); // Charger le dernier lot traité
+    console.log(`[LOG] Reprise du traitement à partir du lot ${page + 1}...`);
+
+    const updatedEvents: any[] = [];
+    const unmatchedEvents: any[] = [];
+    const totalEvents = await Event.countDocuments();
+    console.log(`[LOG] Nombre total d'événements à traiter : ${totalEvents}`);
+
+    while (page * BATCH_SIZE < totalEvents) {
+      console.log(`[LOG] Traitement du lot ${page + 1}...`);
+
+      const events = await Event.find()
+        .skip(page * BATCH_SIZE)
+        .limit(BATCH_SIZE);
+
+      await processBatch(events, updatedEvents, unmatchedEvents);
+
+      page++;
+      saveProgress(page); // Sauvegarder l'état après chaque lot
+    }
+
+    return res.status(200).json({
+      message: "Mise à jour des coordonnées terminée.",
+      updatedEventsCount: updatedEvents.length,
+      unmatchedEventsCount: unmatchedEvents.length,
+    });
+  } catch (error) {
+    console.error("[LOG] Erreur générale :", error);
+    return res.status(500).json({
+      message: "Erreur lors de la mise à jour des coordonnées.",
+      error: error,
+    });
+  }
+};
 // Fonction pour supprimer un événement
 const deleteEvent = async (req: Request, res: Response, next: NextFunction) => {
   const eventId = req.params.eventId;
@@ -858,38 +1819,179 @@ const deleteEvent = async (req: Request, res: Response, next: NextFunction) => {
   }
 };
 
-const deleteDuplicateEvents = async (req: Request, res: Response) => {
+const deleteDuplicateEvents = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
   try {
-    // Récupérer tous les événements groupés par title
-    const events = await Event.aggregate([
-      {
-        $group: {
-          _id: "$title",
-          ids: { $push: "$_id" },
-          count: { $sum: 1 },
-        },
-      },
-      {
-        $match: {
-          count: { $gt: 1 }, // Sélectionne seulement les titres qui ont plus d'une occurrence
-        },
-      },
-    ]);
+    console.info(
+      "Début de la suppression des événements en double avec fusion des images."
+    );
 
-    // Parcourir chaque groupe d'événements en double pour supprimer les occurrences supplémentaires
-    for (const event of events) {
-      // Conserve la première occurrence et supprime les autres
-      const [firstId, ...duplicateIds] = event.ids;
-      await Event.deleteMany({ _id: { $in: duplicateIds } });
+    // Étape 1 : Récupérer tous les événements
+    const events = await Event.find({});
+    if (!events.length) {
+      console.info("Aucun événement trouvé dans la base de données.");
+      return res.status(200).json({ message: "Aucun événement à vérifier." });
     }
 
+    console.info(`Nombre total d'événements récupérés : ${events.length}`);
+
+    // Étape 2 : Normaliser et grouper les événements
+    const normalizedEvents = events.map((event) => ({
+      id: event._id,
+      title: event.title,
+      normalizedTitle: normalizeString(event.title),
+      startingDate: event.startingDate?.toISOString(),
+      endingDate: event.endingDate?.toISOString(),
+      image: event.image || [],
+    }));
+
+    const groupedEvents: { [key: string]: any[] } = {};
+    normalizedEvents.forEach((event) => {
+      const key = `${event.normalizedTitle}_${event.startingDate}_${event.endingDate}`;
+      if (!groupedEvents[key]) {
+        groupedEvents[key] = [];
+      }
+      groupedEvents[key].push(event);
+    });
+
+    // Étape 3 : Vérifier les groupes avec doublons
+    const duplicates = Object.values(groupedEvents).filter(
+      (events) => events.length > 1
+    );
+
+    console.info(
+      `Nombre de groupes avec doublons trouvés : ${duplicates.length}`
+    );
+
+    if (!duplicates.length) {
+      console.info("Aucun doublon détecté.");
+      return res.status(200).json({ message: "Aucun doublon détecté." });
+    }
+
+    // Étape 4 : Supprimer les doublons (garder le premier par groupe et fusionner les images)
+    let deletedCount = 0;
+    for (const duplicateGroup of duplicates) {
+      const [keepEvent, ...toDeleteEvents] = duplicateGroup;
+
+      console.info(`Conservation de l'événement : Titre="${keepEvent.title}"`);
+
+      for (const event of toDeleteEvents) {
+        // Ajouter les images de l'événement à supprimer si nécessaire
+        if (keepEvent.image.length === 0 && event.image.length > 0) {
+          console.info(
+            `Ajout des images de l'événement : Titre="${event.title}"`
+          );
+          await Event.updateOne(
+            { _id: keepEvent.id },
+            { $set: { image: event.image } }
+          );
+        }
+
+        // Supprimer l'événement
+        const deleteResult = await Event.deleteOne({ _id: event.id });
+        if (deleteResult.deletedCount > 0) {
+          console.info(`Événement supprimé : Titre="${event.title}"`);
+          deletedCount++;
+        } else {
+          console.warn(
+            `Échec de la suppression pour l'événement : Titre="${event.title}"`
+          );
+        }
+      }
+    }
+
+    console.info(`Nombre total d'événements supprimés : ${deletedCount}`);
+
     return res.status(200).json({
-      message: "Duplicate events removed",
-      details: events,
+      message:
+        "Événements en double supprimés avec succès, images fusionnées si nécessaire.",
+      deletedCount,
     });
   } catch (error) {
-    console.error("Error deleting duplicate events:", error);
-    return res.status(500).json({ message: "Internal server error", error });
+    console.error("Erreur lors de la suppression des doublons :", error);
+    return res.status(500).json({
+      message: "Erreur lors de la suppression des doublons.",
+      error,
+    });
+  }
+};
+
+const removeMidnightDates = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    console.info(
+      "Début de la suppression des événements ayant des dates à minuit."
+    );
+
+    // Supprimer les événements où les heures de startingDate et endingDate sont à minuit
+    const result = await Event.deleteMany({
+      $and: [
+        { startingDate: { $type: "date" } },
+        { endingDate: { $type: "date" } },
+        {
+          $expr: {
+            $and: [
+              { $eq: [{ $hour: "$startingDate" }, 0] },
+              { $eq: [{ $minute: "$startingDate" }, 0] },
+              { $eq: [{ $second: "$startingDate" }, 0] },
+              { $eq: [{ $hour: "$endingDate" }, 0] },
+              { $eq: [{ $minute: "$endingDate" }, 0] },
+              { $eq: [{ $second: "$endingDate" }, 0] },
+            ],
+          },
+        },
+      ],
+    });
+
+    console.info(`Nombre d'événements supprimés : ${result.deletedCount}`);
+
+    return res.status(200).json({
+      message: "Événements supprimés avec succès.",
+      deletedCount: result.deletedCount,
+    });
+  } catch (error) {
+    console.error("Erreur lors de la suppression des événements :", error);
+    return res.status(500).json({
+      message: "Erreur lors de la suppression des événements.",
+      error,
+    });
+  }
+};
+
+const removeExpiredEvents = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    console.info("Début de la suppression des événements expirés.");
+    // Calculer la date d'aujourd'hui à minuit
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Normaliser la date pour ignorer l'heure
+
+    // Supprimer les événements où `endingDate` est inférieure à aujourd'hui
+    const result = await Event.deleteMany({
+      endingDate: { $lt: today },
+    });
+
+    console.info(`Nombre d'événements supprimés : ${result.deletedCount}`);
+
+    return res.status(200).json({
+      message: "Événements expirés supprimés avec succès.",
+      deletedCount: result.deletedCount,
+    });
+  } catch (error) {
+    console.error("Erreur lors de la suppression des événements :", error);
+    return res.status(500).json({
+      message: "Erreur lors de la suppression des événements expirés.",
+      error,
+    });
   }
 };
 
@@ -903,6 +2005,13 @@ export default {
   getEventByDate,
   updateEvent,
   // updateOrCreateEventFromJSON,
+  // updateEventForParis,
+  getCoordinatesFromAPI,
+  verifAllEvent,
+  updateImageUrls,
+  // updateEventCoordinates,
   deleteEvent,
   deleteDuplicateEvents,
+  removeMidnightDates,
+  removeExpiredEvents,
 };

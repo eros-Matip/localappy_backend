@@ -1,0 +1,6 @@
+{
+    "watch": ["dist/"],
+    "ignore": ["Events/objects", "progress.json"],
+    "ext": "js,json",
+    "exec": "node dist/server.js"
+  }

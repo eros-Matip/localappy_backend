@@ -26,4 +26,8 @@ export default interface IOwner extends Document {
   token: string;
   hash: string;
   salt: string;
+  passwordLosted: {
+    status: boolean;
+    code: string;
+  };
 }

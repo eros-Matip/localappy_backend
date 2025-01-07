@@ -57,6 +57,10 @@ export default interface ICustomer extends Document {
     },
   ];
   ownerAccount: Types.ObjectId;
+  passwordLosted: {
+    status: boolean;
+    code: string;
+  };
   token: string;
   hash: string;
   salt: string;

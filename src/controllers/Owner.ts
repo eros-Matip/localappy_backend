@@ -215,5 +215,4 @@ const deleteOwner = async (req: Request, res: Response) => {
       .json({ error: "Failed to delete owner", details: error });
   }
 };
-
 export default { createOwner, getOwnerById, updateOwner, deleteOwner };

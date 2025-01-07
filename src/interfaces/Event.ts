@@ -1,30 +1,31 @@
 import { Types, Document } from "mongoose";
 
 export default interface IEvent extends Document {
-  title: String;
-  theme: [String];
+  _id: Types.ObjectId;
+  title: string;
+  theme: string[];
   startingDate: Date;
   endingDate: Date;
-  address: String;
+  address: string;
   location: {
-    lat: Number;
-    lng: Number;
+    lat: number;
+    lng: number;
   };
-  price: { type: Number; default: 0 };
+  price: { type: number; default: 0 };
   priceSpecification: {
-    minPrice: Number;
-    maxPrice: Number;
-    priceCurrency: String;
+    minPrice: number;
+    maxPrice: number;
+    priceCurrency: string;
   };
   favorieds: [{ type: Types.ObjectId; ref: "Customer" }];
-  acceptedPaymentMethod: [String];
+  acceptedPaymentMethod: string[];
   organizer: {
     establishment: Types.ObjectId;
     legalName: string;
     email: string;
     phone: string;
   };
-  image: [String];
-  description: String;
-  color: String;
+  image: string[];
+  description: string;
+  color: string;
 }
