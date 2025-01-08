@@ -8,8 +8,13 @@ export default interface IEvent extends Document {
   endingDate: Date;
   address: string;
   location: {
-    lat: number;
-    lng: number;
+    lat: number; // Latitude pour compatibilité avec l'ancien format
+    lng: number; // Longitude pour compatibilité avec l'ancien format
+    geo?: {
+      // Champ géospatial (facultatif pour éviter de casser l'ancien code)
+      type: "Point";
+      coordinates: [number, number]; // [longitude, latitude]
+    };
   };
   price: { type: number; default: 0 };
   priceSpecification: {

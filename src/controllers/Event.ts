@@ -19,7 +19,7 @@ import chalk from "chalk";
  */
 
 // const AllEvents = require("../../Events/index.json");
-// const AllEventsForParis = require("../../Events/forParis.json");
+const AllEventsForParis = require("../../Events/forParis.json");
 
 // Fonction de création d'événements
 // const createEventFromJSON = async (
@@ -646,7 +646,7 @@ const determinePrice = (event: any): number | null => {
     }
   }
 
-  return null; // Sinon, null
+  return 0; // Sinon, null
 };
 
 // const updateEventForParis = async (req: Request, res: Response) => {
@@ -661,6 +661,7 @@ const determinePrice = (event: any): number | null => {
 //     console.log(`Nombre d'événements à traiter : ${AllEventsForParis.length}`);
 
 //     const insertedEvents = [];
+//     const updatedEvents = [];
 //     const skippedOccurrences = [];
 
 //     for (const event of AllEventsForParis) {
@@ -684,6 +685,19 @@ const determinePrice = (event: any): number | null => {
 //           ];
 
 //       for (const occurrence of occurrences) {
+//         // Ignorer si `startingDate` ou `endingDate` est null
+//         if (!occurrence.startingDate || !occurrence.endingDate) {
+//           console.log(
+//             `Élément ignoré : absence de startingDate ou endingDate (${event.title})`
+//           );
+//           skippedOccurrences.push({
+//             title: event.title,
+//             startingDate: occurrence.startingDate,
+//             endingDate: occurrence.endingDate,
+//           });
+//           continue;
+//         }
+
 //         try {
 //           const existingEvent = await Event.findOne({
 //             title: event.title,
@@ -695,10 +709,34 @@ const determinePrice = (event: any): number | null => {
 //             console.log(
 //               `Occurrence déjà existante : ${existingEvent.title} (${existingEvent.startingDate} - ${existingEvent.endingDate})`
 //             );
-//             skippedOccurrences.push(existingEvent);
+
+//             // Mise à jour de l'événement existant
+//             existingEvent.theme = event.tags || existingEvent.theme;
+//             existingEvent.address = `${event.address_street}, ${event.address_city}, ${event.address_zipcode}`;
+//             existingEvent.location = event.lat_lon
+//               ? { lat: event.lat_lon.lat, lng: event.lat_lon.lon }
+//               : existingEvent.location;
+//             existingEvent.price = determinePrice(event) || 0;
+//             existingEvent.organizer = {
+//               establishment: existingEvent.organizer.establishment,
+//               legalName:
+//                 event.address_name || existingEvent.organizer.legalName,
+//               email: event.contact_mail || existingEvent.organizer.email,
+//               phone: event.contact_phone || existingEvent.organizer.phone,
+//             };
+//             existingEvent.image = event.cover_url
+//               ? [event.cover_url]
+//               : existingEvent.image;
+//             existingEvent.description =
+//               event.description || existingEvent.description;
+
+//             await existingEvent.save();
+
+//             updatedEvents.push(existingEvent);
 //             continue;
 //           }
 
+//           // Création d'un nouvel événement si aucun existant trouvé
 //           const eventToInsert = {
 //             title: event.title || "Titre non disponible",
 //             theme: event.tags || ["Général"],
@@ -734,7 +772,7 @@ const determinePrice = (event: any): number | null => {
 //           insertedEvents.push(createdEvent);
 //         } catch (err) {
 //           console.error(
-//             `Erreur lors de la création de l'occurrence pour ${event.title}`
+//             `Erreur lors de la création ou de la mise à jour de l'occurrence pour ${event.title}`
 //           );
 //           console.error(err);
 //         }
@@ -742,14 +780,16 @@ const determinePrice = (event: any): number | null => {
 //     }
 
 //     console.log(`Total des événements créés : ${insertedEvents.length}`);
+//     console.log(`Total des événements mis à jour : ${updatedEvents.length}`);
 //     console.log(
-//       `Total des occurrences ignorées (déjà existantes) : ${skippedOccurrences.length}`
+//       `Total des occurrences ignorées (déjà existantes ou invalides) : ${skippedOccurrences.length}`
 //     );
 
 //     res.status(201).json({
-//       message: `${insertedEvents.length} occurrences importées avec succès.`,
-//       skipped: `${skippedOccurrences.length} occurrences déjà existantes ignorées.`,
-//       data: insertedEvents,
+//       message: `${insertedEvents.length} occurrences créées, ${updatedEvents.length} mises à jour.`,
+//       skipped: `${skippedOccurrences.length} occurrences ignorées.`,
+//       createdEvents: insertedEvents,
+//       updatedEvents: updatedEvents,
 //     });
 //   } catch (error) {
 //     console.error(
@@ -951,92 +991,199 @@ const getEventsByPostalCode = async (
   }
 };
 
+// const getEventsByPosition = async (req: Request, res: Response) => {
+//   try {
+//     const { latitude, longitude, radius } = req.body;
+
+//     // Vérifier si les coordonnées sont fournies
+//     if (!latitude || !longitude) {
+//       return res.status(400).json({
+//         message: "La latitude et la longitude sont requises.",
+//       });
+//     }
+
+//     const lat = parseFloat(latitude as string);
+//     const lon = parseFloat(longitude as string);
+//     const searchRadius = parseFloat(radius) || 10; // Rayon en kilomètres (par défaut : 10 km)
+
+//     // Vérification des coordonnées
+//     if (
+//       isNaN(lat) ||
+//       isNaN(lon) ||
+//       lat < -90 ||
+//       lat > 90 ||
+//       lon < -180 ||
+//       lon > 180
+//     ) {
+//       return res.status(400).json({
+//         message: "Les coordonnées fournies doivent être valides.",
+//       });
+//     }
+
+//     // Utiliser l'agrégation `$geoNear` pour rechercher les événements
+//     const events = await Event.aggregate([
+//       {
+//         $geoNear: {
+//           near: { type: "Point", coordinates: [lon, lat] }, // [longitude, latitude]
+//           distanceField: "distance",
+//           maxDistance: searchRadius * 1000, // Convertir le rayon en mètres
+//           spherical: true,
+//           key: "location.geo", // Utilise le champ géospatial
+//         },
+//       },
+//       {
+//         $sort: { distance: 1 }, // Tri par distance croissante
+//       },
+//       {
+//         $project: {
+//           title: 1,
+//           startingDate: 1,
+//           endingDate: 1,
+//           location: 1,
+//           distance: 1,
+//           price: 1,
+//           theme: 1,
+//         },
+//       },
+//     ]);
+
+//     if (!events || events.length === 0) {
+//       return res.status(404).json({
+//         message: "Aucun événement trouvé autour de cette position.",
+//       });
+//     }
+
+//     // Séparer les événements par catégories : passés, actuels et futurs
+//     const currentDate = new Date();
+
+//     const pastEvents = events.filter(
+//       (event) => new Date(event.endingDate) < currentDate
+//     );
+//     const currentEvents = events.filter(
+//       (event) =>
+//         new Date(event.startingDate) <= currentDate &&
+//         new Date(event.endingDate) >= currentDate
+//     );
+//     const upcomingEvents = events.filter(
+//       (event) => new Date(event.startingDate) > currentDate
+//     );
+
+//     // Renvoyer les événements catégorisés
+//     return res.status(200).json({
+//       pastEvents,
+//       currentEvents,
+//       upcomingEvents,
+//     });
+//   } catch (error) {
+//     console.error("Erreur lors de la récupération des événements :", error);
+//     return res.status(500).json({
+//       message: "Erreur interne du serveur.",
+//       error: error,
+//     });
+//   }
+// };
+
 const getEventsByPosition = async (req: Request, res: Response) => {
   try {
-    const { latitude, longitude } = req.body;
+    const { latitude, longitude, radius } = req.body;
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const maxDistance = parseFloat(radius) * 1000 || 10000;
 
     if (!latitude || !longitude) {
-      return res.status(400).json({
-        message: "La latitude et la longitude sont requises.",
-      });
+      return res
+        .status(400)
+        .json({ message: "La latitude et la longitude sont requises." });
     }
 
     const lat = parseFloat(latitude as string);
     const lon = parseFloat(longitude as string);
 
-    // Vérifier la validité des coordonnées
     if (isNaN(lat) || isNaN(lon)) {
-      return res.status(400).json({
-        message: "Les coordonnées fournies ne sont pas valides.",
-      });
-    }
-
-    // Rayon de recherche en kilomètres (exemple : 10 km)
-    const radiusInKm = req.body.radius || 10;
-
-    // Utiliser une agrégation pour calculer la distance en utilisant la formule de Haversine
-    const events = await Event.aggregate([
-      {
-        $addFields: {
-          distance: {
-            $sqrt: {
-              $add: [
-                {
-                  $pow: [{ $subtract: ["$location.lat", lat] }, 2],
-                },
-                {
-                  $pow: [{ $subtract: ["$location.lng", lon] }, 2],
-                },
-              ],
-            },
-          },
-        },
-      },
-      {
-        $match: {
-          distance: { $lte: radiusInKm / 111.12 }, // Conversion km en degrés (approximation)
-        },
-      },
-      {
-        $sort: { distance: 1 },
-      },
-    ]).allowDiskUse(true);
-
-    if (events.length === 0) {
       return res
-        .status(404)
-        .json({ message: "Aucun événement trouvé autour de cette position." });
+        .status(400)
+        .json({ message: "Les coordonnées fournies ne sont pas valides." });
     }
 
-    // Date et heure actuelles
     const currentDate = new Date();
 
-    // Séparer les événements en trois catégories : passés, présents (aujourd'hui) et à venir
-    const pastEvents = events.filter(
-      (event) => new Date(event.endingDate) < currentDate
-    );
-    const upcomingEvents = events.filter(
-      (event) => new Date(event.startingDate) > currentDate
-    );
-    const currentEvents = events.filter(
-      (event) =>
-        new Date(event.startingDate) <= currentDate &&
-        new Date(event.endingDate) >= currentDate
-    );
+    // Fonction pour récupérer les événements et le nombre total
+    const fetchEventsWithCount = async (matchCondition: any) => {
+      const total = await Event.aggregate([
+        {
+          $geoNear: {
+            near: { type: "Point", coordinates: [lon, lat] },
+            distanceField: "distance",
+            maxDistance: maxDistance,
+            spherical: true,
+          },
+        },
+        { $match: matchCondition },
+        { $count: "total" }, // Compter le total des événements correspondant au filtre
+      ]);
+
+      const events = await Event.aggregate([
+        {
+          $geoNear: {
+            near: { type: "Point", coordinates: [lon, lat] },
+            distanceField: "distance",
+            maxDistance: maxDistance,
+            spherical: true,
+          },
+        },
+        { $match: matchCondition },
+        { $sort: { distance: 1 } }, // Trier par distance
+        { $skip: (page - 1) * limit }, // Pagination
+        { $limit: limit },
+        {
+          $project: {
+            title: 1,
+            location: 1,
+            distance: 1,
+            startingDate: 1,
+            endingDate: 1,
+            theme: 1,
+            price: 1,
+            description: 1,
+            address: 1,
+            image: 1,
+          },
+        },
+      ]).allowDiskUse(true);
+
+      return {
+        total: total[0]?.total || 0,
+        events,
+      };
+    };
+
+    // Récupérer les événements et les totaux pour chaque catégorie
+    const [pastData, currentData, upcomingData] = await Promise.all([
+      fetchEventsWithCount({ endingDate: { $lt: currentDate } }), // Événements passés
+      fetchEventsWithCount({
+        startingDate: { $lte: currentDate },
+        endingDate: { $gte: currentDate }, // Événements en cours
+      }),
+      fetchEventsWithCount({ startingDate: { $gt: currentDate } }), // Événements à venir
+    ]);
 
     return res.status(200).json({
-      pastEvents,
-      currentEvents,
-      upcomingEvents,
+      metadata: {
+        pastTotal: pastData.total,
+        currentTotal: currentData.total,
+        upcomingTotal: upcomingData.total,
+        currentPage: page,
+        pageSize: limit,
+      },
+      pastEvents: pastData.events,
+      currentEvents: currentData.events,
+      upcomingEvents: upcomingData.events,
     });
   } catch (error) {
-    console.error(
-      "Erreur lors de la récupération des événements par position:",
-      error
-    );
+    console.error("Erreur lors de la récupération des événements :", error);
     return res
       .status(500)
-      .json({ message: "Erreur interne du serveur", error });
+      .json({ message: "Erreur interne du serveur.", error: error });
   }
 };
 
@@ -1995,6 +2142,66 @@ const removeExpiredEvents = async (
   }
 };
 
+const deleteInvalidEvents = async (req: Request, res: Response) => {
+  try {
+    // Suppression des événements avec startingDate ou endingDate à null
+    const result = await Event.deleteMany({
+      $or: [{ startingDate: null }, { endingDate: null }],
+    });
+
+    console.log(
+      `Événements supprimés : ${result.deletedCount} avec startingDate ou endingDate null.`
+    );
+
+    res.status(200).json({
+      message: `${result.deletedCount} événements supprimés avec succès.`,
+    });
+  } catch (error) {
+    console.error(
+      "Erreur lors de la suppression des événements invalides :",
+      error
+    );
+
+    res.status(500).json({
+      error: "Erreur lors de la suppression des événements invalides.",
+      details: error,
+    });
+  }
+};
+
+// const migrateData = async () => {
+//   try {
+//     // Récupère les événements avec lat/lng mais sans geo
+//     const events = await Event.find();
+
+//     console.log(`Nombre d'événements à migrer : ${events.length}`);
+
+//     for (const event of events) {
+//       const { lat, lng } = event.location;
+
+//       // Vérifie que lat et lng sont valides
+//       if (typeof lat === "number" && typeof lng === "number") {
+//         event.location.geo = {
+//           type: "Point",
+//           coordinates: [lng, lat], // Longitude, Latitude
+//         };
+
+//         // Enregistre les modifications
+//         await event.save();
+//         console.log(`Événement ID ${event._id} migré avec succès.`);
+//       } else {
+//         console.warn(
+//           `Coordonnées invalides pour l'événement ID ${event._id}: lat=${lat}, lng=${lng}`
+//         );
+//       }
+//     }
+
+//     console.log("Migration des données terminée !");
+//   } catch (error) {
+//     console.error("Erreur lors de la migration des données :", error);
+//   }
+// };
+
 export default {
   // createEventFromJSON,
   createEventForAnEstablishment,
@@ -2006,6 +2213,7 @@ export default {
   updateEvent,
   // updateOrCreateEventFromJSON,
   // updateEventForParis,
+  // migrateData,
   getCoordinatesFromAPI,
   verifAllEvent,
   updateImageUrls,
@@ -2014,4 +2222,5 @@ export default {
   deleteDuplicateEvents,
   removeMidnightDates,
   removeExpiredEvents,
+  deleteInvalidEvents,
 };

@@ -21,6 +21,24 @@ const eventSchema = new Schema<IEvent>(
     location: {
       lat: Number,
       lng: Number,
+      geo: {
+        type: {
+          type: String, // Type géospatial (doit être "Point")
+          enum: ["Point"],
+          required: false,
+        },
+        coordinates: {
+          type: [Number], // Tableau contenant [longitude, latitude]
+          required: false,
+          validate: {
+            validator: function (coordinates: number[]) {
+              return coordinates.length === 2; // Longitude et latitude
+            },
+            message:
+              "Les coordonnées doivent contenir exactement deux valeurs : [longitude, latitude].",
+          },
+        },
+      },
     },
     price: { type: Number, default: 0 },
     priceSpecification: {

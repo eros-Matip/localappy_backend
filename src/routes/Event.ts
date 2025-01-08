@@ -44,10 +44,18 @@ router.delete(
   AdminIsAuthenticated,
   controller.removeMidnightDates
 );
+// router.put("/migrateData", AdminIsAuthenticated, controller.migrateData);
+
 router.delete(
   "/removeExpiredEvents",
   AdminIsAuthenticated,
   controller.removeExpiredEvents
+);
+
+router.delete(
+  "/deleteInvalidEvents",
+  AdminIsAuthenticated,
+  controller.deleteInvalidEvents
 );
 
 export default router;
