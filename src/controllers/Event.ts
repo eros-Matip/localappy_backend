@@ -1087,7 +1087,7 @@ const getEventsByPosition = async (req: Request, res: Response) => {
   try {
     const { latitude, longitude, radius } = req.body;
     const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 50;
+    const limit = parseInt(req.query.limit as string) || 10;
     const maxDistance = parseFloat(radius) * 1000 || 10000;
 
     if (!latitude || !longitude) {
@@ -1107,8 +1107,8 @@ const getEventsByPosition = async (req: Request, res: Response) => {
 
     const currentDate = new Date();
 
-    // Fonction pour récupérer les événements et le nombre total
-    const fetchEventsWithCount = async (matchCondition: any) => {
+    // Fonction pour récupérer les événements uniques par titre
+    const fetchUniqueEventsWithCount = async (matchCondition: any) => {
       const total = await Event.aggregate([
         {
           $geoNear: {
@@ -1119,7 +1119,13 @@ const getEventsByPosition = async (req: Request, res: Response) => {
           },
         },
         { $match: matchCondition },
-        { $count: "total" }, // Compter le total des événements correspondant au filtre
+        {
+          $group: {
+            _id: "$title", // Grouper par titre
+            event: { $first: "$$ROOT" }, // Conserver le premier événement par titre
+          },
+        },
+        { $count: "total" }, // Compter les événements uniques
       ]);
 
       const events = await Event.aggregate([
@@ -1132,23 +1138,16 @@ const getEventsByPosition = async (req: Request, res: Response) => {
           },
         },
         { $match: matchCondition },
+        {
+          $group: {
+            _id: "$title", // Grouper par titre
+            event: { $first: "$$ROOT" }, // Conserver le premier événement par titre
+          },
+        },
+        { $replaceRoot: { newRoot: "$event" } }, // Remplacer la racine par l'événement original
         { $sort: { distance: 1 } }, // Trier par distance
         { $skip: (page - 1) * limit }, // Pagination
         { $limit: limit },
-        {
-          $project: {
-            title: 1,
-            location: 1,
-            distance: 1,
-            startingDate: 1,
-            endingDate: 1,
-            theme: 1,
-            price: 1,
-            description: 1,
-            address: 1,
-            image: 1,
-          },
-        },
       ]).allowDiskUse(true);
 
       return {
@@ -1157,14 +1156,14 @@ const getEventsByPosition = async (req: Request, res: Response) => {
       };
     };
 
-    // Récupérer les événements et les totaux pour chaque catégorie
+    // Récupérer les événements uniques pour chaque catégorie
     const [pastData, currentData, upcomingData] = await Promise.all([
-      fetchEventsWithCount({ endingDate: { $lt: currentDate } }), // Événements passés
-      fetchEventsWithCount({
+      fetchUniqueEventsWithCount({ endingDate: { $lt: currentDate } }), // Événements passés
+      fetchUniqueEventsWithCount({
         startingDate: { $lte: currentDate },
         endingDate: { $gte: currentDate }, // Événements en cours
       }),
-      fetchEventsWithCount({ startingDate: { $gt: currentDate } }), // Événements à venir
+      fetchUniqueEventsWithCount({ startingDate: { $gt: currentDate } }), // Événements à venir
     ]);
 
     return res.status(200).json({
