@@ -19,7 +19,7 @@ import chalk from "chalk";
  */
 
 // const AllEvents = require("../../Events/index.json");
-const AllEventsForParis = require("../../Events/forParis.json");
+// const AllEventsForParis = require("../../Events/forParis.json");
 
 // Fonction de création d'événements
 // const createEventFromJSON = async (
