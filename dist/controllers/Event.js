@@ -375,7 +375,7 @@ const getEventsByPosition = (req, res) => __awaiter(void 0, void 0, void 0, func
     try {
         const { latitude, longitude, radius } = req.body;
         const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 10;
+        const limit = parseInt(req.query.limit) || 25;
         const maxDistance = parseFloat(radius) * 1000 || 10000;
         if (!latitude || !longitude) {
             return res
