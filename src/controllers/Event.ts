@@ -1098,7 +1098,7 @@ const getEventsByPosition = async (req: Request, res: Response) => {
   try {
     const { latitude, longitude, radius } = req.body;
     const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 25;
+    const limit = parseInt(req.query.limit as string) || 100;
     const maxDistance = parseFloat(radius) * 1000 || 50000; // Par défaut 50 km
 
     if (!latitude || !longitude) {
