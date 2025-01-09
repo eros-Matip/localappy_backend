@@ -1099,7 +1099,7 @@ const getEventsByPosition = async (req: Request, res: Response) => {
     const { latitude, longitude, radius } = req.body;
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 25;
-    const maxDistance = parseFloat(radius) * 1000;
+    const maxDistance = parseFloat(radius) * 1000 || 50000; // Par défaut 50 km
 
     if (!latitude || !longitude) {
       return res
@@ -1107,8 +1107,8 @@ const getEventsByPosition = async (req: Request, res: Response) => {
         .json({ message: "La latitude et la longitude sont requises." });
     }
 
-    const lat = parseFloat(latitude as string);
-    const lon = parseFloat(longitude as string);
+    const lat = parseFloat(latitude);
+    const lon = parseFloat(longitude);
 
     if (isNaN(lat) || isNaN(lon)) {
       return res
@@ -1132,11 +1132,11 @@ const getEventsByPosition = async (req: Request, res: Response) => {
         { $match: matchCondition },
         {
           $group: {
-            _id: "$title", // Grouper par titre
-            event: { $first: "$$ROOT" }, // Conserver le premier événement par titre
+            _id: "$title",
+            event: { $first: "$$ROOT" },
           },
         },
-        { $count: "total" }, // Compter les événements uniques
+        { $count: "total" },
       ]);
 
       const events = await Event.aggregate([
@@ -1151,13 +1151,13 @@ const getEventsByPosition = async (req: Request, res: Response) => {
         { $match: matchCondition },
         {
           $group: {
-            _id: "$title", // Grouper par titre
-            event: { $first: "$$ROOT" }, // Conserver le premier événement par titre
+            _id: "$title",
+            event: { $first: "$$ROOT" },
           },
         },
-        { $replaceRoot: { newRoot: "$event" } }, // Remplacer la racine par l'événement original
-        { $sort: { distance: 1 } }, // Trier par distance
-        { $skip: (page - 1) * limit }, // Pagination
+        { $replaceRoot: { newRoot: "$event" } },
+        { $sort: { distance: 1 } },
+        { $skip: (page - 1) * limit },
         { $limit: limit },
       ]).allowDiskUse(true);
 
@@ -1167,14 +1167,13 @@ const getEventsByPosition = async (req: Request, res: Response) => {
       };
     };
 
-    // Récupérer les événements uniques pour chaque catégorie
     const [pastData, currentData, upcomingData] = await Promise.all([
-      fetchUniqueEventsWithCount({ endingDate: { $lt: currentDate } }), // Événements passés
+      fetchUniqueEventsWithCount({ endingDate: { $lt: currentDate } }),
       fetchUniqueEventsWithCount({
         startingDate: { $lte: currentDate },
-        endingDate: { $gte: currentDate }, // Événements en cours
+        endingDate: { $gte: currentDate },
       }),
-      fetchUniqueEventsWithCount({ startingDate: { $gt: currentDate } }), // Événements à venir
+      fetchUniqueEventsWithCount({ startingDate: { $gt: currentDate } }),
     ]);
 
     return res.status(200).json({
