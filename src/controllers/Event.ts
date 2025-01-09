@@ -5,7 +5,7 @@ import Event from "../models/Event";
 import Retour from "../library/Retour";
 import Establishment from "../models/Establishment";
 
-// import path from "path";
+import path from "path";
 import * as fs from "fs";
 import chalk from "chalk";
 
@@ -467,7 +467,7 @@ function extractPriceSpecification(fileData: any) {
 
 //     for (const file of AllEvents) {
 //       try {
-//         console.info(`Traitement du fichier : ${file}`);
+//         console.info(`Traitement du fichier : ${file.file}`);
 //         const filePath = path.join(basePath, file.file);
 //         const fileData = JSON.parse(fs.readFileSync(filePath, "utf-8"));
 //         // const fileData = JSON.parse(fs.readFileSync(file, "utf-8"));
@@ -560,7 +560,6 @@ function extractPriceSpecification(fileData: any) {
 //         const images = extractImages(fileData);
 //         // Prix
 //         const priceSpecification = extractPriceSpecification(fileData);
-//         console.log("priceSpecification", priceSpecification);
 
 //         // Méthodes de paiement
 //         const acceptedPaymentMethod =
@@ -589,7 +588,11 @@ function extractPriceSpecification(fileData: any) {
 //             title,
 //             description,
 //             address: extractAddress(fileData),
-//             location: { lat: newLat, lng: newLng },
+//             location: {
+//               lat: newLat,
+//               lng: newLng,
+//               geo: { type: "Point", coordinates: [newLng, newLat] },
+//             },
 //             startingDate: startDate,
 //             endingDate: endDate,
 //             image: images,
@@ -604,7 +607,11 @@ function extractPriceSpecification(fileData: any) {
 //           console.info(`Nouvel événement créé : ${newEvent.title}`);
 //         } else {
 //           dbEvent.description = description;
-//           Object(dbEvent).location = { lat: newLat, lng: newLng };
+//           Object(dbEvent).location = {
+//             lat: newLat,
+//             lng: newLng,
+//             geo: { type: "Point", coordinates: [newLng, newLat] },
+//           };
 //           dbEvent.image = images;
 //           dbEvent.price = Object(priceSpecification).price;
 //           dbEvent.priceSpecification = priceSpecification;
@@ -614,8 +621,11 @@ function extractPriceSpecification(fileData: any) {
 //           console.info(`Événement mis à jour : ${dbEvent.title}`);
 //         }
 //       } catch (error) {
-//         unmatchedFiles.push(file);
-//         console.error(`Erreur lors du traitement du fichier : ${file}`, error);
+//         unmatchedFiles.push(file.file);
+//         console.error(
+//           `Erreur lors du traitement du fichier : ${file.file}`,
+//           error
+//         );
 //       }
 //     }
 
@@ -910,6 +920,7 @@ const createEventForAnEstablishment = async (req: Request, res: Response) => {
     });
   }
 };
+
 // Fonction pour lire un événement spécifique
 const readEvent = async (req: Request, res: Response, next: NextFunction) => {
   const eventId = req.params.eventId;
@@ -1088,7 +1099,7 @@ const getEventsByPosition = async (req: Request, res: Response) => {
     const { latitude, longitude, radius } = req.body;
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 25;
-    const maxDistance = parseFloat(radius) * 1000 || 10000;
+    const maxDistance = parseFloat(radius) * 1000;
 
     if (!latitude || !longitude) {
       return res
@@ -2201,6 +2212,101 @@ const deleteInvalidEvents = async (req: Request, res: Response) => {
 //   }
 // };
 
+const updateDescriptionsAndPrices = async (req: Request, res: Response) => {
+  try {
+    console.log("Début de la mise à jour des descriptions et des prix.");
+
+    // Trouver les événements avec des balises HTML dans leur description
+    console.log("Recherche des événements contenant des balises HTML...");
+    const events = await Event.find({ description: { $regex: /<[^>]+>/ } });
+    console.log(`${events.length} événements trouvés avec des balises HTML.`);
+
+    const updatedEvents = await Promise.all(
+      events.map(async (event) => {
+        console.log(
+          `Traitement de l'événement : ${event.title} (${event._id})`
+        );
+
+        // Nettoyer la description en supprimant les balises HTML
+        const originalDescription = event.description;
+        event.description = cleanHTML(event.description);
+
+        if (originalDescription !== event.description) {
+          console.log(`Description nettoyée pour l'événement : ${event.title}`);
+        }
+
+        // Remplacer le prix null par 0
+        if (event.price === null) {
+          console.log(
+            `Prix null détecté pour ${event.title}. Remplacement par 0.`
+          );
+          Object(event).price = 0;
+        }
+
+        // Mettre à jour priceSpecification si minPrice ou maxPrice est null
+        if (event.priceSpecification) {
+          if (event.priceSpecification.minPrice === null) {
+            console.log(
+              `minPrice null détecté pour ${event.title}. Remplacement par 0.`
+            );
+            event.priceSpecification.minPrice = 0;
+          }
+          if (event.priceSpecification.maxPrice === null) {
+            console.log(
+              `maxPrice null détecté pour ${event.title}. Remplacement par 0.`
+            );
+            event.priceSpecification.maxPrice = 0;
+          }
+        }
+
+        // Vérifier et corriger les coordonnées
+        if (
+          !event.location?.geo?.coordinates ||
+          event.location.geo.coordinates.length !== 2
+        ) {
+          console.log(
+            `Coordonnées invalides détectées pour ${event.title}. Correction en cours...`
+          );
+          Object(event).location.geo.coordinates = [0, 0]; // Par défaut : longitude et latitude nulles
+        }
+
+        // Sauvegarder l'événement
+        await event.save();
+        console.log(`Événement mis à jour : ${event.title} (${event._id})`);
+        return event;
+      })
+    );
+
+    console.log("Mise à jour terminée pour tous les événements.");
+
+    res.status(200).json({
+      message: `${updatedEvents.length} événements mis à jour.`,
+      updatedEvents,
+    });
+  } catch (error) {
+    console.error(
+      "Erreur lors de la mise à jour des descriptions et des prix :",
+      error
+    );
+    res
+      .status(500)
+      .json({ message: "Erreur interne du serveur.", error: error });
+  }
+};
+
+// Fonction pour supprimer toutes les balises HTML
+function cleanHTML(description: string): string {
+  if (!description) return description;
+
+  // Supprimer toutes les balises HTML et extraire le texte brut
+  const cleaned = description
+    .replace(/<[^>]+>/g, "") // Supprime toutes les balises HTML
+    .replace(/\s+/g, " ") // Remplace plusieurs espaces consécutifs par un seul espace
+    .trim(); // Supprime les espaces en début et fin de chaîne
+
+  return cleaned;
+}
+
 export default {
   // createEventFromJSON,
   createEventForAnEstablishment,
@@ -2217,6 +2323,7 @@ export default {
   verifAllEvent,
   updateImageUrls,
   // updateEventCoordinates,
+  updateDescriptionsAndPrices,
   deleteEvent,
   deleteDuplicateEvents,
   removeMidnightDates,

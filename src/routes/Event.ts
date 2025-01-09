@@ -33,12 +33,18 @@ router.put(
   AdminIsAuthenticated,
   controller.getCoordinatesFromAPI
 );
+router.put(
+  "/updateDescriptionsAndPrices",
+  AdminIsAuthenticated,
+  controller.updateDescriptionsAndPrices
+);
 router.delete("/delete/:eventId", AdminIsAuthenticated, controller.deleteEvent);
 router.delete(
   "/deleteDuplicateEvents",
   AdminIsAuthenticated,
   controller.deleteDuplicateEvents
 );
+
 router.delete(
   "/removeMidnightDates",
   AdminIsAuthenticated,
