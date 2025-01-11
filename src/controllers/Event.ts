@@ -350,11 +350,9 @@ function extractPriceSpecification(fileData: any) {
   let priceCurrency = "EUR"; // Valeur par défaut
 
   const offers = fileData?.offers || [];
-  console.log("Offers:", offers); // Log des offres
 
   offers.forEach((offer: any) => {
     const priceSpecifications = offer["schema:priceSpecification"] || [];
-    console.log("Price Specifications:", priceSpecifications); // Log des spécifications
 
     priceSpecifications.forEach((spec: any) => {
       const maxPrices = spec["schema:maxPrice"];

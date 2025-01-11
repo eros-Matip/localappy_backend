@@ -145,7 +145,9 @@ const updateCustomer = async (req: Request, res: Response) => {
     }
 
     const { allInfos } = req.body;
-    const fileKeys = req.files ? Object(req.files).file : [];
+    const fileKeys = req.files ? Object(req.files) : [];
+    console.log("fileKeys", fileKeys);
+
     if (!allInfos && !fileKeys.length) {
       console.error("Nothing has changed");
       return res.status(400).json({ message: "Nothing has changed" });

@@ -9,6 +9,7 @@ const uid2 = require("uid2");
 import twilio from "twilio";
 import { Job, Agenda } from "agenda";
 import config from "../config/config";
+const cloudinary = require("cloudinary");
 
 // Twilio configuration
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
@@ -26,11 +27,32 @@ agenda.define("delete unverified owner", async (job: Job) => {
 
     if (owner && !owner.isVerified) {
       Retour.log(`Unverified owner ${owner.email} deleted after 1 hour.`);
-      await Owner.findByIdAndDelete(ownerId);
+
+      if (owner.cni?.public_id) {
+        // Supprimer le fichier associé à la pièce d'identité
+        await cloudinary.uploader.destroy(owner.cni.public_id);
+        Retour.log(`Deleted CNI file: ${owner.cni.public_id}`);
+      }
+
+      // Supprimer le dossier s'il existe
+      const folderName = `${owner.account.firstname}_${owner.account.name}_folder`;
+      const { resources } = await cloudinary.api.resources({
+        type: "upload",
+        prefix: folderName,
+      });
+
+      for (const file of resources) {
+        await cloudinary.uploader.destroy(file.public_id);
+      }
+      await cloudinary.api.delete_folder(folderName);
+      Retour.log(`Deleted Cloudinary folder: ${folderName}`);
+
+      // Supprimer le propriétaire de la base de données
+      await owner.deleteOne();
     } else if (owner && owner.isVerified) {
       Retour.log(`Owner with ID ${ownerId} is verified. No action taken.`);
     } else {
-      Retour.log(`Owner with ID ${ownerId} is verified. No action taken.`);
+      Retour.log(`Owner with ID ${ownerId} not found. No action taken.`);
     }
   } catch (error) {
     Retour.error(
@@ -84,6 +106,15 @@ export const createOwner = async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Customer not found" });
     }
 
+    const fileKeys = req.files ? Object(req.files).file : [];
+
+    console.log("fileKeys", fileKeys);
+
+    if (!fileKeys.length) {
+      console.error("Identity document is missing");
+      return res.status(400).json({ message: "Identity document is missing" });
+    }
+
     const token: string = uid2(26);
     const salt: string = uid2(26);
     const hash: string = SHA256(password + salt).toString(encBase64);
@@ -130,8 +161,19 @@ export const createOwner = async (req: Request, res: Response) => {
       customerAccount: customerFinded,
     });
 
-    await owner.save();
+    // Upload sur Cloudinary
+    const result = await cloudinary.v2.uploader.upload(fileKeys[0].path, {
+      folder: `${owner.account.firstname}_${owner.account.name}_folder`,
+    });
 
+    // Mise à jour de la photo de la piece d'identité avec le dernier fichier téléchargé
+    owner.cni = {
+      public_id: result.public_id,
+      url: result.secure_url,
+    };
+    await owner.save();
+    Object(customerFinded).ownerAccount = owner;
+    await Object(customerFinded).save();
     // Planifier la suppression après 1 heure
     await agenda.start();
     await agenda.schedule("in 1 hour", "delete unverified owner", {
