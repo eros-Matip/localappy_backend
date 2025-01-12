@@ -44,6 +44,7 @@ import socialLoginRoute from "./routes/LoginBySocial";
 import verifPhoneRoute from "./routes/VerifCode";
 import ContactRoutes from "./routes/Contact";
 import AdminRoutes from "./routes/Admin";
+import FetchingInfoEntrepriseRoute from "./routes/FetchingSiret";
 // FUNCTIONS
 import Logging from "./library/Logging";
 import AdminIsAuthenticated from "./middlewares/IsAuthenticated";
@@ -104,6 +105,7 @@ const startServer = () => {
   router.use(LoginRoute);
   router.use(socialLoginRoute);
   router.use(verifPhoneRoute);
+  router.use(FetchingInfoEntrepriseRoute);
   /** Healthcheck */
 
   router.all(

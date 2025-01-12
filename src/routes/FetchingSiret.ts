@@ -1,48 +1,49 @@
+import express from "express";
 import axios from "axios";
-import { NextFunction, Request, Response } from "express";
+import { NextFunction, Request, Response, Router } from "express";
 import Retour from "../library/Retour";
+const router = express.Router();
 
-export const fetchSiretEntreprise = (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  try {
-    const siret = req.params.siret;
-    // Fonction pour extraire le token de requete
-    const options = {
-      method: "POST",
-      url: "https://api.insee.fr/token",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      data: new URLSearchParams({
-        grant_type: "client_credentials",
-        client_id: `${process.env.API_SIRET_CLIENT_ID}`,
-        client_secret: `${process.env.API_SIRET_CLIENT_SECRET}`,
-      }),
-    };
+router.post(
+  "/fetchSiretEntreprise",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { siret } = req.body;
+      // Fonction pour extraire le token de requete
+      const options = {
+        method: "POST",
+        url: "https://api.insee.fr/token",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        data: new URLSearchParams({
+          grant_type: "client_credentials",
+          client_id: `${process.env.API_SIRET_CLIENT_ID}`,
+          client_secret: `${process.env.API_SIRET_CLIENT_SECRET}`,
+        }),
+      };
 
-    // Fonction pour requeter l'API d'état
-    axios.request(options).then(async function (response) {
-      let entreprise: object = {};
-      (async () => {
-        try {
-          entreprise = await axios.get(
-            `https://api.insee.fr/entreprises/sirene/V3/siret/${siret}`,
-            {
-              headers: {
-                Authorization: `Bearer ${response.data.access_token}`,
-                "Content-Type": "multipart/form-data",
-              },
+      // Fonction pour requeter l'API d'état
+      axios.request(options).then(async function (response) {
+        let entreprise: object = {};
+        (async () => {
+          try {
+            entreprise = await axios.get(
+              `https://api.insee.fr/entreprises/sirene/V3.11/siret/${siret}`,
+              {
+                headers: {
+                  Authorization: `Bearer ${response.data.access_token}`,
+                  "Content-Type": "multipart/form-data",
+                },
+              }
+            );
+          } catch (err) {
+            Retour.error(`Error 404... entreprise ${siret} not found`);
+            console.error(Object(err));
+          } finally {
+            if (Object(entreprise).data === undefined) {
+              Retour.error("error catched");
+              return res.status(400).json({ message: "error catched" });
             }
-          );
-        } catch (err) {
-          Retour.error(`Error 404... entreprise ${siret} not found`);
-          console.error(Object(err).data);
-        } finally {
-          if (Object(entreprise).data === undefined) {
-            Retour.error("error catched");
-            return res.status(400).json({ message: "error catched" });
-          } else {
+
             let codes = [
               { code: "NN", value: "Unité non employeuse" },
               { code: 0, value: " 0 salarié" },
@@ -128,27 +129,28 @@ export const fetchSiretEntreprise = (
               },
             });
           }
-        }
-      })();
-    });
-  } catch (error) {
-    console.error({
-      message: "error catched",
-      error: {
-        message: Object(error).message,
-        method: Object(error).config.method,
-        url: Object(error).config.url,
-        code: Object(error).code,
-      },
-    });
-    return res.status(500).json({
-      message: "error catched",
-      error: {
-        message: Object(error).message,
-        method: Object(error).config.method,
-        url: Object(error).config.url,
-        code: Object(error).code,
-      },
-    });
+        })();
+      });
+    } catch (error) {
+      console.error({
+        message: "error catched",
+        error: {
+          message: Object(error).message,
+          method: Object(error).config.method,
+          url: Object(error).config.url,
+          code: Object(error).code,
+        },
+      });
+      return res.status(500).json({
+        message: "error catched",
+        error: {
+          message: Object(error).message,
+          method: Object(error).config.method,
+          url: Object(error).config.url,
+          code: Object(error).code,
+        },
+      });
+    }
   }
-};
+);
+export default router;
