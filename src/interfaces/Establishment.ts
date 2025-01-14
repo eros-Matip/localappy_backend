@@ -23,6 +23,7 @@ export default interface IEstablishment extends Document {
     registrationNumber: string; // Numéro d’immatriculation (SIRET en France)
     insuranceCertificate: string; // Certificat d’assurance responsabilité civile
     KBis: Object;
+    activityCodeNAF: string;
   };
   owner: { type: Types.ObjectId; ref: "Owner" }; // Référence vers le propriétaire de l’établissement
   events: [{ type: Types.ObjectId; ref: "Event" }]; // Référence vers les événements organisés par l’établissement

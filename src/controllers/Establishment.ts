@@ -5,98 +5,117 @@ import Owner from "../models/Owner"; // Modèle Mongoose pour le propriétaire
 import Establishment from "../models/Establishment"; // Modèle Mongoose pour l'établissement
 import Retour from "../library/Retour";
 import config from "../config/config";
+const cloudinary = require("cloudinary");
 
 // Fonction pour créer un nouvel établissement avec les données récupérées depuis l'INSEE
 const createEstablishment = async (req: Request, res: Response) => {
-  const { ownerId, activity, website, facebook, instagram, twitter, siret } =
-    req.body;
+  const {
+    activity,
+    website,
+    facebook,
+    instagram,
+    twitter,
+    adressLabel,
+    society,
+    siret,
+    adress,
+    city,
+    zip,
+    activityCodeNAF,
+  } = req.body;
+
+  if (
+    !activity ||
+    !adressLabel ||
+    !society ||
+    !siret ||
+    !adress ||
+    !city ||
+    !zip
+  ) {
+    Retour.warn("Some value is missing");
+    return res.status(404).json({ message: "Some value is missing" });
+  }
+  console.log(Object(req.files).file);
+
+  if (!Object(req.files).file) {
+    Retour.warn("KBis is missing");
+    return res.status(400).json({ message: "KBis is missing" });
+  }
+  // Récupération des informations de l'établissement dans req.body
+  const fileKeys = req.files ? Object(req.files).file : []; // Récupérer le fichier KBis envoyé
 
   try {
     // Vérifier si le propriétaire existe dans la base de données
-    const owner = req.body.owner;
+    const owner = await Owner.findById(req.body.owner);
 
     if (!owner) {
+      Retour.warn("Owner not found");
       return res.status(404).json({ message: "Owner not found" });
     }
 
     // Vérifier si le propriétaire est validé
-    if (!owner.isValidated) {
-      return res.status(400).json({ message: "Owner not validated" });
+    if (!owner.isVerified) {
+      Retour.warn("Owner not verified");
+      return res.status(400).json({ message: "Owner not verified" });
     }
 
-    // Obtenir le token OAuth2 de l'API INSEE
-    const tokenResponse = await axios.post(
-      "https://api.insee.fr/token",
-      new URLSearchParams({
-        grant_type: "client_credentials",
-        client_id: `${config.apiSiret}`,
-        client_secret: `${config.apiSiretSecret}`,
-      }),
-      {
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      }
-    );
-    const accessToken = tokenResponse.data.access_token;
+    // Chemin du dossier Cloudinary pour cet Owner
+    const cloudinaryFolder = `${owner.account.firstname}_${owner.account.name}_folder`;
 
-    // Utiliser le token pour interroger l'API INSEE et récupérer les informations de l'entreprise
-    const entrepriseResponse = await axios.get(
-      `https://api.insee.fr/entreprises/sirene/V3.11/siret/${siret}`,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-
-    const entreprise = entrepriseResponse.data;
-
-    // Vérifier que les informations de l'entreprise ont bien été récupérées
-    if (!entreprise) {
-      Retour.error("establishment not found in INSEE database");
-      return res.status(404).json({
-        message: "establishment not found in INSEE database",
+    // Téléchargement du fichier KBis (s'il est fourni)
+    let kbisUploadResult = null;
+    if (fileKeys.length > 0) {
+      kbisUploadResult = await cloudinary.v2.uploader.upload(fileKeys[0].path, {
+        folder: cloudinaryFolder, // Télécharger dans le dossier spécifique de l'owner
+        public_id: "KBis", // Nom du fichier
+        resource_type: "image", // Spécifier que c'est une image
       });
     }
 
-    // Construire l'adresse et interroger l'API gouv pour la localisation
-    let address = `${entreprise.etablissement.adresseEtablissement.numeroVoieEtablissement} ${entreprise.etablissement.adresseEtablissement.typeVoieEtablissement} ${entreprise.etablissement.adresseEtablissement.libelleVoieEtablissement} ${entreprise.etablissement.adresseEtablissement.codePostalEtablissement} ${entreprise.etablissement.adresseEtablissement.libelleCommuneEtablissement}`;
+    // Obtenir les coordonnées de l'adresse via l'API adresse.data.gouv.fr
     const responseApiGouv = await axios.get(
-      `https://api-adresse.data.gouv.fr/search/?q=${address}`
+      `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(
+        adressLabel
+      )}`
     );
+
+    if (!responseApiGouv.data.features.length) {
+      Retour.warn("Invalid address, no coordinates found.");
+      return res
+        .status(400)
+        .json({ message: "Invalid address, no coordinates found." });
+    }
 
     const latitude = responseApiGouv.data.features[0].geometry.coordinates[1];
     const longitude = responseApiGouv.data.features[0].geometry.coordinates[0];
 
     // Vérifier si un établissement avec le même nom et la même localisation existe déjà
     const existingEstablishment = await Establishment.findOne({
-      name: entreprise.etablissement.uniteLegale.denominationUniteLegale,
-      location: {
-        lat: latitude,
-        lng: longitude,
-      },
+      name: society,
+      siret: siret,
     });
 
     if (existingEstablishment) {
-      Retour.error(
-        "An establishment with the same name and location already exists"
-      );
+      Retour.warn("An establishment with the same name already exists");
       return res.status(409).json({
-        message:
-          "An establishment with the same name and location already exists",
+        message: "An establishment with the same name already exists",
       });
     }
 
-    // Créer un nouvel établissement en utilisant les données de l'INSEE et les données envoyées dans la requête
+    // Créer un nouvel établissement avec les données de l'INSEE et les données utilisateur
     const establishment = new Establishment({
-      name: entreprise.etablissement.uniteLegale.denominationUniteLegale,
+      name: society,
       type: activity,
+      siret: siret,
+      picture: {
+        public_id: "",
+        secure_url: "",
+      },
       address: {
-        street: `${entreprise.etablissement.adresseEtablissement.numeroVoieEtablissement && entreprise.etablissement.adresseEtablissement.numeroVoieEtablissement} ${entreprise.etablissement.adresseEtablissement.typeVoieEtablissement} ${entreprise.etablissement.adresseEtablissement.libelleVoieEtablissement}`,
-        city: entreprise.etablissement.adresseEtablissement
-          .libelleCommuneEtablissement,
-        postalCode:
-          entreprise.etablissement.adresseEtablissement.codePostalEtablissement,
+        street: adress,
+        city: city,
+        postalCode: zip,
         country: "FRANCE",
       },
       location: {
@@ -104,27 +123,38 @@ const createEstablishment = async (req: Request, res: Response) => {
         lng: longitude,
       },
       contact: {
-        website: website,
+        website,
         socialMedia: { facebook, instagram, twitter },
       },
       legalInfo: {
         registrationNumber: siret,
+        KBis: kbisUploadResult
+          ? {
+              public_id: kbisUploadResult.public_id,
+              secure_url: kbisUploadResult.secure_url,
+            }
+          : null, // Enregistrer les infos Cloudinary pour le KBis
+        activityCodeNAF: activityCodeNAF,
       },
       owner: owner._id,
       events: [],
     });
 
-    // Sauvegarder le nouvel établissement dans la base de données
+    // Sauvegarder l'établissement dans la base de données
     await establishment.save();
 
     // Ajouter l'établissement à la liste des établissements du propriétaire
     owner.establishments.push(Object(establishment)._id);
     await owner.save();
 
-    // Retourner la réponse avec toutes les informations de l'établissement et les données INSEE récupérées
-    return res.status(201).json({ establishment, entreprise });
+    // Retourner la réponse avec l'établissement créé
+    Retour.info("Establishment created successfully");
+    return res.status(201).json({
+      message: "Establishment created successfully",
+      establishment,
+    });
   } catch (error) {
-    console.error(`Error creating establishment: ${error}`);
+    Retour.error(`Error creating establishment: ${error}`);
     return res.status(500).json({
       error: "Failed to create establishment",
       details: error,

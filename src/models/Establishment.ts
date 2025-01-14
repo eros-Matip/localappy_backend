@@ -25,6 +25,7 @@ const EstablishmentSchema = new Schema<IEstablishment>(
       registrationNumber: String, // Numéro d’immatriculation (SIRET en France)
       insuranceCertificate: String, // Certificat d’assurance responsabilité civile
       KBis: Object,
+      activityCodeNAF: String,
     },
     owner: { type: Schema.Types.ObjectId, ref: "Owner" }, // Référence vers le propriétaire de l’établissement
     events: [{ type: Schema.Types.ObjectId, ref: "Event" }],

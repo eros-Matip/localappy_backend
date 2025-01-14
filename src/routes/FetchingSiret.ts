@@ -2,7 +2,22 @@ import express from "express";
 import axios from "axios";
 import { NextFunction, Request, Response, Router } from "express";
 import Retour from "../library/Retour";
+import fs from "fs";
+import path from "path";
 const router = express.Router();
+// Charger le fichier JSON contenant les libellés des codes NAF
+const libelleCodeNafPath = path.join(__dirname, "../../libelleCodeNaf.json");
+const libelleCodeNaf = JSON.parse(fs.readFileSync(libelleCodeNafPath, "utf-8"));
+
+// Fonction pour récupérer le libellé à partir du code NAF
+const getLibelleByCodeNAF = (codeNAF: string): string | null => {
+  const nafEntry = libelleCodeNaf.NAF.find(
+    (entry: object) => Object(entry).Code === codeNAF
+  );
+  return nafEntry
+    ? nafEntry[" Intitulés de la  NAF rév. 2, version finale "] || null
+    : null;
+};
 
 router.post(
   "/fetchSiretEntreprise",
@@ -62,7 +77,12 @@ router.post(
               { code: 52, value: "5 000 à 9 999 salariés" },
               { code: 53, value: "10 000 salariés et plus" },
             ];
+            // Récupérer le libellé correspondant au code NAF
+            const codeNAF =
+              Object(entreprise).data.etablissement.uniteLegale
+                .activitePrincipaleUniteLegale;
 
+            const libelleNAF = getLibelleByCodeNAF(codeNAF);
             return res.status(200).json({
               etablissement: {
                 society:
@@ -126,6 +146,7 @@ router.post(
                       }`
                     : "Unité non employeuse",
                 codeNAF: `${Object(entreprise).data.etablissement.uniteLegale.activitePrincipaleUniteLegale}`,
+                activityLabel: `${libelleNAF}`,
               },
             });
           }
