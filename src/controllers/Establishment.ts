@@ -4,7 +4,6 @@ import axios from "axios";
 import Owner from "../models/Owner"; // Modèle Mongoose pour le propriétaire
 import Establishment from "../models/Establishment"; // Modèle Mongoose pour l'établissement
 import Retour from "../library/Retour";
-import config from "../config/config";
 const cloudinary = require("cloudinary");
 
 // Fonction pour créer un nouvel établissement avec les données récupérées depuis l'INSEE

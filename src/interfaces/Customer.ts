@@ -61,6 +61,7 @@ export default interface ICustomer extends Document {
     status: boolean;
     code: string;
   };
+  expoPushToken: string;
   token: string;
   hash: string;
   salt: string;

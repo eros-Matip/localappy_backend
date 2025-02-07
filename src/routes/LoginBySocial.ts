@@ -43,7 +43,7 @@ const verifyAppleToken = (accessToken: string) => {
 };
 
 router.post("/socialLogin", async (req: Request, res: Response) => {
-  const { provider, accessToken } = req.body;
+  const { provider, accessToken, expoPushToken } = req.body; // Ajout de expoPushToken
 
   if (!provider || !accessToken) {
     Retour.error("Provider and accessToken are required");
@@ -111,11 +111,15 @@ router.post("/socialLogin", async (req: Request, res: Response) => {
         },
         email: userData.email,
         token: uid2(29),
+        expoPushToken: expoPushToken || null, // Ajout de expoPushToken
       });
 
       await customer.save();
     } else {
       customer.token = uid2(29);
+      if (expoPushToken) {
+        customer.expoPushToken = expoPushToken; // Mise à jour si fourni
+      }
       await customer.save();
     }
 

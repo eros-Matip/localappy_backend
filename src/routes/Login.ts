@@ -21,13 +21,21 @@ router.post(
           req.body.admin
         ).populate([
           { path: "themesFavorites", model: "Theme" },
-          {
-            path: "eventsFavorites",
-            model: "Event",
-          },
+          { path: "eventsFavorites", model: "Event" },
           { path: "ownerAccount", model: "Owner" },
         ]);
-        // Renvoyer les informations si l'utilisateur est authentifié par token
+
+        // Vérifier si l'utilisateur existe bien
+        if (!customerFindedByToken) {
+          return res.status(404).json({ message: "Customer not found" });
+        }
+
+        // Mettre à jour expoPushToken si fourni
+        if (req.body.expoPushToken) {
+          customerFindedByToken.expoPushToken = req.body.expoPushToken;
+          await customerFindedByToken.save();
+        }
+
         return res.status(200).json({
           message: "Logged in with token",
           customer: customerFindedByToken,
@@ -35,7 +43,7 @@ router.post(
       }
 
       // Si pas de token ou token invalide, procéder à la connexion par email et mot de passe
-      const { email, password } = req.body;
+      const { email, password, expoPushToken } = req.body;
 
       if (!email || !password) {
         return res
@@ -45,20 +53,16 @@ router.post(
 
       // Recherche de l'utilisateur par email
       const customerFinded = await Customer.findOne({ email }).populate([
-        {
-          path: "themesFavorites",
-          model: "Theme",
-        },
-        {
-          path: "eventsFavorites",
-          model: "Event",
-        },
+        { path: "themesFavorites", model: "Theme" },
+        { path: "eventsFavorites", model: "Event" },
         { path: "ownerAccount", model: "Owner" },
       ]);
+
       if (!customerFinded) {
         Retour.error("Account was not found");
         return res.status(401).json({ message: "Account was not found" });
       }
+
       const ownerFinded = await Owner.findById(customerFinded.ownerAccount);
 
       // Vérification du mot de passe
@@ -78,7 +82,13 @@ router.post(
           ownerFinded.token = newToken;
           await ownerFinded.save();
         }
-        // Sauvegarder le nouveau token si modifié
+
+        // Mettre à jour expoPushToken si fourni
+        if (expoPushToken) {
+          customerFinded.expoPushToken = expoPushToken;
+        }
+
+        // Sauvegarder les modifications
         await customerFinded.save();
 
         return res.status(200).json({

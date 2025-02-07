@@ -16,7 +16,7 @@ export default interface IEvent extends Document {
       coordinates: [number, number]; // [longitude, latitude]
     };
   };
-  price: { type: number; default: 0 };
+  price: number;
   priceSpecification: {
     minPrice: number;
     maxPrice: number;

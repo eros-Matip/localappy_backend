@@ -39,6 +39,7 @@ const customerSchema = new Schema<ICustomer>(
       status: { type: Boolean, default: false },
       code: { type: String },
     },
+    expoPushToken: String,
     token: String,
     hash: String,
     salt: String,
