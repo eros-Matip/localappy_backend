@@ -95,7 +95,7 @@ router.post("/socialLogin", async (req: Request, res: Response) => {
     let customer = await Customer.findOne({ email: userData.email }).populate([
       { path: "themesFavorites", model: "Theme" },
       { path: "eventsFavorites", model: "Event" },
-      { path: "ownerAccount", model: "Owner" },
+      { path: "ownerAccount", model: "Owner", populate: "establishments" },
     ]);
 
     if (!customer) {

@@ -22,7 +22,7 @@ router.post(
         ).populate([
           { path: "themesFavorites", model: "Theme" },
           { path: "eventsFavorites", model: "Event" },
-          { path: "ownerAccount", model: "Owner" },
+          { path: "ownerAccount", model: "Owner", populate: "establishments" },
         ]);
 
         // Vérifier si l'utilisateur existe bien

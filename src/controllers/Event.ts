@@ -721,9 +721,14 @@ const determinePrice = (event: any): number | null => {
 //             // Mise à jour de l'événement existant
 //             existingEvent.theme = event.tags || existingEvent.theme;
 //             existingEvent.address = `${event.address_street}, ${event.address_city}, ${event.address_zipcode}`;
-//             existingEvent.location = event.lat_lon
-//               ? { lat: event.lat_lon.lat, lng: event.lat_lon.lon }
-//               : existingEvent.location;
+//             existingEvent.location = {
+//               lat: event.lat_lon.lat,
+//               lng: event.lat_lon.lon,
+//               geo: {
+//                 type: "Point",
+//                 coordinates: [event.lat_lon.lon, event.lat_lon.lat],
+//               },
+//             };
 //             existingEvent.price = determinePrice(event) || 0;
 //             existingEvent.organizer = {
 //               establishment: existingEvent.organizer.establishment,
@@ -751,9 +756,14 @@ const determinePrice = (event: any): number | null => {
 //             startingDate: occurrence.startingDate,
 //             endingDate: occurrence.endingDate,
 //             address: `${event.address_street}, ${event.address_city}, ${event.address_zipcode}`,
-//             location: event.lat_lon
-//               ? { lat: event.lat_lon.lat, lng: event.lat_lon.lon }
-//               : { lat: null, lng: null },
+//             location: {
+//               lat: event.lat_lon.lat,
+//               lng: event.lat_lon.lon,
+//               geo: {
+//                 type: "Point",
+//                 coordinates: [event.lat_lon.lon, event.lat_lon.lat],
+//               },
+//             },
 //             price: determinePrice(event), // Détermination du prix
 //             priceSpecification: {
 //               minPrice: null,
