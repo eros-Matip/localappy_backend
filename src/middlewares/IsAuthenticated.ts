@@ -18,6 +18,7 @@ const CustomerIsAuthenticated = async (
   // Vérifier la présence du header d'autorisation
   if (req.headers.authorization) {
     const token = req.headers.authorization.replace("Bearer ", "");
+
     const CustomerFinded = await Customer.findOne({ token }).populate([
       {
         path: "themesFavorites",
@@ -27,7 +28,7 @@ const CustomerIsAuthenticated = async (
         path: "eventsFavorites",
         model: "Event",
       },
-      { path: "ownerAccount", model: "Owner" },
+      { path: "ownerAccount", model: "Owner", populate: "establishments" },
     ]);
 
     // Si un utilisateur est trouvé avec ce token
@@ -36,6 +37,11 @@ const CustomerIsAuthenticated = async (
       if (isLoginRoute) {
         const newToken: string = uid2(30);
         CustomerFinded.token = newToken;
+
+        // Mettre à jour expoPushToken si fourni
+        if (req.body.expoPushToken) {
+          CustomerFinded.expoPushToken = req.body.expoPushToken;
+        }
 
         // Sauvegarder le nouveau token si modifié
         await CustomerFinded.save();
