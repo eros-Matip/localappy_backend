@@ -1,0 +1,38 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const mongoose_1 = require("mongoose");
+const billSchema = new mongoose_1.Schema({
+    customer: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", required: true },
+    registration: {
+        type: mongoose_1.Schema.Types.ObjectId,
+        ref: "Registration",
+        required: true,
+    },
+    amount: { type: Number, required: true },
+    status: {
+        type: String,
+        enum: ["pending", "paid", "cancelled"],
+        default: "pending",
+    },
+    paymentMethod: {
+        type: String,
+        enum: ["credit_card", "paypal", "cash"],
+        required: true,
+    },
+    invoiceNumber: { type: String, required: true, unique: true },
+    issuedDate: { type: Date, required: true, default: Date.now },
+    dueDate: { type: Date, required: true },
+    discount: { type: Number, required: false },
+    taxes: { type: Number, required: false },
+    items: [
+        {
+            description: { type: String, required: true },
+            quantity: { type: Number, required: true, min: 1 },
+            price: { type: Number, required: true },
+        },
+    ],
+    notes: { type: String, required: false },
+}, { timestamps: true });
+const Bill = (0, mongoose_1.model)("Bill", billSchema);
+exports.default = Bill;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiQmlsbC5qcyIsInNvdXJjZVJvb3QiOiIiLCJzb3VyY2VzIjpbIi4uLy4uL3NyYy9tb2RlbHMvQmlsbC50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiOztBQUFBLHVDQUFtRDtBQUduRCxNQUFNLFVBQVUsR0FBRyxJQUFJLGlCQUFNLENBQzNCO0lBQ0UsUUFBUSxFQUFFLEVBQUUsSUFBSSxFQUFFLGlCQUFNLENBQUMsS0FBSyxDQUFDLFFBQVEsRUFBRSxHQUFHLEVBQUUsTUFBTSxFQUFFLFFBQVEsRUFBRSxJQUFJLEVBQUU7SUFDdEUsWUFBWSxFQUFFO1FBQ1osSUFBSSxFQUFFLGlCQUFNLENBQUMsS0FBSyxDQUFDLFFBQVE7UUFDM0IsR0FBRyxFQUFFLGNBQWM7UUFDbkIsUUFBUSxFQUFFLElBQUk7S0FDZjtJQUNELE1BQU0sRUFBRSxFQUFFLElBQUksRUFBRSxNQUFNLEVBQUUsUUFBUSxFQUFFLElBQUksRUFBRTtJQUN4QyxNQUFNLEVBQUU7UUFDTixJQUFJLEVBQUUsTUFBTTtRQUNaLElBQUksRUFBRSxDQUFDLFNBQVMsRUFBRSxNQUFNLEVBQUUsV0FBVyxDQUFDO1FBQ3RDLE9BQU8sRUFBRSxTQUFTO0tBQ25CO0lBQ0QsYUFBYSxFQUFFO1FBQ2IsSUFBSSxFQUFFLE1BQU07UUFDWixJQUFJLEVBQUUsQ0FBQyxhQUFhLEVBQUUsUUFBUSxFQUFFLE1BQU0sQ0FBQztRQUN2QyxRQUFRLEVBQUUsSUFBSTtLQUNmO0lBQ0QsYUFBYSxFQUFFLEVBQUUsSUFBSSxFQUFFLE1BQU0sRUFBRSxRQUFRLEVBQUUsSUFBSSxFQUFFLE1BQU0sRUFBRSxJQUFJLEVBQUU7SUFDN0QsVUFBVSxFQUFFLEVBQUUsSUFBSSxFQUFFLElBQUksRUFBRSxRQUFRLEVBQUUsSUFBSSxFQUFFLE9BQU8sRUFBRSxJQUFJLENBQUMsR0FBRyxFQUFFO0lBQzdELE9BQU8sRUFBRSxFQUFFLElBQUksRUFBRSxJQUFJLEVBQUUsUUFBUSxFQUFFLElBQUksRUFBRTtJQUN2QyxRQUFRLEVBQUUsRUFBRSxJQUFJLEVBQUUsTUFBTSxFQUFFLFFBQVEsRUFBRSxLQUFLLEVBQUU7SUFDM0MsS0FBSyxFQUFFLEVBQUUsSUFBSSxFQUFFLE1BQU0sRUFBRSxRQUFRLEVBQUUsS0FBSyxFQUFFO0lBQ3hDLEtBQUssRUFBRTtRQUNMO1lBQ0UsV0FBVyxFQUFFLEVBQUUsSUFBSSxFQUFFLE1BQU0sRUFBRSxRQUFRLEVBQUUsSUFBSSxFQUFFO1lBQzdDLFFBQVEsRUFBRSxFQUFFLElBQUksRUFBRSxNQUFNLEVBQUUsUUFBUSxFQUFFLElBQUksRUFBRSxHQUFHLEVBQUUsQ0FBQyxFQUFFO1lBQ2xELEtBQUssRUFBRSxFQUFFLElBQUksRUFBRSxNQUFNLEVBQUUsUUFBUSxFQUFFLElBQUksRUFBRTtTQUN4QztLQUNGO0lBQ0QsS0FBSyxFQUFFLEVBQUUsSUFBSSxFQUFFLE1BQU0sRUFBRSxRQUFRLEVBQUUsS0FBSyxFQUFFO0NBQ3pDLEVBQ0QsRUFBRSxVQUFVLEVBQUUsSUFBSSxFQUFFLENBQ3JCLENBQUM7QUFFRixNQUFNLElBQUksR0FBRyxJQUFBLGdCQUFLLEVBQVEsTUFBTSxFQUFFLFVBQVUsQ0FBQyxDQUFDO0FBQzlDLGtCQUFlLElBQUksQ0FBQyJ9

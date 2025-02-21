@@ -17,12 +17,35 @@ export default interface IEvent extends Document {
     };
   };
   price: number;
+  discount: number;
   priceSpecification: {
     minPrice: number;
     maxPrice: number;
     priceCurrency: string;
   };
-  favorieds: [{ type: Types.ObjectId; ref: "Customer" }];
+  capacity: number;
+  registrationOpen: boolean;
+  registrations: [
+    {
+      type: Types.ObjectId;
+      ref: "Registration";
+    },
+  ];
+  bills: [
+    {
+      type: Types.ObjectId;
+      ref: "Bill";
+    },
+  ];
+  favorieds: [
+    { customer: { type: Types.ObjectId; ref: "Customer" }; date: Date },
+  ];
+  clics: [
+    {
+      source: string;
+      date: Date;
+    },
+  ];
   acceptedPaymentMethod: string[];
   organizer: {
     establishment: Types.ObjectId;

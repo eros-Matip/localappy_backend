@@ -146,7 +146,6 @@ const updateCustomer = (req, res) =>
       return customer
         .save()
         .then((customer) => res.status(201).json({ customer: customer }))
-        .finally(() => {})
         .catch((error) => {
           Retour_1.default.error("Error catched");
           return res.status(500).json({ message: "Error catched", error });

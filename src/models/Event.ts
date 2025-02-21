@@ -46,7 +46,19 @@ const eventSchema = new Schema<IEvent>(
       maxPrice: Number,
       priceCurrency: String,
     },
-    favorieds: [{ type: Schema.Types.ObjectId, ref: "Customer" }],
+    favorieds: [
+      {
+        customer: { type: Schema.Types.ObjectId, ref: "Customer" },
+        date: Date,
+      },
+    ],
+    clics: [
+      {
+        source: String,
+        date: Date,
+        _id: false,
+      },
+    ],
     acceptedPaymentMethod: [String],
     organizer: {
       establishment: { type: Schema.Types.ObjectId, ref: "Establishment" },
@@ -54,6 +66,20 @@ const eventSchema = new Schema<IEvent>(
       email: { type: String, default: "Email inconnu" },
       phone: { type: String, default: "Téléphone inconnu" },
     },
+    capacity: { type: Number, default: 0 },
+    registrationOpen: { type: Boolean, default: false },
+    registrations: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: "Registration",
+      },
+    ],
+    bills: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: "Bill",
+      },
+    ],
     image: {
       type: [String],
       validate: {

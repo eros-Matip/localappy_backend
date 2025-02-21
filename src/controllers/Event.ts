@@ -8,6 +8,9 @@ import Establishment from "../models/Establishment";
 import path from "path";
 import * as fs from "fs";
 import chalk from "chalk";
+import Customer from "../models/Customer";
+import Registration from "../models/Registration";
+import Bill from "../models/Bill";
 
 // Utiliser promisify pour rendre les fonctions fs asynchrones
 /**
@@ -832,6 +835,8 @@ const createEventForAnEstablishment = async (req: Request, res: Response) => {
       price,
       priceSpecification,
       acceptedPaymentMethod,
+      capacity,
+      registrationOpen,
       organizer,
       image,
       description,
@@ -896,6 +901,8 @@ const createEventForAnEstablishment = async (req: Request, res: Response) => {
         maxPrice: priceSpecification.maxPrice,
         priceCurrency: priceSpecification.priceCurrency,
       },
+      capacity,
+      registrationOpen,
       acceptedPaymentMethod,
       organizer: {
         establishment: establishmentFinded,
@@ -931,15 +938,27 @@ const createEventForAnEstablishment = async (req: Request, res: Response) => {
 
 // Fonction pour lire un événement spécifique
 const readEvent = async (req: Request, res: Response, next: NextFunction) => {
-  const eventId = req.params.eventId;
+  try {
+    const eventId = req.params.eventId;
+    const { source } = req.body;
 
-  return Event.findById(eventId)
-    .then((event) =>
-      event
-        ? res.status(200).json({ message: event })
-        : res.status(404).json({ message: "Not found" })
-    )
-    .catch((error) => res.status(500).json({ error: error.message }));
+    const event = await Event.findById(eventId);
+    if (!event) {
+      return res.status(404).json({ message: "Not found" });
+    }
+
+    // Ajouter un clic
+    const clic = {
+      source: source,
+      date: new Date(),
+    };
+    event.clics.push(clic);
+    await event.save(); // Sauvegarde de l'événement mis à jour
+
+    return res.status(200).json({ message: event });
+  } catch (error) {
+    return res.status(500).json({ error: error });
+  }
 };
 
 // Fonction pour lire tous les événements
@@ -1940,6 +1959,85 @@ const getCoordinatesFromAPI = async (req: Request, res: Response) => {
     });
   }
 };
+
+const registrationToAnEvent = async (req: Request, res: Response) => {
+  try {
+    // Récupération de l'événement
+    const eventFinded = await Event.findById(req.params.eventId);
+    if (!eventFinded) {
+      return res.status(404).json({ message: "Événement introuvable" });
+    }
+
+    if (eventFinded.registrationOpen === false) {
+      return res.status(404).json({ message: "Incription fermée" });
+    }
+    // Récupération du client
+    const customerFinded = await Customer.findById(req.body.customerId);
+    if (!customerFinded) {
+      return res.status(404).json({ message: "Utilisateur introuvable" });
+    }
+
+    // Vérifier s'il reste des places disponibles
+    if (eventFinded.capacity <= 0) {
+      return res.status(400).json({ message: "Plus de places disponibles" });
+    }
+
+    const { paymentMethod, quantity } = req.body;
+    // Définition du prix (peut inclure des remises ou promotions si nécessaire)
+    const price = eventFinded.price;
+
+    // Création de l'inscription (Registration)
+    const newRegistration = new Registration({
+      date: new Date(),
+      customer: customerFinded._id,
+      event: eventFinded._id,
+      price: price,
+      status: "pending",
+      paymentMethod: paymentMethod,
+      quantity: quantity || 1,
+    });
+
+    await newRegistration.save();
+
+    // Création de la facture (Bill)
+    const invoiceNumber = `INV-${Date.now()}`; // Génération d'un numéro de facture unique
+    if (price > 0) {
+      const newBill = new Bill({
+        customer: customerFinded._id,
+        registration: newRegistration._id,
+        amount: price * newRegistration.quantity,
+        status: "pending",
+        paymentMethod: paymentMethod,
+        invoiceNumber: invoiceNumber,
+        issuedDate: new Date(),
+        dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // Échéance à 7 jours
+        items: [
+          {
+            description: `Inscription à l'événement ${eventFinded.title}`,
+            quantity: newRegistration.quantity,
+            price: price,
+          },
+        ],
+      });
+
+      await newBill.save();
+    }
+
+    // Mise à jour du nombre de places restantes
+    eventFinded.capacity -= newRegistration.quantity;
+    await eventFinded.save();
+
+    return res.status(201).json({
+      message: "Inscription et facture créées avec succès",
+      registration: newRegistration,
+    });
+  } catch (error) {
+    Retour.error({ message: "Erreur lors de l'inscription", error: error });
+    return res
+      .status(500)
+      .json({ message: "Erreur lors de l'inscription", error: error });
+  }
+};
 // Fonction pour supprimer un événement
 const deleteEvent = async (req: Request, res: Response, next: NextFunction) => {
   const eventId = req.params.eventId;
@@ -2332,6 +2430,7 @@ export default {
   updateImageUrls,
   // updateEventCoordinates,
   updateDescriptionsAndPrices,
+  registrationToAnEvent,
   deleteEvent,
   deleteDuplicateEvents,
   removeMidnightDates,

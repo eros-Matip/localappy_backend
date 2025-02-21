@@ -87,7 +87,6 @@ const updateAdmin = async (req: Request, res: Response) => {
       return admin
         .save()
         .then((admin) => res.status(201).json({ admin: admin }))
-        .finally(() => {})
         .catch((error) => res.status(500).json({ error: error.message }));
     }
   });

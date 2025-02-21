@@ -15,6 +15,7 @@ router.post(
   OwnerIsAuthenticated,
   controller.createEventForAnEstablishment
 );
+
 router.get("/get/:eventId", controller.readEvent);
 router.get("/get/", controller.readAll);
 router.get("/getAllByZip/:postalCode", controller.getEventsByPostalCode);
@@ -23,6 +24,10 @@ router.post("/getAllByDate/:month", controller.getEventByDate);
 router.put("/update/:eventId", OwnerIsAuthenticated, controller.updateEvent);
 router.put("/verifAllEvent", AdminIsAuthenticated, controller.verifAllEvent);
 router.put("/updateUrl", AdminIsAuthenticated, controller.updateImageUrls);
+router.post(
+  "/registrationToAnEvent/:eventId",
+  controller.registrationToAnEvent
+);
 // router.put(
 //   "/updateEventCoordinates",
 //   AdminIsAuthenticated,

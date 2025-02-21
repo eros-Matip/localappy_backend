@@ -38,7 +38,9 @@
         "node-cron": "^3.0.3",
         "nodemailer": "^6.9.14",
         "p-limit": "^6.1.0",
+        "paypal-rest-sdk": "^1.8.1",
         "prettier": "^3.3.3",
+        "stripe": "^17.6.0",
         "twilio": "^5.3.6",
         "uid2": "^1.0.0"
     },
@@ -51,6 +53,7 @@
         "@types/mongoose": "^5.11.97",
         "@types/node": "^22.7.5",
         "@types/p-limit": "^2.1.0",
+        "@types/paypal-rest-sdk": "^1.7.9",
         "concurrently": "^8.2.2",
         "nodemon": "^3.1.4",
         "typescript": "^5.5.4"
