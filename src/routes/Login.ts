@@ -55,7 +55,7 @@ router.post(
       const customerFinded = await Customer.findOne({ email }).populate([
         { path: "themesFavorites", model: "Theme" },
         { path: "eventsFavorites", model: "Event" },
-        { path: "ownerAccount", model: "Owner" },
+        { path: "ownerAccount", model: "Owner", populate: "establishments" },
       ]);
 
       if (!customerFinded) {
