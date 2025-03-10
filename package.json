@@ -39,6 +39,7 @@
         "nodemailer": "^6.9.14",
         "p-limit": "^6.1.0",
         "paypal-rest-sdk": "^1.8.1",
+        "pm2": "^5.4.3",
         "prettier": "^3.3.3",
         "stripe": "^17.6.0",
         "twilio": "^5.3.6",

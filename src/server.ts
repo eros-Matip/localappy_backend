@@ -43,6 +43,7 @@ import LoginRoute from "./routes/Login";
 import PaymentRoute from "./routes/Payment";
 import socialLoginRoute from "./routes/LoginBySocial";
 import verifPhoneRoute from "./routes/VerifCode";
+import ResendCodeRoute from "./routes/ResendCode";
 import ContactRoutes from "./routes/Contact";
 import AdminRoutes from "./routes/Admin";
 import FetchingInfoEntrepriseRoute from "./routes/FetchingSiret";
@@ -106,6 +107,7 @@ const startServer = () => {
   router.use("/admin/", AdminRoutes);
   router.use(LoginRoute);
   router.use(PaymentRoute);
+  router.use(ResendCodeRoute);
   router.use(socialLoginRoute);
   router.use(verifPhoneRoute);
   router.use(FetchingInfoEntrepriseRoute);

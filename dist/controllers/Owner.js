@@ -108,7 +108,7 @@ const createOwner = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
         try {
             yield client.messages.create({
                 body: `Votre code d'activation est: ${verificationCode}`,
-                from: "locaLappy",
+                from: "Localappy",
                 to: `+${formattedPhoneNumber}`,
             });
         }

@@ -44,7 +44,7 @@ router.post("/verifCode", OwnerIsAuthenticated_1.default, (req, res) => __awaite
             try {
                 yield client.messages.create({
                     body: `Votre nouveau code de vérification est : ${newVerificationCode}`,
-                    from: "locaLappy",
+                    from: "Localappy",
                     to: `+${owner.account.phoneNumber}`,
                 });
                 return res.status(200).json({
