@@ -21,7 +21,7 @@ import Bill from "../models/Bill";
  * @returns Liste des occurrences avec dates et horaires
  */
 
-const AllEvents = require("../../Events/index.json");
+// const AllEvents = require("../../Events/index.json");
 // const AllEventsForParis = require("../../Events/forParis.json");
 
 // Fonction de création d'événements
@@ -432,216 +432,216 @@ function extractPriceSpecification(fileData: any) {
   };
 }
 
-const updateOrCreateEventFromJSON = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  try {
-    const basePath = path.join(__dirname, "..", "..", "events", "objects");
-    // Fonction récursive pour collecter tous les fichiers JSON
-    // const getAllFiles = (directory: string): string[] => {
-    //   return fs.readdirSync(directory).flatMap((item) => {
-    //     const fullPath = path.join(directory, item);
+// const updateOrCreateEventFromJSON = async (
+//   req: Request,
+//   res: Response,
+//   next: NextFunction
+// ) => {
+//   try {
+//     const basePath = path.join(__dirname, "..", "..", "events", "objects");
+//     // Fonction récursive pour collecter tous les fichiers JSON
+//     // const getAllFiles = (directory: string): string[] => {
+//     //   return fs.readdirSync(directory).flatMap((item) => {
+//     //     const fullPath = path.join(directory, item);
 
-    //     if (fs.lstatSync(fullPath).isDirectory()) {
-    //       // Si c'est un dossier, on rappelle la fonction récursive
-    //       return getAllFiles(fullPath);
-    //     }
+//     //     if (fs.lstatSync(fullPath).isDirectory()) {
+//     //       // Si c'est un dossier, on rappelle la fonction récursive
+//     //       return getAllFiles(fullPath);
+//     //     }
 
-    //     // Sinon, vérifier que c'est un fichier JSON
-    //     if (fullPath.endsWith(".json")) {
-    //       return fullPath;
-    //     }
+//     //     // Sinon, vérifier que c'est un fichier JSON
+//     //     if (fullPath.endsWith(".json")) {
+//     //       return fullPath;
+//     //     }
 
-    //     // Ignorer si ce n'est ni un fichier JSON ni un dossier
-    //     return [];
-    //   });
-    // };
+//     //     // Ignorer si ce n'est ni un fichier JSON ni un dossier
+//     //     return [];
+//     //   });
+//     // };
 
-    // Collecter tous les fichiers JSON dans tous les sous-dossiers
-    // const AllEvents = getAllFiles(basePath);
+//     // Collecter tous les fichiers JSON dans tous les sous-dossiers
+//     // const AllEvents = getAllFiles(basePath);
 
-    const updatedEvents: any[] = [];
-    const createdEvents: any[] = [];
-    const unmatchedFiles: string[] = [];
+//     const updatedEvents: any[] = [];
+//     const createdEvents: any[] = [];
+//     const unmatchedFiles: string[] = [];
 
-    for (const file of AllEvents) {
-      try {
-        console.info(`Traitement du fichier : ${file.file}`);
-        const filePath = path.join(basePath, file.file);
-        const fileData = JSON.parse(fs.readFileSync(filePath, "utf-8"));
-        // Titre et description
-        const title = normalizeString(
-          fileData["rdfs:label"]?.fr?.[0] || "Titre inconnu"
-        );
-        const description = extractDescription(fileData);
+//     for (const file of AllEvents) {
+//       try {
+//         console.info(`Traitement du fichier : ${file.file}`);
+//         const filePath = path.join(basePath, file.file);
+//         const fileData = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+//         // Titre et description
+//         const title = normalizeString(
+//           fileData["rdfs:label"]?.fr?.[0] || "Titre inconnu"
+//         );
+//         const description = extractDescription(fileData);
 
-        const mergeDates = (
-          fileData: any
-        ): { startDate: string; endDate: string } => {
-          const takesPlaceAt = fileData["takesPlaceAt"] || [];
-          let earliestStart: Date | null = null;
-          let latestEnd: Date | null = null;
+//         const mergeDates = (
+//           fileData: any
+//         ): { startDate: string; endDate: string } => {
+//           const takesPlaceAt = fileData["takesPlaceAt"] || [];
+//           let earliestStart: Date | null = null;
+//           let latestEnd: Date | null = null;
 
-          takesPlaceAt.forEach((period: any) => {
-            try {
-              // Vérification de la validité des champs requis
-              if (!period.startDate) {
-                console.warn(
-                  `Période ignorée : startDate manquant dans takesPlaceAt:`,
-                  period
-                );
-                return;
-              }
+//           takesPlaceAt.forEach((period: any) => {
+//             try {
+//               // Vérification de la validité des champs requis
+//               if (!period.startDate) {
+//                 console.warn(
+//                   `Période ignorée : startDate manquant dans takesPlaceAt:`,
+//                   period
+//                 );
+//                 return;
+//               }
 
-              // Conversion des dates
-              const start = new Date(
-                `${period.startDate}T${period.startTime || "00:00:00"}`
-              );
+//               // Conversion des dates
+//               const start = new Date(
+//                 `${period.startDate}T${period.startTime || "00:00:00"}`
+//               );
 
-              if (isNaN(start.getTime())) {
-                console.warn(
-                  `Date de début invalide trouvée dans takesPlaceAt:`,
-                  period
-                );
-                return;
-              }
+//               if (isNaN(start.getTime())) {
+//                 console.warn(
+//                   `Date de début invalide trouvée dans takesPlaceAt:`,
+//                   period
+//                 );
+//                 return;
+//               }
 
-              const end = new Date(
-                `${period.endDate || period.startDate}T${period.endTime || "23:59:59"}`
-              );
+//               const end = new Date(
+//                 `${period.endDate || period.startDate}T${period.endTime || "23:59:59"}`
+//               );
 
-              if (isNaN(end.getTime())) {
-                console.warn(
-                  `Date de fin invalide trouvée dans takesPlaceAt:`,
-                  period
-                );
-                return;
-              }
+//               if (isNaN(end.getTime())) {
+//                 console.warn(
+//                   `Date de fin invalide trouvée dans takesPlaceAt:`,
+//                   period
+//                 );
+//                 return;
+//               }
 
-              // Mise à jour des limites
-              if (!earliestStart || start < earliestStart) {
-                earliestStart = start;
-              }
-              if (!latestEnd || end > latestEnd) {
-                latestEnd = end;
-              }
-            } catch (error) {
-              console.error(
-                `Erreur lors du traitement de la période :`,
-                period,
-                error
-              );
-            }
-          });
+//               // Mise à jour des limites
+//               if (!earliestStart || start < earliestStart) {
+//                 earliestStart = start;
+//               }
+//               if (!latestEnd || end > latestEnd) {
+//                 latestEnd = end;
+//               }
+//             } catch (error) {
+//               console.error(
+//                 `Erreur lors du traitement de la période :`,
+//                 period,
+//                 error
+//               );
+//             }
+//           });
 
-          // Vérification explicite avant de retourner les résultats
-          if (!earliestStart || !latestEnd) {
-            throw new Error(
-              "Aucune date valide trouvée dans takesPlaceAt après vérification."
-            );
-          }
+//           // Vérification explicite avant de retourner les résultats
+//           if (!earliestStart || !latestEnd) {
+//             throw new Error(
+//               "Aucune date valide trouvée dans takesPlaceAt après vérification."
+//             );
+//           }
 
-          // Conversion en chaîne ISO et retour des résultats
-          return {
-            startDate: (earliestStart as Date).toISOString(),
-            endDate: (latestEnd as Date).toISOString(),
-          };
-        };
+//           // Conversion en chaîne ISO et retour des résultats
+//           return {
+//             startDate: (earliestStart as Date).toISOString(),
+//             endDate: (latestEnd as Date).toISOString(),
+//           };
+//         };
 
-        // Coordonnées
-        let { newLat, newLng } = extractCoordinates(fileData);
+//         // Coordonnées
+//         let { newLat, newLng } = extractCoordinates(fileData);
 
-        // Dates
-        const { startDate, endDate } = mergeDates(fileData);
+//         // Dates
+//         const { startDate, endDate } = mergeDates(fileData);
 
-        // Images
-        const images = extractImages(fileData);
-        // Prix
-        const priceSpecification = extractPriceSpecification(fileData);
+//         // Images
+//         const images = extractImages(fileData);
+//         // Prix
+//         const priceSpecification = extractPriceSpecification(fileData);
 
-        // Méthodes de paiement
-        const acceptedPaymentMethod =
-          fileData["schema:acceptedPaymentMethod"] || [];
+//         // Méthodes de paiement
+//         const acceptedPaymentMethod =
+//           fileData["schema:acceptedPaymentMethod"] || [];
 
-        // Organisateur
-        const organizer = extractOrganizer(fileData);
-        // Recherche de l'événement existant
-        let dbEvent = await Event.findOne({
-          $and: [
-            { title: { $regex: new RegExp(`^${escapeRegExp(title)}$`, "i") } },
-            {
-              address: {
-                $regex: new RegExp(
-                  `^${escapeRegExp(extractAddress(fileData))}$`,
-                  "i"
-                ),
-              },
-            },
-            { startingDate: new Date(startDate) },
-          ],
-        });
+//         // Organisateur
+//         const organizer = extractOrganizer(fileData);
+//         // Recherche de l'événement existant
+//         let dbEvent = await Event.findOne({
+//           $and: [
+//             { title: { $regex: new RegExp(`^${escapeRegExp(title)}$`, "i") } },
+//             {
+//               address: {
+//                 $regex: new RegExp(
+//                   `^${escapeRegExp(extractAddress(fileData))}$`,
+//                   "i"
+//                 ),
+//               },
+//             },
+//             { startingDate: new Date(startDate) },
+//           ],
+//         });
 
-        if (!dbEvent) {
-          const newEvent = new Event({
-            title,
-            description,
-            address: extractAddress(fileData),
-            location: {
-              lat: newLat,
-              lng: newLng,
-              geo: { type: "Point", coordinates: [newLng, newLat] },
-            },
-            startingDate: startDate,
-            endingDate: endDate,
-            image: images,
-            organizer,
-            theme: fileData["@type"] || ["Thème inconnu"],
-            price: priceSpecification.price,
-            priceSpecification,
-            acceptedPaymentMethod,
-          });
-          await newEvent.save();
-          createdEvents.push({ id: newEvent._id, title: newEvent.title });
-          console.info(`Nouvel événement créé : ${newEvent.title}`);
-        } else {
-          dbEvent.description = description;
-          Object(dbEvent).location = {
-            lat: newLat,
-            lng: newLng,
-            geo: { type: "Point", coordinates: [newLng, newLat] },
-          };
-          dbEvent.image = images;
-          dbEvent.price = Object(priceSpecification).price;
-          dbEvent.priceSpecification = priceSpecification;
-          dbEvent.acceptedPaymentMethod = acceptedPaymentMethod;
-          await dbEvent.save();
-          updatedEvents.push({ id: dbEvent._id, title: dbEvent.title });
-          console.info(`Événement mis à jour : ${dbEvent.title}`);
-        }
-      } catch (error) {
-        unmatchedFiles.push(file.file);
-        console.error(
-          `Erreur lors du traitement du fichier : ${file.file}`,
-          error
-        );
-      }
-    }
+//         if (!dbEvent) {
+//           const newEvent = new Event({
+//             title,
+//             description,
+//             address: extractAddress(fileData),
+//             location: {
+//               lat: newLat,
+//               lng: newLng,
+//               geo: { type: "Point", coordinates: [newLng, newLat] },
+//             },
+//             startingDate: startDate,
+//             endingDate: endDate,
+//             image: images,
+//             organizer,
+//             theme: fileData["@type"] || ["Thème inconnu"],
+//             price: priceSpecification.price,
+//             priceSpecification,
+//             acceptedPaymentMethod,
+//           });
+//           await newEvent.save();
+//           createdEvents.push({ id: newEvent._id, title: newEvent.title });
+//           console.info(`Nouvel événement créé : ${newEvent.title}`);
+//         } else {
+//           dbEvent.description = description;
+//           Object(dbEvent).location = {
+//             lat: newLat,
+//             lng: newLng,
+//             geo: { type: "Point", coordinates: [newLng, newLat] },
+//           };
+//           dbEvent.image = images;
+//           dbEvent.price = Object(priceSpecification).price;
+//           dbEvent.priceSpecification = priceSpecification;
+//           dbEvent.acceptedPaymentMethod = acceptedPaymentMethod;
+//           await dbEvent.save();
+//           updatedEvents.push({ id: dbEvent._id, title: dbEvent.title });
+//           console.info(`Événement mis à jour : ${dbEvent.title}`);
+//         }
+//       } catch (error) {
+//         unmatchedFiles.push(file.file);
+//         console.error(
+//           `Erreur lors du traitement du fichier : ${file.file}`,
+//           error
+//         );
+//       }
+//     }
 
-    return res.status(200).json({
-      message: "Traitement des événements terminé.",
-      updatedEvents,
-      createdEvents,
-      unmatchedFiles,
-    });
-  } catch (error) {
-    console.error("Erreur globale :", error);
-    return res
-      .status(500)
-      .json({ message: "Erreur lors du traitement.", error });
-  }
-};
+//     return res.status(200).json({
+//       message: "Traitement des événements terminé.",
+//       updatedEvents,
+//       createdEvents,
+//       unmatchedFiles,
+//     });
+//   } catch (error) {
+//     console.error("Erreur globale :", error);
+//     return res
+//       .status(500)
+//       .json({ message: "Erreur lors du traitement.", error });
+//   }
+// };
 
 const determinePrice = (event: any): number | null => {
   if (event.price_type === "gratuit") {
@@ -2429,7 +2429,7 @@ export default {
   getEventsByPosition,
   getEventByDate,
   updateEvent,
-  updateOrCreateEventFromJSON,
+  // updateOrCreateEventFromJSON,
   // updateEventForParis,
   // migrateData,
   getCoordinatesFromAPI,

@@ -5,10 +5,10 @@ import AdminIsAuthenticated from "../middlewares/AdminIsAuthenticated";
 
 const router = express.Router();
 // router.post("/create/", controller.createEventFromJSON);
-router.post(
-  "/updateOrCreateEventFromJSON",
-  controller.updateOrCreateEventFromJSON
-);
+// router.post(
+//   "/updateOrCreateEventFromJSON",
+//   controller.updateOrCreateEventFromJSON
+// );
 // router.post("/updateEventForParis", controller.updateEventForParis);
 router.post(
   "/createForAnEstablishment/:establishmentId",
