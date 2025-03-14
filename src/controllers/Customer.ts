@@ -128,11 +128,29 @@ const readCustomer = async (req: Request, res: Response) => {
 
 const readAll = async (req: Request, res: Response) => {
   try {
-    const customers = await Customer.find();
-    return res.status(200).json({ message: customers });
+    // Récupération des paramètres de pagination
+    const page = parseInt(req.query.page as string) || 1; // Page actuelle (par défaut 1)
+    const limit = parseInt(req.query.limit as string) || 8; // Nombre d'éléments par page (8 par défaut)
+
+    // Calcul de l'offset
+    const skip = (page - 1) * limit;
+
+    // Récupération des clients paginés
+    const customers = await Customer.find().skip(skip).limit(limit);
+
+    // Nombre total de clients
+    const totalCustomers = await Customer.countDocuments();
+
+    return res.status(200).json({
+      success: true,
+      page,
+      totalPages: Math.ceil(totalCustomers / limit),
+      totalCustomers,
+      customers,
+    });
   } catch (error) {
-    Retour.error("Error catched");
-    return res.status(500).json({ message: "Error catched", error });
+    console.error("Erreur lors de la récupération des clients :", error);
+    return res.status(500).json({ message: "Une erreur est survenue.", error });
   }
 };
 

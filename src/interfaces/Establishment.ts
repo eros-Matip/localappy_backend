@@ -1,30 +1,67 @@
-import { Types, Document } from "mongoose";
+import { Document, Types } from "mongoose";
 
-export default interface IEstablishment extends Document {
-  name: string; // Nom de l’établissement
-  type: string; // Type d'activité (café, restaurant, boutique, etc.)
-  siret: String;
-  picture: { public_id: string; secure_url: string };
-  address: {
-    street: string; // Rue de l’établissement
-    city: string; // Ville où se trouve l’établissement
-    postalCode: string; // Code postal de l’établissement
-    country: string; // Pays de l’établissement
-  };
-  location: {
-    lat: Number;
-    lng: Number;
-  };
-  contact: {
-    website?: string; // (Optionnel) Site web de l’établissement
-    socialMedia?: { facebook?: string; instagram?: string; twitter?: string }; // (Optionnel) Liens vers les réseaux sociaux
-  };
-  legalInfo: {
-    registrationNumber: string; // Numéro d’immatriculation (SIRET en France)
-    insuranceCertificate: string; // Certificat d’assurance responsabilité civile
-    KBis: Object;
-    activityCodeNAF: string;
-  };
-  owner: { type: Types.ObjectId; ref: "Owner" }; // Référence vers le propriétaire de l’établissement
-  events: [{ type: Types.ObjectId; ref: "Event" }]; // Référence vers les événements organisés par l’établissement
+interface IOpeningHours {
+  dayOfWeek: string;
+  opens: string;
+  closes: string;
 }
+
+interface IAddress {
+  street: string;
+  city: string;
+  postalCode: string;
+  department: string;
+  region: string;
+  country: string;
+}
+
+interface ILocation {
+  lat: number;
+  lng: number;
+}
+
+interface IContact {
+  email?: string;
+  telephone?: string;
+  fax?: string;
+  website?: string;
+  socialMedia?: {
+    facebook?: string;
+    instagram?: string;
+    twitter?: string;
+  };
+}
+
+interface IPaymentMethod {
+  type: string;
+  label: string;
+}
+
+interface ILegalInfo {
+  insuranceCertificate?: string;
+  KBis?: {
+    public_id: string;
+    secure_url: string;
+  };
+  activityCodeNAF?: string;
+}
+
+// Interface principale pour l’établissement
+interface IEstablishment extends Document {
+  name: string;
+  type: string[];
+  creationDate: Date;
+  lastUpdate: Date;
+  address: IAddress;
+  location: ILocation;
+  contact?: IContact;
+  logo: { type: String };
+  description?: string;
+  openingHours: IOpeningHours[];
+  acceptedPayments: IPaymentMethod[];
+  legalInfo?: ILegalInfo;
+  owner: Types.ObjectId;
+  events: Types.ObjectId[];
+}
+
+export default IEstablishment;

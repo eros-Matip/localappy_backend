@@ -14,6 +14,7 @@ router.post(
   OwnerIsAuthenticated,
   controller.createEstablishment
 );
+router.post("/fetchEstablishmentsByJson", controller.fetchEstablishmentsByJson);
 router.get("/get/:establishmentId", controller.getEstablishmentById);
 router.put(
   "/update/:establishmentId",
