@@ -11,13 +11,11 @@ import Admin from "../models/Admin";
 
 const router = express.Router();
 
-// Route POST pour "/login" avec le middleware AdminIsAuthenticated
 router.post(
   "/login",
   AdminIsAuthenticated,
   async (req: Request, res: Response) => {
     try {
-      // Vérification si le middleware a déjà trouvé un utilisateur via le token
       if (req.body.admin) {
         const customerFindedByToken = await Customer.findById(
           req.body.admin
@@ -27,12 +25,10 @@ router.post(
           { path: "ownerAccount", model: "Owner", populate: "establishments" },
         ]);
 
-        // Vérifier si l'utilisateur existe bien
         if (!customerFindedByToken) {
           return res.status(404).json({ message: "Customer not found" });
         }
 
-        // Mettre à jour expoPushToken si fourni
         if (req.body.expoPushToken) {
           customerFindedByToken.expoPushToken = req.body.expoPushToken;
           await customerFindedByToken.save();
@@ -44,7 +40,6 @@ router.post(
         });
       }
 
-      // Si pas de token ou token invalide, procéder à la connexion par email et mot de passe
       const { email, password, expoPushToken } = req.body;
 
       if (!email || !password) {
@@ -53,22 +48,25 @@ router.post(
           .json({ message: "Email and password are required" });
       }
 
-      // Recherche de l'utilisateur par email
-      const customerFinded = await Customer.findOne({ email }).populate([
-        { path: "themesFavorites", model: "Theme" },
-        { path: "eventsFavorites", model: "Event" },
-        { path: "ownerAccount", model: "Owner", populate: "establishments" },
+      const [customerFinded, adminFinded] = await Promise.all([
+        Customer.findOne({ email }).populate([
+          { path: "themesFavorites", model: "Theme" },
+          { path: "eventsFavorites", model: "Event" },
+          { path: "ownerAccount", model: "Owner", populate: "establishments" },
+        ]),
+        Admin.findOne({ email }),
       ]);
-      const adminFinded = await Admin.findOne({ email });
 
       if (!customerFinded && !adminFinded) {
         Retour.error("Account was not found");
         return res.status(401).json({ message: "Account was not found" });
       }
 
-      const ownerFinded = await Owner.findById(customerFinded?.ownerAccount);
+      let ownerFinded = null;
+      if (customerFinded?.ownerAccount) {
+        ownerFinded = await Owner.findById(customerFinded.ownerAccount);
+      }
 
-      // Vérification du mot de passe
       const hashToLog = customerFinded
         ? SHA256(password + customerFinded.salt).toString(encBase64)
         : null;
@@ -77,12 +75,12 @@ router.post(
         ? SHA256(password + adminFinded.salt).toString(encBase64)
         : null;
 
-      if (customerFinded && hashToLog === customerFinded.hash) {
+      if (customerFinded && hashToLog && hashToLog === customerFinded.hash) {
         Retour.log(
           `${customerFinded.account.firstname} ${customerFinded.account.name} is logged`
         );
 
-        const newToken: string = uid2(29);
+        const newToken: string = uid2(26);
         customerFinded.token = newToken;
 
         if (ownerFinded) {
@@ -100,10 +98,18 @@ router.post(
           message: "Logged in with email and password",
           customer: customerFinded,
         });
-      } else if (adminFinded && adminHashToLog === adminFinded.hash) {
+      } else if (
+        adminFinded &&
+        adminHashToLog &&
+        adminHashToLog === adminFinded.hash
+      ) {
         return res.status(200).json({
           message: "Admin logged in successfully",
-          admin: adminFinded,
+          admin: {
+            id: adminFinded._id,
+            email: adminFinded.email,
+            account: adminFinded.account,
+          },
         });
       } else {
         Retour.error("Invalid password");
