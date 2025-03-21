@@ -9,6 +9,11 @@ const adminSchema = new Schema<IAdmin>(
       firstname: String,
       phoneNumber: Number,
     },
+    passwordLosted: {
+      status: { type: Boolean, default: false },
+      code: { type: String },
+    },
+    expoPushToken: String,
     token: String,
     hash: String,
     salt: String,

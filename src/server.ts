@@ -48,6 +48,7 @@ import ContactRoutes from "./routes/Contact";
 import AdminRoutes from "./routes/Admin";
 import FetchingInfoEntrepriseRoute from "./routes/FetchingSiret";
 import NotificationRoute from "./routes/SendNotification";
+import UpdatedPasswordLostRoute from "./routes/UpdatePasswordLost";
 // FUNCTIONS
 import Logging from "./library/Logging";
 import AdminIsAuthenticated from "./middlewares/IsAuthenticated";
@@ -112,6 +113,7 @@ const startServer = () => {
   router.use(verifPhoneRoute);
   router.use(FetchingInfoEntrepriseRoute);
   router.use(NotificationRoute);
+  router.use(UpdatedPasswordLostRoute);
   /** Healthcheck */
 
   router.all(

@@ -7,6 +7,11 @@ export default interface IAdmin extends Document {
     firstname: string;
     phoneNumber: number;
   };
+  passwordLosted: {
+    status: boolean;
+    code: string | null;
+  };
+  expoPushToken: string;
   token: string;
   hash: string;
   salt: string;

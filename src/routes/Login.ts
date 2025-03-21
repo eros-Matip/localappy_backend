@@ -16,31 +16,7 @@ router.post(
   AdminIsAuthenticated,
   async (req: Request, res: Response) => {
     try {
-      if (req.body.admin) {
-        const customerFindedByToken = await Customer.findById(
-          req.body.admin
-        ).populate([
-          { path: "themesFavorites", model: "Theme" },
-          { path: "eventsFavorites", model: "Event" },
-          { path: "ownerAccount", model: "Owner", populate: "establishments" },
-        ]);
-
-        if (!customerFindedByToken) {
-          return res.status(404).json({ message: "Customer not found" });
-        }
-
-        if (req.body.expoPushToken) {
-          customerFindedByToken.expoPushToken = req.body.expoPushToken;
-          await customerFindedByToken.save();
-        }
-
-        return res.status(200).json({
-          message: "Logged in with token",
-          customer: customerFindedByToken,
-        });
-      }
-
-      const { email, password, expoPushToken } = req.body;
+      const { email, password, newPassword, expoPushToken } = req.body;
 
       if (!email || !password) {
         return res
@@ -48,68 +24,79 @@ router.post(
           .json({ message: "Email and password are required" });
       }
 
-      const [customerFinded, adminFinded] = await Promise.all([
+      // 🔍 Recherche des utilisateurs
+      const [customerFinded, adminFinded, ownerFinded] = await Promise.all([
         Customer.findOne({ email }).populate([
           { path: "themesFavorites", model: "Theme" },
           { path: "eventsFavorites", model: "Event" },
           { path: "ownerAccount", model: "Owner", populate: "establishments" },
         ]),
         Admin.findOne({ email }),
+        Owner.findOne({ email }),
       ]);
 
-      if (!customerFinded && !adminFinded) {
+      // ✅ Vérification si le compte existe
+      if (!customerFinded && !adminFinded && !ownerFinded) {
         Retour.error("Account was not found");
         return res.status(401).json({ message: "Account was not found" });
       }
 
-      let ownerFinded = null;
-      if (customerFinded?.ownerAccount) {
-        ownerFinded = await Owner.findById(customerFinded.ownerAccount);
+      // 🔹 Détection de l'utilisateur correspondant
+      const userFinded = customerFinded || adminFinded || ownerFinded;
+
+      // ✅ Vérification si l'utilisateur utilise le code "passwordLosted.code"
+      if (
+        userFinded &&
+        userFinded.passwordLosted?.status === true &&
+        password === userFinded.passwordLosted.code
+      ) {
+        if (!newPassword) {
+          return res.status(400).json({
+            message: "New password is required to reset your password",
+          });
+        }
+
+        // 🔹 Générer un nouveau salt et hash
+        const newSalt = uid2(16);
+        const newHash = SHA256(newPassword + newSalt).toString(encBase64);
+
+        // 🔹 Mettre à jour le modèle avec le nouveau mot de passe
+        userFinded.salt = newSalt;
+        userFinded.hash = newHash;
+        userFinded.passwordLosted.status = false; // Désactivation après modification
+        userFinded.passwordLosted.code = null;
+
+        await userFinded.save();
+
+        Retour.log(`Mot de passe mis à jour pour ${userFinded.email}`);
+
+        return res.status(200).json({
+          message: "Password has been successfully updated.",
+        });
       }
 
-      const hashToLog = customerFinded
-        ? SHA256(password + customerFinded.salt).toString(encBase64)
+      // 🔹 Vérification du mot de passe normal
+      const hashToLog = userFinded
+        ? SHA256(password + userFinded.salt).toString(encBase64)
         : null;
 
-      const adminHashToLog = adminFinded
-        ? SHA256(password + adminFinded.salt).toString(encBase64)
-        : null;
-
-      if (customerFinded && hashToLog && hashToLog === customerFinded.hash) {
+      if (userFinded && hashToLog && hashToLog === userFinded.hash) {
         Retour.log(
-          `${customerFinded.account.firstname} ${customerFinded.account.name} is logged`
+          `${userFinded.account.firstname} ${userFinded.account.name} is logged`
         );
 
         const newToken: string = uid2(26);
-        customerFinded.token = newToken;
-
-        if (ownerFinded) {
-          ownerFinded.token = newToken;
-          await ownerFinded.save();
-        }
+        userFinded.token = newToken;
 
         if (expoPushToken) {
-          customerFinded.expoPushToken = expoPushToken;
+          userFinded.expoPushToken = expoPushToken;
         }
 
-        await customerFinded.save();
+        await userFinded.save();
 
         return res.status(200).json({
           message: "Logged in with email and password",
-          customer: customerFinded,
-        });
-      } else if (
-        adminFinded &&
-        adminHashToLog &&
-        adminHashToLog === adminFinded.hash
-      ) {
-        return res.status(200).json({
-          message: "Admin logged in successfully",
-          admin: {
-            id: adminFinded._id,
-            email: adminFinded.email,
-            account: adminFinded.account,
-          },
+          user: userFinded,
         });
       } else {
         Retour.error("Invalid password");

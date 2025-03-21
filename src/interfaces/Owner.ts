@@ -23,11 +23,12 @@ export default interface IOwner extends Document {
   isVerified: boolean; // Champ pour indiquer si le compte est vérifié
   attempts: number; // Ajout du champ pour suivre les tentatives
   verificationCode: string | null;
+  expoPushToken: string;
   token: string;
   hash: string;
   salt: string;
   passwordLosted: {
     status: boolean;
-    code: string;
+    code: string | null;
   };
 }

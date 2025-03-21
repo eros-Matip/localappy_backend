@@ -59,7 +59,7 @@ export default interface ICustomer extends Document {
   ownerAccount: Types.ObjectId;
   passwordLosted: {
     status: boolean;
-    code: string;
+    code: string | null;
   };
   expoPushToken: string;
   token: string;
