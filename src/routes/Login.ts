@@ -8,6 +8,7 @@ import AdminIsAuthenticated from "../middlewares/IsAuthenticated";
 import Customer from "../models/Customer";
 import Owner from "../models/Owner";
 import Admin from "../models/Admin";
+import { logAudit } from "../library/LogAudit";
 
 const router = express.Router();
 
@@ -19,6 +20,12 @@ router.post(
       const { email, password, newPassword, expoPushToken } = req.body;
 
       if (!email || !password) {
+        await logAudit({
+          action: "login_failed",
+          email,
+          ip: req.ip,
+          details: { reason: "Account not found" },
+        });
         return res
           .status(400)
           .json({ message: "Email and password are required" });
@@ -38,40 +45,64 @@ router.post(
       // ✅ Vérification si le compte existe
       if (!customerFinded && !adminFinded && !ownerFinded) {
         Retour.error("Account was not found");
+        await logAudit({
+          action: "login_failed",
+          email,
+          ip: req.ip,
+          details: { reason: "Account not found" },
+        });
+
         return res.status(401).json({ message: "Account was not found" });
       }
 
       // 🔹 Détection de l'utilisateur correspondant
       const userFinded = customerFinded || adminFinded || ownerFinded;
 
-      // ✅ Vérification si l'utilisateur utilise le code "passwordLosted.code"
+      // 🆕 Déterminer le rôle
+      let role = "";
+      if (adminFinded) role = "admin";
+      else if (ownerFinded) role = "owner";
+      else if (customerFinded) role = "customer";
+
+      // ✅ Vérification avec le code temporaire "passwordLosted.code"
       if (
         userFinded &&
         userFinded.passwordLosted?.status === true &&
         password === userFinded.passwordLosted.code
       ) {
         if (!newPassword) {
+          await logAudit({
+            action: "password_reset",
+            email: userFinded.email,
+            role,
+            ip: req.ip,
+          });
           return res.status(400).json({
             message: "New password is required to reset your password",
           });
         }
 
-        // 🔹 Générer un nouveau salt et hash
         const newSalt = uid2(16);
         const newHash = SHA256(newPassword + newSalt).toString(encBase64);
 
-        // 🔹 Mettre à jour le modèle avec le nouveau mot de passe
         userFinded.salt = newSalt;
         userFinded.hash = newHash;
-        userFinded.passwordLosted.status = false; // Désactivation après modification
+        userFinded.passwordLosted.status = false;
         userFinded.passwordLosted.code = null;
 
         await userFinded.save();
 
         Retour.log(`Mot de passe mis à jour pour ${userFinded.email}`);
+        await logAudit({
+          action: "password_reset",
+          email: userFinded.email,
+          role,
+          ip: req.ip,
+        });
 
         return res.status(200).json({
           message: "Password has been successfully updated.",
+          role,
         });
       }
 
@@ -93,13 +124,27 @@ router.post(
         }
 
         await userFinded.save();
+        await logAudit({
+          action: "login_success",
+          email: userFinded.email,
+          role,
+          ip: req.ip,
+        });
 
         return res.status(200).json({
           message: "Logged in with email and password",
           user: userFinded,
+          role,
         });
       } else {
         Retour.error("Invalid password");
+        await logAudit({
+          action: "login_failed",
+          email,
+          ip: req.ip,
+          details: { reason: "Invalid password" },
+        });
+
         return res.status(401).json({ message: "Invalid password" });
       }
     } catch (error) {
