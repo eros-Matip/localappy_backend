@@ -3,20 +3,20 @@ import IEstablishment from "../interfaces/Establishment";
 
 const EstablishmentSchema = new Schema<IEstablishment>(
   {
-    name: { type: String, required: true }, // Nom de l’établissement
-    type: { type: [String], required: true }, // Types d'activité (café, restaurant, boutique...)
+    name: { type: String }, // Nom de l’établissement
+    type: { type: [String] }, // Types d'activité (café, restaurant, boutique...)
     address: {
       street: { type: String },
-      city: { type: String, required: true },
-      postalCode: { type: String, required: true },
-      department: { type: String, required: true }, // Département
-      region: { type: String, required: true }, // Région
-      country: { type: String, required: true },
+      city: { type: String },
+      postalCode: { type: String },
+      department: { type: String }, // Département
+      region: { type: String }, // Région
+      country: { type: String },
     },
 
     location: {
-      lat: { type: Number, required: true },
-      lng: { type: Number, required: true },
+      lat: { type: Number },
+      lng: { type: Number },
     },
 
     contact: {
@@ -36,9 +36,9 @@ const EstablishmentSchema = new Schema<IEstablishment>(
 
     openingHours: [
       {
-        dayOfWeek: { type: String, required: true },
-        opens: { type: String, required: true },
-        closes: { type: String, required: true },
+        dayOfWeek: { type: String },
+        opens: { type: String },
+        closes: { type: String },
       },
     ],
 
