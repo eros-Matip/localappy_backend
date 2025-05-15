@@ -21,7 +21,7 @@ import Bill from "../models/Bill";
  * @returns Liste des occurrences avec dates et horaires
  */
 
-const AllEvents = require("../../Events/index.json");
+// const AllEvents = require("../../Events/index.json");
 // const AllEventsForParis = require("../../Events/forParis.json");
 
 // Fonction de création d'événements
