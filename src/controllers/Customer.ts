@@ -163,28 +163,32 @@ const updateCustomer = async (req: Request, res: Response) => {
     }
 
     const { allInfos } = req.body;
-    const fileKeys = req.files ? Object(req.files) : [];
-    console.log("fileKeys", fileKeys);
 
-    if (!allInfos && !fileKeys.length) {
+    // Correction ici : extraire proprement les fichiers reçus
+    const filesObject = req.files && !Array.isArray(req.files) ? req.files : {};
+    const allFiles: Express.Multer.File[] = Object.values(filesObject).flat();
+
+    console.log("Fichiers reçus:", allFiles);
+
+    // Si aucun champ modifié et aucun fichier envoyé, rien à faire
+    if (!allInfos && allFiles.length === 0) {
       console.error("Nothing has changed");
       return res.status(400).json({ message: "Nothing has changed" });
     }
 
-    // Mise à jour des informations textuelles si présentes
+    // Mise à jour des infos textuelles si présentes
     if (allInfos) {
       customer.set(allInfos);
     }
 
-    // Si un fichier est présent dans la requête, upload sur Cloudinary
-    if (fileKeys.length) {
-      // Boucle pour gérer plusieurs fichiers potentiels (le dernier sera pris en compte pour la photo de profil)
-      for (const file of fileKeys) {
+    // Si un ou plusieurs fichiers, uploader sur Cloudinary
+    if (allFiles.length) {
+      for (const file of allFiles) {
         const result = await cloudinary.v2.uploader.upload(file.path, {
           folder: "customer_profiles",
         });
 
-        // Mise à jour de la photo de profil avec le dernier fichier téléchargé
+        // Mettre à jour la photo avec le dernier fichier uploadé
         customer.picture = {
           public_id: result.public_id,
           url: result.secure_url,
@@ -192,7 +196,6 @@ const updateCustomer = async (req: Request, res: Response) => {
       }
     }
 
-    // Sauvegarde des modifications
     await customer.save();
 
     return res

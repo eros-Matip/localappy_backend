@@ -21,7 +21,7 @@ import Bill from "../models/Bill";
  * @returns Liste des occurrences avec dates et horaires
  */
 
-// const AllEvents = require("../../Events/index.json");
+const AllEvents = require("../../Events/index.json");
 // const AllEventsForParis = require("../../Events/forParis.json");
 
 // Fonction de création d'événements
@@ -631,6 +631,9 @@ function extractPriceSpecification(fileData: any) {
 
 //     return res.status(200).json({
 //       message: "Traitement des événements terminé.",
+//       eventUpdated: updatedEvents.length,
+//       newEvent: createdEvents.length,
+//       eventUnmatched: unmatchedFiles.length,
 //       updatedEvents,
 //       createdEvents,
 //       unmatchedFiles,
