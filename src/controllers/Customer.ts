@@ -159,6 +159,7 @@ const updateCustomer = async (req: Request, res: Response) => {
     const customerId = req.params.customerId;
     const customer = await Customer.findById(customerId);
     if (!customer) {
+      Retour.error("Customer was not found");
       return res.status(404).json({ message: "Customer was not found" });
     }
 
@@ -168,11 +169,9 @@ const updateCustomer = async (req: Request, res: Response) => {
     const filesObject = req.files && !Array.isArray(req.files) ? req.files : {};
     const allFiles: Express.Multer.File[] = Object.values(filesObject).flat();
 
-    console.log("Fichiers reçus:", allFiles);
-
     // Si aucun champ modifié et aucun fichier envoyé, rien à faire
     if (!allInfos && allFiles.length === 0) {
-      console.error("Nothing has changed");
+      Retour.error("Nothing has changed");
       return res.status(400).json({ message: "Nothing has changed" });
     }
 
@@ -197,7 +196,9 @@ const updateCustomer = async (req: Request, res: Response) => {
     }
 
     await customer.save();
-
+    Retour.log(
+      `customer ${customer.account.firstname} ${customer.account.name} has updated`
+    );
     return res
       .status(200)
       .json({ message: "Customer picture's updated", customer });
