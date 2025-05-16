@@ -163,14 +163,13 @@ const updateCustomer = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Customer was not found" });
     }
 
-    const { allInfos } = req.body;
+    const { allInfos, removePicture } = req.body;
 
-    // Correction ici : extraire proprement les fichiers reçus
     const filesObject = req.files && !Array.isArray(req.files) ? req.files : {};
     const allFiles: Express.Multer.File[] = Object.values(filesObject).flat();
 
-    // Si aucun champ modifié et aucun fichier envoyé, rien à faire
-    if (!allInfos && allFiles.length === 0) {
+    // Si rien n’a été modifié et aucune demande de suppression
+    if (!allInfos && allFiles.length === 0 && removePicture !== "true") {
       Retour.error("Nothing has changed");
       return res.status(400).json({ message: "Nothing has changed" });
     }
@@ -187,7 +186,7 @@ const updateCustomer = async (req: Request, res: Response) => {
           folder: "customer_profiles",
         });
 
-        // Mettre à jour la photo avec le dernier fichier uploadé
+        // Remplace la photo de profil
         customer.picture = {
           public_id: result.public_id,
           url: result.secure_url,
@@ -195,13 +194,21 @@ const updateCustomer = async (req: Request, res: Response) => {
       }
     }
 
+    // Si on demande explicitement de supprimer la photo
+    if (removePicture === "true") {
+      if (customer.picture?.public_id) {
+        await cloudinary.v2.uploader.destroy(customer.picture.public_id);
+      }
+      customer.picture = null;
+    }
+
     await customer.save();
+
     Retour.log(
       `customer ${customer.account.firstname} ${customer.account.name} has updated`
     );
-    return res
-      .status(200)
-      .json({ message: "Customer picture's updated", customer });
+
+    return res.status(200).json({ message: "Customer updated", customer });
   } catch (error) {
     console.error("Error updating customer:", error);
     return res.status(500).json({ message: "Error caught", error });

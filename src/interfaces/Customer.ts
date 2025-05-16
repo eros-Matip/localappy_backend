@@ -19,7 +19,7 @@ export default interface ICustomer extends Document {
   picture: {
     url: string;
     public_id: string;
-  };
+  } | null;
   descriptif: string;
   premiumStatus: boolean; // Statut premium du client (adhérent ou non)
   membership: {

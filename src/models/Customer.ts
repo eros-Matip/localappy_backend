@@ -17,8 +17,11 @@ const customerSchema = new Schema<ICustomer>(
       },
     },
     picture: {
-      url: String,
-      public_id: String,
+      type: {
+        url: { type: String },
+        public_id: { type: String },
+      },
+      required: false,
     },
     descriptif: String,
     premiumStatus: { type: Boolean, default: false }, // Statut premium du client (adhérent ou non)
