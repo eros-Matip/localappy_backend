@@ -62,6 +62,7 @@ interface IEstablishment extends Document {
   legalInfo?: ILegalInfo;
   owner: Types.ObjectId;
   events: Types.ObjectId[];
+  activated: boolean;
 }
 
 export default IEstablishment;

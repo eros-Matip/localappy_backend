@@ -55,6 +55,7 @@ const EstablishmentSchema = new Schema<IEstablishment>(
     },
     owner: { type: Schema.Types.ObjectId, ref: "Owner" },
     events: [{ type: Schema.Types.ObjectId, ref: "Event" }],
+    activated: { type: Boolean, default: false },
   },
   { timestamps: true } // Ajoute automatiquement `createdAt` et `updatedAt`
 );
