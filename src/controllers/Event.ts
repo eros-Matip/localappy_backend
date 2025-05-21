@@ -879,12 +879,23 @@ const createEventForAnEstablishment = async (req: Request, res: Response) => {
       `https://api-adresse.data.gouv.fr/search/?q=${address}`
     );
 
-    const latitude = address
-      ? responseApiGouv.data.features[0].geometry.coordinates[1]
-      : establishmentFinded.location.lat;
-    const longitude = address
-      ? responseApiGouv.data.features[0].geometry.coordinates[0]
-      : establishmentFinded.location.lng;
+    let latitude;
+    let longitude;
+
+    if (
+      address &&
+      responseApiGouv.data.features &&
+      responseApiGouv.data.features.length > 0 &&
+      responseApiGouv.data.features[0].geometry &&
+      Array.isArray(responseApiGouv.data.features[0].geometry.coordinates) &&
+      responseApiGouv.data.features[0].geometry.coordinates.length === 2
+    ) {
+      longitude = responseApiGouv.data.features[0].geometry.coordinates[0];
+      latitude = responseApiGouv.data.features[0].geometry.coordinates[1];
+    } else {
+      longitude = establishmentFinded.location.lng;
+      latitude = establishmentFinded.location.lat;
+    }
 
     // Créer un nouvel événement
     const newEvent = new Event({
@@ -896,6 +907,10 @@ const createEventForAnEstablishment = async (req: Request, res: Response) => {
       location: {
         lat: latitude,
         lng: longitude,
+        geo: {
+          type: "Point",
+          coordinates: [longitude, latitude],
+        },
       },
       price,
       priceSpecification: {
