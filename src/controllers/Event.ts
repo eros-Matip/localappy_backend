@@ -855,12 +855,12 @@ const createEventForAnEstablishment = async (req: Request, res: Response) => {
     }
 
     // Vérification des champs obligatoires
-    if (!title || !startingDate || !price || !endingDate) {
-      Retour.error("Missing some values");
-      return res.status(400).json({
-        message: "Missing some values",
-      });
-    }
+    // if (!title || !startingDate || !price || !endingDate) {
+    //   Retour.error("Missing some values");
+    //   return res.status(400).json({
+    //     message: "Missing some values",
+    //   });
+    // }
 
     // Vérifier si un événement avec le même titre et la même date existe déjà
     const existingEvent = await Event.findOne({
