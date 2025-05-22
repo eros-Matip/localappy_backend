@@ -855,7 +855,7 @@ const createEventForAnEstablishment = async (req: Request, res: Response) => {
     }
 
     // Vérification des champs obligatoires
-    if (!title || !startingDate || !price || !endingDate || !organizer) {
+    if (!title || !startingDate || !price || !endingDate) {
       Retour.error("Missing some values");
       return res.status(400).json({
         message: "Missing some values",
