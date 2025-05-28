@@ -4,6 +4,8 @@ import IEstablishment from "../interfaces/Establishment";
 const EstablishmentSchema = new Schema<IEstablishment>(
   {
     name: { type: String }, // Nom de l’établissement
+    email: String,
+    phone: String,
     type: { type: [String] }, // Types d'activité (café, restaurant, boutique...)
     address: {
       street: { type: String },

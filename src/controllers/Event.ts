@@ -11,6 +11,7 @@ import chalk from "chalk";
 import Customer from "../models/Customer";
 import Registration from "../models/Registration";
 import Bill from "../models/Bill";
+import cloudinary from "cloudinary";
 
 // Utiliser promisify pour rendre les fonctions fs asynchrones
 /**
@@ -828,82 +829,59 @@ const determinePrice = (event: any): number | null => {
 
 const createEventForAnEstablishment = async (req: Request, res: Response) => {
   try {
-    const {
-      title,
-      theme,
-      startingDate,
-      endingDate,
-      address,
-      price,
-      priceSpecification,
-      acceptedPaymentMethod,
-      capacity,
-      registrationOpen,
-      organizer,
-      image,
-      description,
-      color,
-    } = req.body;
+    const establishmentId = req.params.establishmentId;
+    const draftId = req.body.draftId; // 🧩 L’ID du draft doit être envoyé dans le body
 
-    // Vérifier si l'établissement existe
-    const establishmentFinded = await Establishment.findById(
-      req.params.establishmentId
-    );
+    if (!draftId) {
+      return res.status(400).json({ message: "DraftId is required." });
+    }
+
+    const draftEvent = await Event.findById(draftId);
+    if (!draftEvent || !draftEvent.isDraft) {
+      return res.status(404).json({ message: "Draft event not found." });
+    }
+
+    const establishmentFinded = await Establishment.findById(establishmentId);
     if (!establishmentFinded) {
-      Retour.error("Establishment not found");
       return res.status(404).json({ message: "Establishment not found" });
     }
 
-    // Vérification des champs obligatoires
-    // if (!title || !startingDate || !price || !endingDate) {
-    //   Retour.error("Missing some values");
-    //   return res.status(400).json({
-    //     message: "Missing some values",
-    //   });
-    // }
+    // 📍 Gestion de l'adresse et de la localisation
+    let { address } = req.body;
+    let latitude = draftEvent.location?.lat || establishmentFinded.location.lat;
+    let longitude =
+      draftEvent.location?.lng || establishmentFinded.location.lng;
 
-    // Vérifier si un événement avec le même titre et la même date existe déjà
-    const existingEvent = await Event.findOne({
-      title: title,
-      startingDate: new Date(startingDate),
-    });
+    if (address) {
+      const responseApiGouv = await axios.get(
+        `https://api-adresse.data.gouv.fr/search/?q=${address}`
+      );
 
-    if (existingEvent) {
-      return res.status(409).json({
-        message: "An event with this title and starting date already exists.",
-      });
-    }
-
-    // Obtenir les coordonnées géographiques de l'adresse
-    const responseApiGouv = await axios.get(
-      `https://api-adresse.data.gouv.fr/search/?q=${address}`
-    );
-
-    let latitude;
-    let longitude;
-
-    if (
-      address &&
-      responseApiGouv.data.features &&
-      responseApiGouv.data.features.length > 0 &&
-      responseApiGouv.data.features[0].geometry &&
-      Array.isArray(responseApiGouv.data.features[0].geometry.coordinates) &&
-      responseApiGouv.data.features[0].geometry.coordinates.length === 2
-    ) {
-      longitude = responseApiGouv.data.features[0].geometry.coordinates[0];
-      latitude = responseApiGouv.data.features[0].geometry.coordinates[1];
+      if (
+        responseApiGouv.data.features?.length > 0 &&
+        responseApiGouv.data.features[0].geometry?.coordinates?.length === 2
+      ) {
+        longitude = responseApiGouv.data.features[0].geometry.coordinates[0];
+        latitude = responseApiGouv.data.features[0].geometry.coordinates[1];
+      }
     } else {
-      longitude = establishmentFinded.location.lng;
-      latitude = establishmentFinded.location.lat;
+      address = draftEvent.address || establishmentFinded.address?.street || "";
     }
 
-    // Créer un nouvel événement
-    const newEvent = new Event({
-      title,
+    // 🧾 Thèmes
+    const theme = Array.isArray(req.body.theme)
+      ? req.body.theme
+      : typeof req.body.theme === "string"
+        ? [req.body.theme]
+        : draftEvent.theme || [];
+
+    // 🎟️ Autres infos
+    draftEvent.set({
+      title: req.body.title || draftEvent.title,
       theme,
-      startingDate,
-      endingDate,
-      address: address ? address : establishmentFinded.address,
+      startingDate: req.body.startingDate || draftEvent.startingDate,
+      endingDate: req.body.endingDate || draftEvent.endingDate,
+      address,
       location: {
         lat: latitude,
         lng: longitude,
@@ -912,43 +890,133 @@ const createEventForAnEstablishment = async (req: Request, res: Response) => {
           coordinates: [longitude, latitude],
         },
       },
-      price,
+      price: req.body.price || draftEvent.price,
       priceSpecification: {
-        minPrice: priceSpecification.minPrice,
-        maxPrice: priceSpecification.maxPrice,
-        priceCurrency: priceSpecification.priceCurrency,
+        minPrice: req.body.priceSpecification?.minPrice || 0,
+        maxPrice: req.body.priceSpecification?.maxPrice || req.body.price || 0,
+        priceCurrency: req.body.priceSpecification?.priceCurrency || "EUR",
       },
-      capacity,
-      registrationOpen,
-      acceptedPaymentMethod,
+      capacity: req.body.capacity || draftEvent.capacity,
       organizer: {
-        establishment: establishmentFinded,
-        legalName: organizer.legalName,
-        email: organizer.email,
-        phone: organizer.phone,
+        email: req.body.organizer.email || draftEvent.organizer.email,
+        phone: req.body.organizer.phone || draftEvent.organizer.phone,
       },
-      image,
-      description,
-      color,
+      registrationOpen:
+        req.body.registrationOpen !== undefined
+          ? req.body.registrationOpen
+          : true,
+      acceptedPaymentMethod:
+        req.body.acceptedPaymentMethod || draftEvent.acceptedPaymentMethod,
+      description: req.body.description || draftEvent.description,
+      color: req.body.color || draftEvent.color,
+      isDraft: false,
     });
 
-    // Sauvegarder l'événement dans la base de données
-    await newEvent.save();
+    await draftEvent.save();
 
-    // Ajouter l'événement à la liste des événements de l'établissement
-    establishmentFinded.events.push(Object(newEvent)._id);
-    await establishmentFinded.save();
+    if (!establishmentFinded.events.includes(draftEvent._id)) {
+      establishmentFinded.events.push(draftEvent._id);
+      await establishmentFinded.save();
+    }
 
-    // Retourner une réponse avec l'événement créé
     return res.status(201).json({
-      message: "Event created successfully",
-      event: newEvent,
+      message: "Event created successfully from draft",
+      event: draftEvent,
     });
   } catch (error) {
     console.error("Error creating event:", error);
     return res.status(500).json({
       message: "Failed to create event",
-      error: error,
+      error: error instanceof Error ? error.message : error,
+    });
+  }
+};
+
+const createDraftEvent = async (req: Request, res: Response) => {
+  try {
+    const establishmentId = req.params.establishmentId;
+    const establishmentFinded = await Establishment.findById(establishmentId);
+
+    if (!establishmentFinded) {
+      return res.status(404).json({ message: "Establishment not found" });
+    }
+
+    // 🔍 Gestion sécurisée des fichiers envoyés
+    const filesObject = req.files && !Array.isArray(req.files) ? req.files : {};
+    const allFiles: Express.Multer.File[] = Object.values(filesObject).flat();
+
+    // 🖼️ Vérifie la présence d'au moins une image
+    if (allFiles.length === 0) {
+      return res.status(400).json({
+        message: "Aucune image n'a été envoyée. Veuillez ajouter une image.",
+      });
+    }
+    const sanitizeFolderName = (name: string) =>
+      name
+        .toLowerCase()
+        .replace(/[^a-z0-9]/gi, "-")
+        .replace(/-+/g, "-")
+        .replace(/^-|-$/g, "");
+
+    const folderName = sanitizeFolderName(establishmentFinded.name);
+
+    // 📤 Upload des fichiers sur Cloudinary dans le dossier spécifique à l'établissement
+    const uploadedImageUrls: string[] = [];
+    for (const file of allFiles) {
+      const result = await cloudinary.v2.uploader.upload(file.path, {
+        folder: `establishments/${folderName}`,
+      });
+      uploadedImageUrls.push(result.secure_url);
+    }
+
+    // 📍 Localisation : fallback sur les coordonnées de l'établissement
+    const longitude = establishmentFinded.location?.lng || 0;
+    const latitude = establishmentFinded.location?.lat || 0;
+
+    // 🎨 Normalisation du champ theme (vide pour un draft)
+    const normalizedTheme: string[] = Array.isArray(req.body.theme)
+      ? req.body.theme
+      : typeof req.body.theme === "string"
+        ? [req.body.theme]
+        : [];
+
+    // 📝 Création du brouillon
+    const newEvent = new Event({
+      image: uploadedImageUrls,
+      theme: normalizedTheme, // peut rester vide dans le draft
+      location: {
+        lat: latitude,
+        lng: longitude,
+        geo: {
+          type: "Point",
+          coordinates: [longitude, latitude],
+        },
+      },
+      organizer: {
+        establishment: establishmentFinded._id,
+        legalName: establishmentFinded.name,
+        email: establishmentFinded.email,
+        phone: establishmentFinded.phone,
+      },
+      registrationOpen: false,
+      isDraft: true,
+    });
+
+    await newEvent.save();
+
+    // 🔗 Ajoute l'event au modèle Establishment
+    establishmentFinded.events.push(newEvent._id);
+    await establishmentFinded.save();
+
+    return res.status(201).json({
+      message: "Draft created successfully",
+      event: newEvent,
+    });
+  } catch (error) {
+    console.error("Error creating draft event:", error);
+    return res.status(500).json({
+      message: "Failed to create draft",
+      error: error instanceof Error ? error.message : error,
     });
   }
 };
@@ -2440,6 +2508,7 @@ function cleanHTML(description: string): string {
 
 export default {
   // createEventFromJSON,
+  createDraftEvent,
   createEventForAnEstablishment,
   readEvent,
   readAll,

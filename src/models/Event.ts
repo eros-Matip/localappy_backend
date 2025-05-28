@@ -8,8 +8,13 @@ const eventSchema = new Schema<IEvent>(
       type: [String],
       validate: {
         validator: function (themes: string[]) {
-          return (
-            themes.length > 0 && themes.every((theme) => theme.trim() !== "")
+          // Si theme est undefined ou non fourni, ne pas valider (laisse passer)
+          if (!themes || !Array.isArray(themes) || themes.length === 0) {
+            return true;
+          }
+          // Sinon, valider que chaque thème n'est pas vide
+          return themes.every(
+            (theme) => typeof theme === "string" && theme.trim() !== ""
           );
         },
         message: "Chaque thème doit être une chaîne non vide.",
@@ -68,6 +73,7 @@ const eventSchema = new Schema<IEvent>(
     },
     capacity: { type: Number, default: 0 },
     registrationOpen: { type: Boolean, default: false },
+    isDraft: { type: Boolean, default: true },
     registrations: [
       {
         type: Schema.Types.ObjectId,

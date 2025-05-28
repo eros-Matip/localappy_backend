@@ -183,7 +183,7 @@ const updateCustomer = async (req: Request, res: Response) => {
     if (allFiles.length) {
       for (const file of allFiles) {
         const result = await cloudinary.v2.uploader.upload(file.path, {
-          folder: "customer_profiles",
+          folder: `customer_profiles ${customer.account.name}`,
         });
 
         // Remplace la photo de profil

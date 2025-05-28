@@ -2,7 +2,11 @@ import express from "express";
 import controller from "../controllers/Event";
 import OwnerIsAuthenticated from "../middlewares/OwnerIsAuthenticated";
 import AdminIsAuthenticated from "../middlewares/AdminIsAuthenticated";
+import multer from "multer";
+import { multerConfig } from "../middlewares/Multer";
 
+const upload = multer(multerConfig);
+const cpUpload = upload.fields([{ name: "file", maxCount: 3 }]);
 const router = express.Router();
 // router.post("/create/", controller.createEventFromJSON);
 // router.post(
@@ -13,9 +17,16 @@ const router = express.Router();
 router.post(
   "/createForAnEstablishment/:establishmentId",
   OwnerIsAuthenticated,
+  cpUpload,
   controller.createEventForAnEstablishment
 );
 
+router.post(
+  "/createDraft/:establishmentId",
+  OwnerIsAuthenticated,
+  cpUpload,
+  controller.createDraftEvent
+);
 router.post("/get/:eventId", controller.readEvent);
 router.get("/get/", controller.readAll);
 router.get("/getAllByZip/:postalCode", controller.getEventsByPostalCode);

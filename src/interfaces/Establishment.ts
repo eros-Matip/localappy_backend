@@ -49,6 +49,8 @@ interface ILegalInfo {
 // Interface principale pour l’établissement
 interface IEstablishment extends Document {
   name: string;
+  email: string;
+  phone: string;
   type: string[];
   creationDate: Date;
   lastUpdate: Date;

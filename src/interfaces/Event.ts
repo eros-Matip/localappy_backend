@@ -56,4 +56,5 @@ export default interface IEvent extends Document {
   image: string[];
   description: string;
   color: string;
+  isDraft: boolean;
 }
