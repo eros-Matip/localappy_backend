@@ -6,6 +6,7 @@ import Establishment from "../models/Establishment"; // Modèle Mongoose pour l'
 import Retour from "../library/Retour";
 import path from "path";
 import fs from "fs";
+import IEvent from "../interfaces/Event";
 
 const cloudinary = require("cloudinary");
 
@@ -165,7 +166,7 @@ const createEstablishment = async (req: Request, res: Response) => {
 };
 
 // 📂 Définition du chemin des fichiers JSON
-const ENTREPRISES_DIR = path.join(__dirname, "../../Entreprises/objects");
+// const ENTREPRISES_DIR = path.join(__dirname, "../../Entreprises/objects");
 
 // 📂 Fonction pour récupérer tous les fichiers JSON
 const getAllFiles = (directory: string): string[] => {
@@ -180,209 +181,62 @@ const getAllFiles = (directory: string): string[] => {
   });
 };
 
-// 📌 Route pour récupérer et stocker les établissements
-const fetchEstablishmentsByJson = async (req: Request, res: Response) => {
+const getAllInformation = async (req: Request, res: Response) => {
   try {
-    console.log(`📂 Recherche des fichiers JSON dans ${ENTREPRISES_DIR}`);
+    const establishmentFinded = await Establishment.findById(
+      req.params.establishmentId
+    ).populate("events");
 
-    const allFiles = getAllFiles(ENTREPRISES_DIR);
-
-    if (allFiles.length === 0) {
-      return res.status(404).json({
-        message: "Aucun fichier JSON trouvé dans Entreprises/objects.",
-      });
+    if (!establishmentFinded || !establishmentFinded.events) {
+      return res.status(404).json({ error: "Etablissement introuvable" });
     }
 
-    const updatedEstablishments: any[] = [];
-    const createdEstablishments: any[] = [];
-    const unmatchedFiles: string[] = [];
+    const events = establishmentFinded.events as unknown as IEvent[];
 
-    for (const file of allFiles) {
-      try {
-        console.info(`📂 Traitement du fichier : ${file}`);
+    const statsByCategory: Record<string, number> = {
+      publicité: 0,
+      scanné: 0,
+      promotion: 0,
+      inscription: 0,
+      autres: 0,
+    };
 
-        const fileContent = fs.readFileSync(file, "utf8").trim();
-        if (!fileContent) {
-          console.warn(`⚠️ Fichier vide ignoré : ${file}`);
-          continue;
-        }
-
-        let jsonData;
-        try {
-          jsonData = JSON.parse(fileContent);
-        } catch (error) {
-          console.error(`❌ JSON invalide dans ${file} :`, error);
-          continue;
-        }
-        // 🔄 Convertir les objets uniques en tableaux
-        const normalizedData = Array.isArray(jsonData) ? jsonData : [jsonData];
-
-        for (const obj of normalizedData) {
-          try {
-            // 🔍 Extraction des données
-            const establishmentName =
-              obj["rdfs:label"]?.fr?.[0] || "Nom inconnu";
-            const city =
-              obj["isLocatedAt"]?.[0]?.["schema:address"]?.[0]?.[
-                "schema:addressLocality"
-              ] || "";
-            const street =
-              obj["isLocatedAt"]?.[0]?.["schema:address"]?.[0]?.[
-                "schema:streetAddress"
-              ]?.[0] || "";
-            const postalCode =
-              obj["isLocatedAt"]?.[0]?.["schema:address"]?.[0]?.[
-                "schema:postalCode"
-              ] || "";
-            const department =
-              obj["isLocatedAt"]?.[0]?.["isPartOfDepartment"]?.["rdfs:label"]
-                ?.fr?.[0] || "Département inconnu";
-            const region =
-              obj["isLocatedAt"]?.[0]?.["isPartOfDepartment"]?.[
-                "isPartOfRegion"
-              ]?.["rdfs:label"]?.fr?.[0] || "Région inconnue";
-            const latitude =
-              obj["isLocatedAt"]?.[0]?.["schema:geo"]?.["schema:latitude"] || 0;
-            const longitude =
-              obj["isLocatedAt"]?.[0]?.["schema:geo"]?.["schema:longitude"] ||
-              0;
-            const description =
-              obj["hasDescription"]?.[0]?.["dc:description"]?.fr?.[0] || "";
-            const types = obj["@type"] || [];
-            const lastUpdate = obj["lastUpdate"]
-              ? new Date(obj["lastUpdate"])
-              : new Date();
-            const creationDate = obj["creationDate"]
-              ? new Date(obj["creationDate"])
-              : new Date();
-
-            // 📌 Contact
-            const contact = {
-              email: obj["hasContact"]?.[0]?.["schema:email"]?.[0] || "",
-              telephone:
-                obj["hasContact"]?.[0]?.["schema:telephone"]?.[0] || "",
-              fax: obj["hasContact"]?.[0]?.["schema:faxNumber"]?.[0] || "",
-              website: obj["hasBeenCreatedBy"]?.["foaf:homepage"]?.[0] || "",
-            };
-            // 📌 Image (Logo)
-            const logo =
-              obj["hasMainRepresentation"]?.[0]?.[
-                "ebucore:hasRelatedResource"
-              ]?.[0]?.["ebucore:locator"]?.[0] || "";
-
-            // 📌 Horaires d'ouverture
-            const openingHours =
-              obj["isLocatedAt"]?.[0]?.[
-                "schema:openingHoursSpecification"
-              ]?.map((hour: any) => ({
-                dayOfWeek: hour["@type"]?.[0] || "Jour inconnu",
-                opens: hour["schema:opens"] || "06:00",
-                closes: hour["schema:closes"] || "23:00",
-              })) || [];
-
-            console.log(
-              `✅ Traitement de l'établissement : ${establishmentName}`
-            );
-
-            // 📌 Vérifier si l'établissement existe déjà
-            let dbEstablishment = await Establishment.findOne({
-              name: establishmentName,
-              "address.city": city,
-            });
-
-            if (!dbEstablishment) {
-              // 🆕 Création d'un nouvel établissement
-              const newEstablishment = new Establishment({
-                name: establishmentName,
-                type: types,
-                creationDate,
-                lastUpdate,
-                address: {
-                  street,
-                  city,
-                  postalCode,
-                  department,
-                  region,
-                  country: "France",
-                },
-                location: { lat: latitude, lng: longitude },
-                contact,
-                description,
-                openingHours,
-                logo,
-              });
-              await newEstablishment.save();
-              createdEstablishments.push({
-                id: newEstablishment._id,
-                name: newEstablishment.name,
-              });
-              console.info(
-                `✅ Nouvel établissement ajouté : ${newEstablishment.name}`
-              );
-            } else {
-              // 🔄 Mise à jour des informations existantes
-              dbEstablishment.lastUpdate = lastUpdate;
-              dbEstablishment.description =
-                description || dbEstablishment.description;
-              dbEstablishment.location = { lat: latitude, lng: longitude };
-              dbEstablishment.address = {
-                street,
-                city,
-                postalCode,
-                department,
-                region,
-                country: "France",
-              };
-              dbEstablishment.contact = contact;
-              dbEstablishment.openingHours = openingHours;
-              dbEstablishment.logo = logo;
-
-              await dbEstablishment.save();
-              updatedEstablishments.push({
-                id: dbEstablishment._id,
-                name: dbEstablishment.name,
-              });
-              console.info(
-                `♻️ Établissement mis à jour : ${dbEstablishment.name}`
-              );
-            }
-          } catch (error) {
-            console.error(`❌ Erreur lors du traitement de ${file} :`, error);
+    for (const event of events) {
+      if (Array.isArray(event.clics)) {
+        for (const clic of event.clics) {
+          switch (clic.source?.toLowerCase()) {
+            case "publicité":
+              statsByCategory.publicité++;
+              break;
+            case "scanné":
+              statsByCategory.scanné++;
+              break;
+            case "promotion":
+              statsByCategory.promotion++;
+              break;
+            case "inscription":
+              statsByCategory.inscription++;
+              break;
+            default:
+              statsByCategory.autres++;
+              break;
           }
         }
-      } catch (error) {
-        unmatchedFiles.push(file);
-        console.error(`❌ Erreur de lecture du fichier ${file} :`, error);
       }
     }
 
     return res.status(200).json({
-      message: "Traitement terminé.",
-      updatedEstablishments,
-      createdEstablishments,
-      unmatchedFiles,
+      establishment: establishmentFinded,
+      totalEvents: events.length,
+      statsByCategory,
+      events,
     });
   } catch (error) {
-    console.error("❌ Erreur globale :", error);
-    return res
-      .status(500)
-      .json({ message: "Erreur lors du traitement.", error });
-  }
-};
-
-// Fonction pour lire les informations d'un établissement par son ID
-const getEstablishmentById = async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params; // Extraire l'ID de l'établissement depuis les paramètres de l'URL
-    const establishment = await Establishment.findById(id).populate("owner"); // Récupérer l'établissement et peupler le champ "owner"
-    if (!establishment) {
-      return res.status(404).json({ message: "Establishment not found" });
-    }
-
-    // Retourner les informations de l'établissement
-    return res.status(200).json(establishment);
-  } catch (error) {
-    return res.status(500).json({ error: "Failed to retrieve establishment" });
+    console.error("Erreur getAllInformation:", error);
+    return res.status(500).json({
+      error:
+        "Échec lors de la récupération des informations de l'établissement.",
+    });
   }
 };
 // Fonction pour mettre à jour un établissement
@@ -434,8 +288,8 @@ const deleteEstablishment = async (req: Request, res: Response) => {
 
 export default {
   createEstablishment,
-  getEstablishmentById,
-  fetchEstablishmentsByJson,
+  getAllInformation,
+  // fetchEstablishmentsByJson,
   updateEstablishment,
   deleteEstablishment,
 };

@@ -40,12 +40,10 @@ export default interface IEvent extends Document {
   favorieds: [
     { customer: { type: Types.ObjectId; ref: "Customer" }; date: Date },
   ];
-  clics: [
-    {
-      source: string;
-      date: Date;
-    },
-  ];
+  clics: {
+    source: string;
+    date: Date;
+  }[];
   acceptedPaymentMethod: string[];
   organizer: {
     establishment: Types.ObjectId;

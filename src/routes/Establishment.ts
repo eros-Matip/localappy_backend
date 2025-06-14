@@ -3,6 +3,7 @@ import controller from "../controllers/Establishment";
 import OwnerIsAuthenticated from "../middlewares/OwnerIsAuthenticated";
 import multer from "multer";
 import { multerConfig } from "../middlewares/Multer";
+import AdminIsAuthenticated from "../middlewares/AdminIsAuthenticated";
 
 const router = express.Router();
 const upload = multer(multerConfig);
@@ -14,8 +15,21 @@ router.post(
   OwnerIsAuthenticated,
   controller.createEstablishment
 );
-router.post("/fetchEstablishmentsByJson", controller.fetchEstablishmentsByJson);
-router.get("/get/:establishmentId", controller.getEstablishmentById);
+// router.post(
+//   "/fetchEstablishmentsByJson",
+//   AdminIsAuthenticated,
+//   controller.fetchEstablishmentsByJson
+// );
+router.get(
+  "/getInformations/:establishmentId",
+  OwnerIsAuthenticated,
+  controller.getAllInformation
+);
+router.get(
+  "/getInformations/:establishmentId",
+  OwnerIsAuthenticated,
+  controller.getAllInformation
+);
 router.put(
   "/update/:establishmentId",
   OwnerIsAuthenticated,
