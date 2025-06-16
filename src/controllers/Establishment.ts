@@ -194,31 +194,31 @@ const getAllInformation = async (req: Request, res: Response) => {
     const events = establishmentFinded.events as unknown as IEvent[];
 
     const statsByCategory: Record<string, number> = {
-      publicité: 0,
-      scanné: 0,
-      promotion: 0,
-      inscription: 0,
-      autres: 0,
+      publicités: 0,
+      scannés: 0,
+      promotions: 0,
+      inscriptions: 0,
+      clics: 0,
     };
 
     for (const event of events) {
       if (Array.isArray(event.clics)) {
         for (const clic of event.clics) {
           switch (clic.source?.toLowerCase()) {
-            case "publicité":
-              statsByCategory.publicité++;
+            case "publicités":
+              statsByCategory.publicités++;
               break;
-            case "scanné":
-              statsByCategory.scanné++;
+            case "scannés":
+              statsByCategory.scannés++;
               break;
-            case "promotion":
-              statsByCategory.promotion++;
+            case "promotions":
+              statsByCategory.promotions++;
               break;
-            case "inscription":
-              statsByCategory.inscription++;
+            case "inscriptions":
+              statsByCategory.inscriptions++;
               break;
             default:
-              statsByCategory.autres++;
+              statsByCategory.clics++;
               break;
           }
         }
