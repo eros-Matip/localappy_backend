@@ -25,7 +25,7 @@ router.put("/updateUrl", AdminIsAuthenticated_1.default, Event_1.default.updateI
 router.post("/registrationToAnEvent/:eventId", Event_1.default.registrationToAnEvent);
 router.put("/getCoordinatesFromAPI", AdminIsAuthenticated_1.default, Event_1.default.getCoordinatesFromAPI);
 router.put("/updateDescriptionsAndPrices", AdminIsAuthenticated_1.default, Event_1.default.updateDescriptionsAndPrices);
-router.delete("/delete/:eventId", AdminIsAuthenticated_1.default, Event_1.default.deleteEvent);
+router.delete("/delete/:eventId", OwnerIsAuthenticated_1.default, Event_1.default.deleteEvent);
 router.delete("/deleteDuplicateEvents", AdminIsAuthenticated_1.default, Event_1.default.deleteDuplicateEvents);
 router.delete("/removeMidnightDates", AdminIsAuthenticated_1.default, Event_1.default.removeMidnightDates);
 router.delete("/removeExpiredEvents", AdminIsAuthenticated_1.default, Event_1.default.removeExpiredEvents);

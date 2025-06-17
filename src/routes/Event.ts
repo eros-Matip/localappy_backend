@@ -54,7 +54,7 @@ router.put(
   AdminIsAuthenticated,
   controller.updateDescriptionsAndPrices
 );
-router.delete("/delete/:eventId", AdminIsAuthenticated, controller.deleteEvent);
+router.delete("/delete/:eventId", OwnerIsAuthenticated, controller.deleteEvent);
 router.delete(
   "/deleteDuplicateEvents",
   AdminIsAuthenticated,
