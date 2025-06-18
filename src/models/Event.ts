@@ -73,7 +73,7 @@ const eventSchema = new Schema<IEvent>(
     },
     capacity: { type: Number, default: 0 },
     registrationOpen: { type: Boolean, default: false },
-    isDraft: { type: Boolean, default: true },
+    isDraft: { type: Boolean, default: false },
     registrations: [
       {
         type: Schema.Types.ObjectId,

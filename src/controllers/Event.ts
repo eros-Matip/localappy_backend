@@ -1280,12 +1280,19 @@ const getEventsByPosition = async (req: Request, res: Response) => {
     };
 
     const [pastData, currentData, upcomingData] = await Promise.all([
-      fetchUniqueEventsWithCount({ endingDate: { $lt: currentDate } }),
+      fetchUniqueEventsWithCount({
+        endingDate: { $lt: currentDate },
+        isDraft: false,
+      }),
       fetchUniqueEventsWithCount({
         startingDate: { $lte: currentDate },
         endingDate: { $gte: currentDate },
+        isDraft: false,
       }),
-      fetchUniqueEventsWithCount({ startingDate: { $gt: currentDate } }),
+      fetchUniqueEventsWithCount({
+        startingDate: { $gt: currentDate },
+        isDraft: false,
+      }),
     ]);
 
     return res.status(200).json({
