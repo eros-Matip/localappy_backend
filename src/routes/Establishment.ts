@@ -7,7 +7,7 @@ import AdminIsAuthenticated from "../middlewares/AdminIsAuthenticated";
 
 const router = express.Router();
 const upload = multer(multerConfig);
-const cpUpload = upload.fields([{ name: "file", maxCount: 1 }]);
+const cpUpload = upload.fields([{ name: "photos", maxCount: 10 }]);
 
 router.post(
   "/create",
@@ -32,6 +32,7 @@ router.get(
 );
 router.put(
   "/update/:establishmentId",
+  cpUpload,
   OwnerIsAuthenticated,
   controller.updateEstablishment
 );

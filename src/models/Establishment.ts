@@ -27,20 +27,27 @@ const EstablishmentSchema = new Schema<IEstablishment>(
       fax: { type: String },
       website: { type: String },
       socialMedia: {
-        facebook: { type: String },
-        instagram: { type: String },
-        twitter: { type: String },
+        type: new Schema(
+          {
+            facebook: { type: String },
+            instagram: { type: String },
+            twitter: { type: String },
+          },
+          { _id: false }
+        ),
+        default: undefined,
       },
     },
 
     description: { type: String }, // Description du commerce
     logo: { type: String }, // Image principale ou logo
-
+    photos: { type: [String] },
     openingHours: [
       {
         dayOfWeek: { type: String },
         opens: { type: String },
         closes: { type: String },
+        _id: false,
       },
     ],
 

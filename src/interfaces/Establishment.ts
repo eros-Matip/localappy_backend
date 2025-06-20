@@ -58,6 +58,7 @@ interface IEstablishment extends Document {
   location: ILocation;
   contact?: IContact;
   logo: { type: String };
+  photos: string[];
   description?: string;
   openingHours: IOpeningHours[];
   acceptedPayments: IPaymentMethod[];

@@ -7,6 +7,7 @@ import Retour from "../library/Retour";
 import path from "path";
 import fs from "fs";
 import IEvent from "../interfaces/Event";
+import slugify from "slugify";
 
 const cloudinary = require("cloudinary");
 
@@ -239,25 +240,127 @@ const getAllInformation = async (req: Request, res: Response) => {
     });
   }
 };
+
 // Fonction pour mettre à jour un établissement
+// 🔧 Supprime les clés undefined dans un objet
+const removeUndefined = (obj: Record<string, any>) =>
+  Object.fromEntries(Object.entries(obj).filter(([_, v]) => v !== undefined));
+
+const extractPublicId = (url: string): string | null => {
+  try {
+    const parts = url.split("/");
+    const uploadIndex = parts.findIndex((p) => p === "upload") + 1;
+    const publicIdWithExt = parts.slice(uploadIndex).join("/");
+    return publicIdWithExt.replace(/\.[^/.]+$/, ""); // Supprime l'extension
+  } catch {
+    return null;
+  }
+};
+
 const updateEstablishment = async (req: Request, res: Response) => {
   try {
-    const { id } = req.params; // Extraire l'ID de l'établissement à mettre à jour
-    const updatedData = req.body; // Extraire les nouvelles données de la requête
+    const { establishmentId } = req.params;
+    const updates = req.body;
 
-    // Trouver et mettre à jour l'établissement avec les nouvelles données
-    const updatedEstablishment = await Establishment.findByIdAndUpdate(
-      id,
-      updatedData,
-      { new: true } // Option pour retourner l'établissement mis à jour
-    );
-    if (!updatedEstablishment) {
+    const establishment = await Establishment.findById(establishmentId);
+    if (!establishment) {
       return res.status(404).json({ message: "Establishment not found" });
     }
 
-    // Retourner l'établissement mis à jour
-    return res.status(200).json(updatedEstablishment);
+    // 🔁 Gestion des fichiers photos
+    const files = (req.files as { [fieldname: string]: Express.Multer.File[] })
+      ?.photos;
+    const uploadedUrls: string[] = [];
+
+    if (files && files.length > 0) {
+      const folderName = slugify(establishment.name, {
+        lower: true,
+        strict: true,
+      });
+
+      // 🧹 Supprimer les anciennes images
+      if (establishment.photos?.length) {
+        for (const url of establishment.photos) {
+          const publicId = extractPublicId(url);
+          if (publicId) {
+            await cloudinary.uploader.destroy(publicId);
+          }
+        }
+      }
+
+      // 📤 Upload des nouvelles images
+      for (const file of files) {
+        const result = await cloudinary.uploader.upload(file.path, {
+          folder: `establishments/${folderName}`,
+        });
+        uploadedUrls.push(result.secure_url);
+      }
+
+      establishment.photos = uploadedUrls;
+    }
+
+    // 🌍 Géolocalisation si adresse complète
+    if (
+      updates.address &&
+      typeof updates.address === "object" &&
+      updates.address.street &&
+      updates.address.city &&
+      updates.address.postalCode
+    ) {
+      const { street, city, postalCode } = updates.address;
+      const fullAddress = `${street}, ${postalCode} ${city}`;
+
+      try {
+        const { data } = await axios.get(
+          `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(fullAddress)}&limit=1`
+        );
+
+        if (data?.features?.length > 0) {
+          const [lng, lat] = data.features[0].geometry.coordinates;
+          establishment.location = { lat, lng };
+
+          const context = data.features[0].properties.context;
+          const department = context.split(",")[1]?.trim() || "";
+          const region = context.split(",")[2]?.trim() || "";
+
+          establishment.address = {
+            ...(establishment.address || {}),
+            street,
+            city,
+            postalCode,
+            department,
+            region,
+            country: "France",
+          };
+        }
+      } catch (err) {
+        console.warn("Erreur API adresse.gouv.fr :", err);
+      }
+    }
+
+    // 🔄 Mise à jour sécurisée des autres champs
+    for (const key in updates) {
+      const value = updates[key];
+
+      if (
+        typeof value === "object" &&
+        !Array.isArray(value) &&
+        value !== null
+      ) {
+        const cleanValue = removeUndefined(value);
+        (establishment as any)[key] = {
+          ...((establishment as any)[key] ?? {}),
+          ...cleanValue,
+        };
+      } else {
+        (establishment as any)[key] = value;
+      }
+    }
+
+    const updated = await establishment.save();
+    return res.status(200).json(updated);
   } catch (error) {
+    console.error("Update error:", error);
     return res.status(500).json({ error: "Failed to update establishment" });
   }
 };
