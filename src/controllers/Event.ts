@@ -1377,9 +1377,10 @@ const updateEvent = async (req: Request, res: Response, next: NextFunction) => {
       };
     }
 
-    if (req.body.isDraft) {
+    if (typeof req.body.isDraft === "boolean") {
       event.isDraft = req.body.isDraft;
     }
+
     // Mise à jour de l'image, si fournie
     if (req.body.image) {
       event.image = req.body.image;
