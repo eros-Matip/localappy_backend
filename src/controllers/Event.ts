@@ -1287,8 +1287,12 @@ const getEventsByPosition = async (req: Request, res: Response) => {
       fetchUniqueEventsWithCount({
         startingDate: { $lte: currentDate },
         endingDate: { $gte: currentDate },
+        isDraft: false,
       }),
-      fetchUniqueEventsWithCount({ startingDate: { $gt: currentDate } }),
+      fetchUniqueEventsWithCount({
+        startingDate: { $gt: currentDate },
+        isDraft: false,
+      }),
     ]);
 
     return res.status(200).json({
