@@ -1317,6 +1317,7 @@ const getEventsByPosition = async (req: Request, res: Response) => {
 
 const updateEvent = async (req: Request, res: Response, next: NextFunction) => {
   const eventId = req.params.eventId;
+  console.log("BODY REÇU >>>", req.body);
 
   try {
     // Recherche de l'événement par ID
