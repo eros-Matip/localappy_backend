@@ -267,6 +267,17 @@ const updateEstablishment = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Establishment not found" });
     }
 
+    // ✅ Parse automatique si `FormData` (stringifiés)
+    ["openingHours", "address"].forEach((key) => {
+      if (typeof updates[key] === "string") {
+        try {
+          updates[key] = JSON.parse(updates[key]);
+        } catch (err) {
+          console.warn(`Erreur de parsing du champ ${key}`, err);
+        }
+      }
+    });
+
     // 🔁 Gestion des fichiers photos
     const files = (req.files as { [fieldname: string]: Express.Multer.File[] })
       ?.photos;
