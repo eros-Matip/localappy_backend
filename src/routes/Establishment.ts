@@ -20,11 +20,7 @@ router.post(
 //   AdminIsAuthenticated,
 //   controller.fetchEstablishmentsByJson
 // );
-router.get(
-  "/getInformations/:establishmentId",
-  OwnerIsAuthenticated,
-  controller.getAllInformation
-);
+
 router.get(
   "/getInformations/:establishmentId",
   OwnerIsAuthenticated,

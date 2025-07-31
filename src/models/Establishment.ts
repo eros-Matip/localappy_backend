@@ -58,10 +58,12 @@ const EstablishmentSchema = new Schema<IEstablishment>(
       },
     ],
     legalInfo: {
+      siret: { type: String },
       insuranceCertificate: { type: String },
       KBis: { public_id: String, secure_url: String },
       activityCodeNAF: { type: String },
     },
+    ads: [{ type: Schema.Types.ObjectId, ref: "Ads" }],
     owner: { type: Schema.Types.ObjectId, ref: "Owner" },
     events: [{ type: Schema.Types.ObjectId, ref: "Event" }],
     activated: { type: Boolean, default: false },

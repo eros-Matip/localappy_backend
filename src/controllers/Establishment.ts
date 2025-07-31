@@ -8,6 +8,7 @@ import path from "path";
 import fs from "fs";
 import IEvent from "../interfaces/Event";
 import slugify from "slugify";
+import { Types } from "mongoose";
 
 const cloudinary = require("cloudinary");
 
@@ -241,6 +242,40 @@ const getAllInformation = async (req: Request, res: Response) => {
   }
 };
 
+const getPublicInformation = async (req: Request, res: Response) => {
+  try {
+    const establishment = await Establishment.findById(
+      req.params.establishmentId
+    )
+      .select(
+        "name description address location photos openingHours logo events"
+      )
+      .populate({
+        path: "events",
+        match: { isDraft: false },
+      });
+
+    if (!establishment || !Array.isArray(establishment.events)) {
+      return res
+        .status(404)
+        .json({ error: "Établissement introuvable ou sans événements." });
+    }
+
+    const events = establishment.events as Types.ObjectId[];
+
+    return res.status(200).json({
+      establishment,
+      totalEvents: events.length,
+      events,
+    });
+  } catch (error) {
+    Retour.error(`Erreur getPublicInformation: ${error}`);
+    return res.status(500).json({
+      error: "Erreur lors de la récupération des données publiques.",
+    });
+  }
+};
+
 // Fonction pour mettre à jour un établissement
 // 🔧 Supprime les clés undefined dans un objet
 const removeUndefined = (obj: Record<string, any>) =>
@@ -403,6 +438,7 @@ const deleteEstablishment = async (req: Request, res: Response) => {
 export default {
   createEstablishment,
   getAllInformation,
+  getPublicInformation,
   // fetchEstablishmentsByJson,
   updateEstablishment,
   deleteEstablishment,

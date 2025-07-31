@@ -38,6 +38,7 @@ interface IPaymentMethod {
 }
 
 interface ILegalInfo {
+  siret: { type: String };
   insuranceCertificate?: string;
   KBis?: {
     public_id: string;
@@ -65,6 +66,7 @@ interface IEstablishment extends Document {
   legalInfo?: ILegalInfo;
   owner: Types.ObjectId;
   events: Types.ObjectId[];
+  ads: Types.ObjectId[];
   activated: boolean;
 }
 

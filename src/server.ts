@@ -49,11 +49,12 @@ import AdminRoutes from "./routes/Admin";
 import FetchingInfoEntrepriseRoute from "./routes/FetchingSiret";
 import NotificationRoute from "./routes/SendNotification";
 import UpdatedPasswordLostRoute from "./routes/UpdatePasswordLost";
+import AdsRoutes from "./routes/Ads";
 // FUNCTIONS
 import Logging from "./library/Logging";
 import AdminIsAuthenticated from "./middlewares/IsAuthenticated";
-import Theme from "./models/Theme";
 import Event from "./models/Event";
+import OrganisateurRoute from "./routes/Organisateur";
 
 // The server start only if mongo is already connected
 const startServer = () => {
@@ -107,6 +108,7 @@ const startServer = () => {
   router.use("/customer/", CustomerRoutes);
   router.use("/contact/", ContactRoutes);
   router.use("/admin/", AdminRoutes);
+  router.use("/ads/", AdsRoutes);
   router.use(LoginRoute);
   router.use(PaymentRoute);
   router.use(ResendCodeRoute);
@@ -115,6 +117,7 @@ const startServer = () => {
   router.use(FetchingInfoEntrepriseRoute);
   router.use(NotificationRoute);
   router.use(UpdatedPasswordLostRoute);
+  router.use(OrganisateurRoute);
   /** Healthcheck */
 
   router.all(
