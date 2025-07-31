@@ -264,9 +264,8 @@ const getPublicInformation = async (req: Request, res: Response) => {
     const events = establishment.events as Types.ObjectId[];
 
     return res.status(200).json({
-      establishment,
       totalEvents: events.length,
-      events,
+      establishment,
     });
   } catch (error) {
     Retour.error(`Erreur getPublicInformation: ${error}`);
