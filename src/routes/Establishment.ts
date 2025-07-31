@@ -26,6 +26,11 @@ router.get(
   OwnerIsAuthenticated,
   controller.getAllInformation
 );
+router.get(
+  "/getPublicInformation/:establishmentId",
+  controller.getPublicInformation
+);
+
 router.put(
   "/update/:establishmentId",
   cpUpload,
