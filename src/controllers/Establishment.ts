@@ -252,7 +252,13 @@ const getPublicInformation = async (req: Request, res: Response) => {
       )
       .populate({
         path: "events",
-        match: { isDraft: false },
+        match: {
+          isDraft: false,
+          endingDate: { $gt: new Date() }, // → événements non passés
+        },
+        options: {
+          sort: { startingDate: 1 }, // → tri par date de début
+        },
       });
 
     if (!establishment || !Array.isArray(establishment.events)) {
@@ -261,7 +267,7 @@ const getPublicInformation = async (req: Request, res: Response) => {
         .json({ error: "Établissement introuvable ou sans événements." });
     }
 
-    const events = establishment.events as Types.ObjectId[];
+    const events = establishment.events;
 
     return res.status(200).json({
       totalEvents: events.length,
