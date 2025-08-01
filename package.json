@@ -1,6 +1,6 @@
 {
     "name": "localappy_backend",
-    "version": "1.23.7",
+    "version": "1.23.8",
     "license": "MIT",
     "description": "localappy app for all players",
     "main": "index.js",

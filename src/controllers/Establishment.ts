@@ -257,7 +257,7 @@ const getPublicInformation = async (req: Request, res: Response) => {
           endingDate: { $gt: new Date() }, // → événements non passés
         },
         options: {
-          sort: { startingDate: 1 }, // → tri par date de début
+          sort: { startingDate: 1, endingDate: 1 }, // → tri par date de début
         },
       });
 
