@@ -898,8 +898,10 @@ const createEventForAnEstablishment = async (req: Request, res: Response) => {
       },
       capacity: req.body.capacity || draftEvent.capacity,
       organizer: {
-        email: req.body.organizer.email || draftEvent.organizer.email,
-        phone: req.body.organizer.phone || draftEvent.organizer.phone,
+        establishment: draftEvent.organizer.establishment, // garde l'établissement
+        legalName: draftEvent.organizer.legalName, // si tu veux garder aussi le nom
+        email: req.body.organizer?.email || draftEvent.organizer.email,
+        phone: req.body.organizer?.phone || draftEvent.organizer.phone,
       },
       registrationOpen:
         req.body.registrationOpen !== undefined
@@ -1049,7 +1051,7 @@ const readEvent = async (req: Request, res: Response, next: NextFunction) => {
 // Fonction pour lire tous les événements
 const readAll = async (req: Request, res: Response, next: NextFunction) => {
   return Event.find()
-    .then((events) => res.status(200).json({ message: events }))
+    .then((events: any) => res.status(200).json({ message: events }))
     .catch((error) => res.status(500).json({ error: error.message }));
 };
 
