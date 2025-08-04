@@ -2084,6 +2084,8 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
     const price = eventFinded.price;
 
     // Création de l'inscription (Registration)
+    const ticketNumber = `TICKET-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
     const newRegistration = new Registration({
       date: new Date(),
       customer: customerFinded._id,
@@ -2092,12 +2094,13 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
       status: "pending",
       paymentMethod: paymentMethod,
       quantity: quantity || 1,
+      ticketNumber: ticketNumber, // ✅ AJOUTÉ ICI
     });
 
     await newRegistration.save();
 
     // Création de la facture (Bill)
-    const invoiceNumber = `INV-${Date.now()}`; // Génération d'un numéro de facture unique
+    const invoiceNumber = `INV-${Date.now()}-${Date.now()}`; // Génération d'un numéro de facture unique
     if (price > 0) {
       const newBill = new Bill({
         customer: customerFinded._id,
