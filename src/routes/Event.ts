@@ -4,6 +4,7 @@ import OwnerIsAuthenticated from "../middlewares/OwnerIsAuthenticated";
 import AdminIsAuthenticated from "../middlewares/AdminIsAuthenticated";
 import multer from "multer";
 import { multerConfig } from "../middlewares/Multer";
+import CustomerIsAuthenticated from "../middlewares/IsAuthenticated";
 
 const upload = multer(multerConfig);
 const cpUpload = upload.fields([{ name: "file", maxCount: 3 }]);
@@ -37,6 +38,7 @@ router.put("/verifAllEvent", AdminIsAuthenticated, controller.verifAllEvent);
 router.put("/updateUrl", AdminIsAuthenticated, controller.updateImageUrls);
 router.post(
   "/registrationToAnEvent/:eventId",
+  CustomerIsAuthenticated,
   controller.registrationToAnEvent
 );
 // router.put(

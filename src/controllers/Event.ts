@@ -2069,7 +2069,7 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Incription fermée" });
     }
     // Récupération du client
-    const customerFinded = await Customer.findById(req.body.customerId);
+    const customerFinded = await Customer.findById(req.body.admin);
     if (!customerFinded) {
       return res.status(404).json({ message: "Utilisateur introuvable" });
     }

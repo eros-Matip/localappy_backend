@@ -10,7 +10,7 @@ const registrationSchema = new Schema<IRegistration>(
     bill: { type: Schema.Types.ObjectId, ref: "Bill", required: false },
     status: {
       type: String,
-      enum: ["pending", "confirmed", "cancelled"],
+      enum: ["pending", "confirmed", "cancelled", "paid"],
       default: "pending",
     },
     // cash -> pour les pré-réservations

@@ -6,7 +6,7 @@ export default interface IRegistration extends Document {
   event: Types.ObjectId;
   price: number;
   bill?: Types.ObjectId;
-  status: "pending" | "confirmed" | "cancelled";
+  status: "pending" | "confirmed" | "cancelled" | "paid";
   paymentMethod: "credit_card" | "applePay" | "googlePay" | "paypal" | "cash";
   quantity: number;
   notes?: string;

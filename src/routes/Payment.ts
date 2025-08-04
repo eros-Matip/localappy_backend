@@ -2,6 +2,9 @@ import express, { Request, Response } from "express";
 import Stripe from "stripe";
 import paypal from "paypal-rest-sdk";
 import dotenv from "dotenv";
+import Registration from "../models/Registration";
+import Bill from "../models/Bill";
+import Event from "../models/Event";
 
 dotenv.config();
 
@@ -20,31 +23,40 @@ paypal.configure({
 // 🎟️ Route pour initier un paiement
 router.post("/event/payment", async (req: Request, res: Response) => {
   try {
-    const { amount, currency, paymentMethod, description } = req.body;
+    const {
+      amount,
+      currency,
+      paymentMethod,
+      description,
+      registrationId,
+      billId,
+    } = req.body;
 
-    if (!amount || !currency || !paymentMethod) {
-      return res
-        .status(400)
-        .json({ message: "Informations de paiement incomplètes" });
+    if (!amount || !currency || !paymentMethod || !registrationId || !billId) {
+      return res.status(400).json({ message: "Informations incomplètes" });
     }
 
     let paymentResponse;
 
     switch (paymentMethod) {
-      // 🔹 Paiement Stripe (Carte, Apple Pay, Google Pay)
       case "stripe":
+        // ✅ Création PaymentIntent avec metadata
         paymentResponse = await stripe.paymentIntents.create({
-          amount: Math.round(amount * 100), // Convertir en centimes
+          amount: Math.round(amount * 100), // centimes
           currency,
-          payment_method_types: ["card"], // Apple Pay et Google Pay sont gérés via Stripe
+          payment_method_types: ["card"],
           description,
+          metadata: {
+            registrationId,
+            billId,
+          },
         });
+
         return res.status(200).json({
           message: "Paiement Stripe initié",
           clientSecret: paymentResponse.client_secret,
         });
 
-      // 🔹 Paiement PayPal
       case "paypal":
         try {
           const create_payment_json = {
@@ -57,11 +69,12 @@ router.post("/event/payment", async (req: Request, res: Response) => {
                   currency: currency.toUpperCase(),
                 },
                 description,
+                custom: registrationId, // Ajout d’info
               },
             ],
             redirect_urls: {
-              return_url: "http://localhost:5000/event/payment/paypal/execute",
-              cancel_url: "http://localhost:5000/event/payment/paypal/cancel",
+              return_url: "https://yourdomain.com/event/payment/paypal/execute",
+              cancel_url: "https://yourdomain.com/event/payment/paypal/cancel",
             },
           };
 
@@ -79,20 +92,18 @@ router.post("/event/payment", async (req: Request, res: Response) => {
           return res.status(200).json({
             message: "Paiement PayPal initié",
             approvalUrl,
-            paymentId: (payment as any).id, // ✅ Ajout du `paymentId`
+            paymentId: (payment as any).id,
           });
         } catch (error) {
           return res.status(500).json({ message: "Erreur PayPal", error });
         }
 
-      // 🔹 Apple Pay & Google Pay sont gérés via Stripe Elements
       case "applePay":
       case "googlePay":
         return res.status(501).json({
-          message: `${paymentMethod} doit être géré via Stripe ou le SDK natif`,
+          message: `${paymentMethod} géré via Stripe SDK natif`,
         });
 
-      // 🔹 Méthode non reconnue
       default:
         return res
           .status(400)
@@ -113,10 +124,8 @@ router.get(
         return res.status(400).json({ message: "Paramètres manquants" });
       }
 
-      // ✅ Correction : Utiliser un objet standard `{ payer_id: string }`
       const execute_payment_json = { payer_id: PayerID as string };
 
-      // Exécuter la transaction PayPal
       const payment = await new Promise((resolve, reject) => {
         paypal.payment.execute(
           paymentId as string,
@@ -128,9 +137,49 @@ router.get(
         );
       });
 
-      return res
-        .status(200)
-        .json({ message: "Paiement PayPal validé", payment });
+      const paymentInfo = payment as any;
+      const customField = paymentInfo.transactions?.[0]?.custom;
+      const registrationId = customField;
+
+      if (!registrationId) {
+        return res.status(400).json({ message: "registrationId manquant" });
+      }
+
+      const registration = await Registration.findById(registrationId);
+      if (!registration) {
+        return res.status(404).json({ message: "Inscription introuvable" });
+      }
+
+      const bill = await Bill.findOne({ registration: registration._id });
+      if (!bill) {
+        return res.status(404).json({ message: "Facture introuvable" });
+      }
+
+      const event = await Event.findById(registration.event);
+      if (!event) {
+        return res.status(404).json({ message: "Événement introuvable" });
+      }
+
+      if (registration.status === "paid" && bill.status === "paid") {
+        return res.status(200).json({ message: "Déjà payé", payment });
+      }
+
+      registration.status = "paid";
+      await registration.save();
+
+      bill.status = "paid";
+      await bill.save();
+
+      event.capacity -= registration.quantity;
+      if (event.capacity < 0) event.capacity = 0;
+      await event.save();
+
+      return res.status(200).json({
+        message: "Paiement PayPal confirmé",
+        payment,
+        registration,
+        bill,
+      });
     } catch (error) {
       return res.status(500).json({
         message: "Erreur lors de l'exécution du paiement PayPal",
@@ -139,5 +188,124 @@ router.get(
     }
   }
 );
+
+// ✅ Route pour confirmer un paiement Stripe manuellement (si pas de webhook)
+router.post("/event/payment/confirm", async (req: Request, res: Response) => {
+  try {
+    const { registrationId, billId } = req.body;
+
+    if (!registrationId || !billId) {
+      return res.status(400).json({ message: "Paramètres manquants" });
+    }
+
+    const registration = await Registration.findById(registrationId);
+    if (!registration) {
+      return res.status(404).json({ message: "Inscription introuvable" });
+    }
+
+    const bill = await Bill.findById(billId);
+    if (!bill) {
+      return res.status(404).json({ message: "Facture introuvable" });
+    }
+
+    const event = await Event.findById(registration.event);
+    if (!event) {
+      return res.status(404).json({ message: "Evénement introuvable" });
+    }
+
+    if (registration.status === "paid" && bill.status === "paid") {
+      return res.status(200).json({ message: "Paiement déjà confirmé" });
+    }
+
+    registration.status = "paid";
+    await registration.save();
+
+    bill.status = "paid";
+    await bill.save();
+
+    event.capacity -= registration.quantity;
+    if (event.capacity < 0) event.capacity = 0;
+    await event.save();
+
+    return res.status(200).json({
+      message: "Paiement confirmé",
+      registration,
+      bill,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Erreur lors de la confirmation du paiement",
+      error,
+    });
+  }
+});
+
+// ✅ Route pour paiement en espèces (cash)
+router.post("/event/payment/cash", async (req: Request, res: Response) => {
+  try {
+    const { registrationId, billId } = req.body;
+
+    if (!registrationId || !billId) {
+      return res.status(400).json({ message: "Paramètres manquants" });
+    }
+
+    const registration = await Registration.findById(registrationId);
+    if (!registration) {
+      return res.status(404).json({ message: "Inscription introuvable" });
+    }
+
+    const bill = await Bill.findById(billId);
+    if (!bill) {
+      return res.status(404).json({ message: "Facture introuvable" });
+    }
+
+    const event = await Event.findById(registration.event);
+    if (!event) {
+      return res.status(404).json({ message: "Evénement introuvable" });
+    }
+
+    if (registration.status === "paid" && bill.status === "paid") {
+      return res.status(200).json({ message: "Paiement déjà enregistré" });
+    }
+
+    registration.status = "paid";
+    await registration.save();
+
+    bill.status = "paid";
+    await bill.save();
+
+    event.capacity -= registration.quantity;
+    if (event.capacity < 0) event.capacity = 0;
+    await event.save();
+
+    return res.status(200).json({
+      message: "Paiement en espèces enregistré",
+      registration,
+      bill,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Erreur lors de l'enregistrement du paiement cash",
+      error,
+    });
+  }
+});
+
+router.get("/user/payment-methods/:customerId", async (req, res) => {
+  const { customerId } = req.params;
+
+  try {
+    const paymentMethods = await stripe.paymentMethods.list({
+      customer: customerId,
+      type: "card",
+    });
+
+    return res.status(200).json({ paymentMethods });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: "Erreur récupération cartes", error });
+  }
+});
 
 export default router;
