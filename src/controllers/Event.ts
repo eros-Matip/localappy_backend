@@ -2098,11 +2098,11 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
     });
 
     await newRegistration.save();
-
-    // Création de la facture (Bill)
     const invoiceNumber = `INV-${Date.now()}-${Date.now()}`; // Génération d'un numéro de facture unique
+    let newBill = null;
+
     if (price > 0) {
-      const newBill = new Bill({
+      newBill = new Bill({
         customer: customerFinded._id,
         registration: newRegistration._id,
         amount: price * newRegistration.quantity,
@@ -2110,7 +2110,7 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
         paymentMethod: paymentMethod,
         invoiceNumber: invoiceNumber,
         issuedDate: new Date(),
-        dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // Échéance à 7 jours
+        dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         items: [
           {
             description: `Inscription à l'événement ${eventFinded.title}`,
@@ -2129,7 +2129,8 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
 
     return res.status(201).json({
       message: "Inscription et facture créées avec succès",
-      registration: newRegistration,
+      registrationId: newRegistration._id,
+      billId: newBill ? newBill._id : null,
     });
   } catch (error) {
     Retour.error({ message: "Erreur lors de l'inscription", error: error });
