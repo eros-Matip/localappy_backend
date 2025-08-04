@@ -55,13 +55,46 @@ import Logging from "./library/Logging";
 import AdminIsAuthenticated from "./middlewares/IsAuthenticated";
 import Event from "./models/Event";
 import OrganisateurRoute from "./routes/Organisateur";
+import Stripe from "stripe";
+import Registration from "./models/Registration";
+import Bill from "./models/Bill";
 
 // The server start only if mongo is already connected
 const startServer = () => {
   // Check tous les Jours à 00:00 si nous avons changé de mois.
-  cron.schedule("0 0 0 * * *", () => {
-    console.log("hello world");
-    // Mettre en place la suppression d'un compte Owner S'il n'est pas vérifié afin de supprimé ce qui sont passé tout de meme
+
+  cron.schedule("0 0 0 * * *", async () => {
+    console.log("🔄 [CRON] Nettoyage des registrations pending...");
+
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    try {
+      const pendingRegistrations = await Registration.find({
+        status: "pending",
+        date: { $lt: oneDayAgo },
+      });
+
+      for (const reg of pendingRegistrations) {
+        // Vérifie si un paiement Stripe est en cours (optionnel)
+
+        const bill = await Bill.findOne({
+          registration: reg._id,
+          status: "pending",
+        });
+
+        if (bill) {
+          await bill.deleteOne();
+          console.log(`🧾 Bill supprimée: ${bill._id}`);
+        }
+
+        await reg.deleteOne();
+        console.log(`🎟️ Registration supprimée: ${reg._id}`);
+      }
+
+      console.log("✅ [CRON] Nettoyage terminé.");
+    } catch (error) {
+      console.error("❌ [CRON] Erreur lors du nettoyage :", error);
+    }
   });
 
   const allowedOrigins = ["http://localhost:3000"];
