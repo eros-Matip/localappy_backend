@@ -2123,8 +2123,6 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
       await newBill.save();
     }
 
-    // Mise à jour du nombre de places restantes
-    eventFinded.capacity -= newRegistration.quantity;
     await eventFinded.save();
 
     return res.status(201).json({
