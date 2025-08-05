@@ -40,6 +40,8 @@ router.post("/event/payment", async (req: Request, res: Response) => {
 
     switch (paymentMethod) {
       case "stripe":
+      case "applePay":
+      case "googlePay":
         // ✅ Création PaymentIntent avec metadata
         paymentResponse = await stripe.paymentIntents.create({
           amount: Math.round(amount * 100), // centimes
@@ -97,12 +99,6 @@ router.post("/event/payment", async (req: Request, res: Response) => {
         } catch (error) {
           return res.status(500).json({ message: "Erreur PayPal", error });
         }
-
-      case "applePay":
-      case "googlePay":
-        return res.status(501).json({
-          message: `${paymentMethod} géré via Stripe SDK natif`,
-        });
 
       default:
         return res
