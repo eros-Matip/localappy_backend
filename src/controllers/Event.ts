@@ -2093,7 +2093,7 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
       status: "pending",
       paymentMethod: paymentMethod,
       quantity: quantity || 1,
-      ticketNumber: ticketNumber, // ✅ AJOUTÉ ICI
+      ticketNumber: ticketNumber,
     });
 
     await newRegistration.save();

@@ -17,7 +17,7 @@ const billSchema = new Schema<IBill>(
     },
     paymentMethod: {
       type: String,
-      enum: ["credit_card", "paypal", "cash"],
+      enum: ["credit_card", "paypal", "cash", "applePay", "googlePay"],
       required: true,
     },
     invoiceNumber: { type: String, required: true, unique: true },

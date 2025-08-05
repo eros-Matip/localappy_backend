@@ -5,7 +5,7 @@ export default interface IBill extends Document {
   registration: Types.ObjectId; // Réservation associée
   amount: number; // Montant total de la facture
   status: "pending" | "paid" | "cancelled"; // Statut de paiement
-  paymentMethod: "credit_card" | "paypal" | "cash"; // Méthode de paiement utilisée
+  paymentMethod: "credit_card" | "paypal" | "cash" | "applePay" | "googlePay"; // Méthode de paiement utilisée
   invoiceNumber: string; // Numéro unique de la facture
   issuedDate: Date; // Date d'émission
   dueDate: Date; // Date limite de paiement
