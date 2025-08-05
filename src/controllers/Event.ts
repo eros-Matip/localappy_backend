@@ -2079,9 +2079,8 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Plus de places disponibles" });
     }
 
-    const { paymentMethod, quantity } = req.body;
+    const { paymentMethod, price, quantity } = req.body;
     // Définition du prix (peut inclure des remises ou promotions si nécessaire)
-    const price = eventFinded.price;
 
     // Création de l'inscription (Registration)
     const ticketNumber = `TICKET-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -2122,8 +2121,6 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
 
       await newBill.save();
     }
-
-    await eventFinded.save();
 
     return res.status(201).json({
       message: "Inscription et facture créées avec succès",
