@@ -73,8 +73,8 @@ router.post("/event/payment", async (req: Request, res: Response) => {
               },
             ],
             redirect_urls: {
-              return_url: "https://yourdomain.com/event/payment/paypal/execute",
-              cancel_url: "https://yourdomain.com/event/payment/paypal/cancel",
+              return_url: "https://localappy.fr/event/payment/paypal/execute",
+              cancel_url: "https://localappy.fr/event/payment/paypal/cancel",
             },
           };
 
