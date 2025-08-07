@@ -2123,8 +2123,10 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
     }
 
     if (price <= 0) {
+      eventFinded.capacity -= newRegistration.quantity;
       customerFinded.eventsReserved?.push(eventFinded._id);
       await customerFinded.save();
+      await eventFinded.save();
     }
 
     return res.status(201).json({
