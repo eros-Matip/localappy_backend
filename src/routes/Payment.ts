@@ -3,6 +3,7 @@ import Stripe from "stripe";
 import paypal from "paypal-rest-sdk";
 import dotenv from "dotenv";
 import Registration from "../models/Registration";
+import Customer from "../models/Customer";
 import Bill from "../models/Bill";
 import Event from "../models/Event";
 
@@ -10,7 +11,7 @@ dotenv.config();
 
 const router = express.Router();
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2025-01-27.acacia",
+  apiVersion: "2025-02-24.acacia",
 });
 
 // 🅿️ Configuration PayPal
@@ -167,6 +168,15 @@ router.get(
       await bill.save();
 
       event.capacity -= registration.quantity;
+
+      const customer = await Customer.findById(registration.customer);
+      if (customer) {
+        if (!customer.eventsReserved.includes(event._id)) {
+          customer.eventsReserved.push(event._id);
+          await customer.save();
+        }
+      }
+
       if (event.capacity < 0) event.capacity = 0;
       await event.save();
 
@@ -220,6 +230,15 @@ router.post("/event/payment/confirm", async (req: Request, res: Response) => {
     await bill.save();
 
     event.capacity -= registration.quantity;
+
+    const customer = await Customer.findById(registration.customer);
+    if (customer) {
+      if (!customer.eventsReserved.includes(event._id)) {
+        customer.eventsReserved.push(event._id);
+        await customer.save();
+      }
+    }
+
     if (event.capacity < 0) event.capacity = 0;
     await event.save();
 
@@ -271,6 +290,15 @@ router.post("/event/payment/cash", async (req: Request, res: Response) => {
     await bill.save();
 
     event.capacity -= registration.quantity;
+
+    const customer = await Customer.findById(registration.customer);
+    if (customer) {
+      if (!customer.eventsReserved.includes(event._id)) {
+        customer.eventsReserved.push(event._id);
+        await customer.save();
+      }
+    }
+
     if (event.capacity < 0) event.capacity = 0;
     await event.save();
 

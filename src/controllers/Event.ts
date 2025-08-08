@@ -2122,6 +2122,13 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
       await newBill.save();
     }
 
+    if (price <= 0) {
+      eventFinded.capacity -= newRegistration.quantity;
+      customerFinded.eventsReserved?.push(eventFinded._id);
+      await customerFinded.save();
+      await eventFinded.save();
+    }
+
     return res.status(201).json({
       message: "Inscription et facture créées avec succès",
       registrationId: newRegistration._id,

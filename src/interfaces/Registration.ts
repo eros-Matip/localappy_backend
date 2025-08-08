@@ -7,7 +7,13 @@ export default interface IRegistration extends Document {
   price: number;
   bill?: Types.ObjectId;
   status: "pending" | "confirmed" | "cancelled" | "paid";
-  paymentMethod: "credit_card" | "applePay" | "googlePay" | "paypal" | "cash";
+  paymentMethod:
+    | "credit_card"
+    | "applePay"
+    | "googlePay"
+    | "paypal"
+    | "cash"
+    | "free";
   quantity: number;
   notes?: string;
   discountCode?: string;

@@ -16,7 +16,7 @@ const registrationSchema = new Schema<IRegistration>(
     // cash -> pour les pré-réservations
     paymentMethod: {
       type: String,
-      enum: ["credit_card", "applePay", "googlePay", "paypal", "cash"],
+      enum: ["credit_card", "applePay", "googlePay", "paypal", "cash", "free"],
       required: true,
     },
     quantity: { type: Number, required: true, min: 1 },

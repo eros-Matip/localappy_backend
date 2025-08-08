@@ -31,6 +31,7 @@ const customerSchema = new Schema<ICustomer>(
     },
     bills: [{ type: Schema.Types.ObjectId, ref: "Bill" }],
     eventsAttended: [{ type: Schema.Types.ObjectId, ref: "Event" }], // Référence vers les événements auxquels le client a participé
+    eventsReserved: [{ type: Schema.Types.ObjectId, ref: "Event" }],
     eventsFavorites: [{ type: Schema.Types.ObjectId, ref: "Event" }],
     themesFavorites: [{ type: Schema.Types.ObjectId, ref: "Theme" }],
     customersFavorites: [{ type: Schema.Types.ObjectId, ref: "Customer" }],

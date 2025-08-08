@@ -26,36 +26,13 @@ export default interface ICustomer extends Document {
     startDate?: Date; // (Optionnel) Date d'adhésion au compte premium
     endDate?: Date; // (Optionnel) Date de fin de l'adhésion premium
   };
-  bills: [{ type: Types.ObjectId; ref: "Bill" }];
-  eventsAttended: [{ type: Types.ObjectId; ref: "Event" }]; // Référence vers les événements auxquels le client a participé
-  eventsFavorites: [
-    {
-      equals(objectId: Types.ObjectId): unknown;
-      type: Types.ObjectId;
-      ref: "Event";
-    },
-  ];
-  themesFavorites: [
-    {
-      equals(objectId: Types.ObjectId): unknown;
-      type: Types.ObjectId;
-      ref: "Theme";
-    },
-  ];
-  establishmentFavorites: [
-    {
-      equals(objectId: Types.ObjectId): unknown;
-      type: Types.ObjectId;
-      ref: "Etablishment";
-    },
-  ]; // Référence vers les établissements favoris du client
-  customersFavorites: [
-    {
-      equals(objectId: ObjectId): unknown;
-      type: Types.ObjectId;
-      ref: "Customer";
-    },
-  ];
+  bills: Types.ObjectId[];
+  eventsAttended: Types.ObjectId[]; // Référence vers les événements auxquels le client a participé
+  eventsReserved: Types.ObjectId[];
+  eventsFavorites: Types.ObjectId[];
+  themesFavorites: Types.ObjectId[];
+  establishmentFavorites: Types.ObjectId[]; // Référence vers les établissements favoris du client
+  customersFavorites: Types.ObjectId[];
   ownerAccount: Types.ObjectId;
   passwordLosted: {
     status: boolean;
