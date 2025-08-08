@@ -12,6 +12,7 @@ import Customer from "../models/Customer";
 import Registration from "../models/Registration";
 import Bill from "../models/Bill";
 import cloudinary from "cloudinary";
+import { sendEventConfirmationEmail } from "../utils/sendEventConfirmation";
 
 // Utiliser promisify pour rendre les fonctions fs asynchrones
 /**
@@ -2127,6 +2128,23 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
       customerFinded.eventsReserved?.push(eventFinded._id);
       await customerFinded.save();
       await eventFinded.save();
+      // ENVOI EMAIL
+      const eventDateFormatted = new Date(
+        eventFinded.startingDate
+      ).toLocaleString("fr-FR");
+      const invoiceUrl = `https://localappy.com/api/invoice/${newRegistration._id}`;
+      const eventLink = `https://localappy.com/events/${eventFinded._id}`;
+
+      await sendEventConfirmationEmail({
+        to: customerFinded.email,
+        firstName: customerFinded.account.firstname,
+        eventTitle: eventFinded.title,
+        eventDate: eventDateFormatted,
+        eventAddress: eventFinded.address,
+        quantity: newRegistration.quantity,
+        eventLink,
+        invoiceUrl,
+      });
     }
 
     return res.status(201).json({
