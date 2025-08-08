@@ -20,7 +20,7 @@ export const sendEventConfirmationEmail = async ({
   invoiceUrl: string;
 }) => {
   const mailerSend = new MailerSend({
-    apiKey: process.env.MAILERSEND_API_KEY!,
+    apiKey: process.env.MAILERSEND_KEY!,
   });
 
   const sentFrom = new Sender(
