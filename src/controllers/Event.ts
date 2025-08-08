@@ -2090,7 +2090,7 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
       customer: customerFinded._id,
       event: eventFinded._id,
       price: price,
-      status: "pending",
+      status: price > 0 ? "pending" : "confirmed",
       paymentMethod: paymentMethod,
       quantity: quantity || 1,
       ticketNumber: ticketNumber,

@@ -50,6 +50,7 @@ import FetchingInfoEntrepriseRoute from "./routes/FetchingSiret";
 import NotificationRoute from "./routes/SendNotification";
 import UpdatedPasswordLostRoute from "./routes/UpdatePasswordLost";
 import AdsRoutes from "./routes/Ads";
+import invoiceRoutes from "./routes/invoice.routes";
 // FUNCTIONS
 import Logging from "./library/Logging";
 import AdminIsAuthenticated from "./middlewares/IsAuthenticated";
@@ -58,6 +59,7 @@ import OrganisateurRoute from "./routes/Organisateur";
 import Stripe from "stripe";
 import Registration from "./models/Registration";
 import Bill from "./models/Bill";
+import CustomerIsAuthenticated from "./middlewares/IsAuthenticated";
 
 // The server start only if mongo is already connected
 const startServer = () => {
@@ -151,6 +153,8 @@ const startServer = () => {
   router.use(NotificationRoute);
   router.use(UpdatedPasswordLostRoute);
   router.use(OrganisateurRoute);
+  router.use("/api", CustomerIsAuthenticated, invoiceRoutes);
+
   /** Healthcheck */
 
   router.all(
