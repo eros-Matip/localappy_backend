@@ -23,7 +23,10 @@ export const sendEventConfirmationEmail = async ({
     apiKey: process.env.MAILERSEND_API_KEY!,
   });
 
-  const sentFrom = new Sender("noreply@localappy.com", "Localappy");
+  const sentFrom = new Sender(
+    "noreply@trial-65qngkd9dedlwr12.mlsender.net",
+    "Localappy"
+  );
 
   const recipients = [new Recipient(to, firstName)];
 
