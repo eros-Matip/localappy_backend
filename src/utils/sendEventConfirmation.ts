@@ -20,15 +20,13 @@ export const sendEventConfirmationEmail = async ({
   invoiceUrl: string;
 }) => {
   const mailerSend = new MailerSend({
-    apiKey: process.env.MAILERSEND_KEY!,
+    apiKey:
+      "mlsn.3768c10bb2da50c79c893df8c05d442a6bda0de344a67dea1d737ff81b4d4ccc",
   });
 
-  const sentFrom = new Sender(
-    "noreply@trial-65qngkd9dedlwr12.mlsender.net",
-    "Localappy"
-  );
+  const sentFrom = new Sender("noreply@localappy.fr", "Localappy");
 
-  const recipients = [new Recipient(to, firstName)];
+  const recipients: Recipient[] = [new Recipient(to, firstName)];
 
   const personalization = [
     {

@@ -2097,7 +2097,6 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
       ticketNumber: ticketNumber,
     });
 
-    await newRegistration.save();
     const invoiceNumber = `INV-${Date.now()}-${Date.now()}`; // Génération d'un numéro de facture unique
     let newBill = null;
 
@@ -2126,14 +2125,12 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
     if (price <= 0) {
       eventFinded.capacity -= newRegistration.quantity;
       customerFinded.eventsReserved?.push(eventFinded._id);
-      await customerFinded.save();
-      await eventFinded.save();
       // ENVOI EMAIL
       const eventDateFormatted = new Date(
         eventFinded.startingDate
       ).toLocaleString("fr-FR");
-      const invoiceUrl = `https://localappy.com/api/invoice/${newRegistration._id}`;
-      const eventLink = `https://localappy.com/events/${eventFinded._id}`;
+      const invoiceUrl = `https://localappy.fr/api/invoice/${newRegistration._id}`;
+      const eventLink = `https://localappy.fr/events/${eventFinded._id}`;
 
       await sendEventConfirmationEmail({
         to: customerFinded.email,
@@ -2145,7 +2142,10 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
         eventLink,
         invoiceUrl,
       });
+      await customerFinded.save();
+      await eventFinded.save();
     }
+    await newRegistration.save();
 
     return res.status(201).json({
       message: "Inscription et facture créées avec succès",
