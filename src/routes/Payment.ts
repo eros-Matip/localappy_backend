@@ -181,13 +181,14 @@ router.get(
 
       if (event.capacity < 0) event.capacity = 0;
       event.bills.push(bill._id as Types.ObjectId);
+      event.registrations.push(registration._id as Types.ObjectId);
 
       // ENVOI EMAIL
       const eventDateFormatted = new Date(event.startingDate).toLocaleString(
         "fr-FR"
       );
-      const invoiceUrl = `https://localappy.com/api/invoice/${registration._id}`;
-      const eventLink = `https://localappy.com/events/${event._id}`;
+      const invoiceUrl = `https://localappy.fr/api/invoice/${registration._id}`;
+      const eventLink = `https://localappy.fr/events/${event._id}`;
 
       await sendEventConfirmationEmail({
         to: customer.email,
@@ -253,6 +254,7 @@ router.post("/event/payment/confirm", async (req: Request, res: Response) => {
 
     event.capacity -= registration.quantity;
     event.bills.push(bill._id as Types.ObjectId);
+    event.registrations.push(registration._id as Types.ObjectId);
 
     const customer = await Customer.findById(registration.customer);
 
@@ -270,8 +272,8 @@ router.post("/event/payment/confirm", async (req: Request, res: Response) => {
     const eventDateFormatted = new Date(event.startingDate).toLocaleString(
       "fr-FR"
     );
-    const invoiceUrl = `https://localappy.com/api/invoice/${registration._id}`;
-    const eventLink = `https://localappy.com/events/${event._id}`;
+    const invoiceUrl = `https://localappy.fr/api/invoice/${registration._id}`;
+    const eventLink = `https://localappy.fr/events/${event._id}`;
 
     await sendEventConfirmationEmail({
       to: customer.email,
@@ -347,14 +349,15 @@ router.post("/event/payment/cash", async (req: Request, res: Response) => {
 
     if (event.capacity < 0) event.capacity = 0;
     event.bills.push(bill._id as Types.ObjectId);
+    event.registrations.push(registration._id as Types.ObjectId);
     await event.save();
 
     // ENVOI EMAIL
     const eventDateFormatted = new Date(event.startingDate).toLocaleString(
       "fr-FR"
     );
-    const invoiceUrl = `https://localappy.com/api/invoice/${registration._id}`;
-    const eventLink = `https://localappy.com/events/${event._id}`;
+    const invoiceUrl = `https://localappy.fr/api/invoice/${registration._id}`;
+    const eventLink = `https://localappy.fr/events/${event._id}`;
 
     await sendEventConfirmationEmail({
       to: customer.email,
