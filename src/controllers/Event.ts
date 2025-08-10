@@ -1030,7 +1030,7 @@ const readEvent = async (req: Request, res: Response, next: NextFunction) => {
     const eventId = req.params.eventId;
     const { source } = req.body;
 
-    const event = await Event.findById(eventId);
+    const event = await Event.findById(eventId).populate("registrations");
     if (!event) {
       return res.status(404).json({ message: "Not found" });
     }
