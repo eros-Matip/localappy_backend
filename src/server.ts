@@ -157,27 +157,50 @@ const startServer = () => {
 
   /** Healthcheck */
 
-  router.all(
-    "/test",
-    AdminIsAuthenticated,
-    async (req: Request, res: Response, next: NextFunction) => {
-      try {
-        const result = await Event.updateMany(
-          { isDraft: true }, // condition : uniquement ceux qui sont en brouillon
-          { $set: { isDraft: false } } // mise à jour : les passer à false
-        );
+  router.all("/test", async (req: Request, res: Response) => {
+    try {
+      let regsAdded = 0;
+      let billsAdded = 0;
 
-        res.status(200).send({
-          message: `${result.modifiedCount} événements ont été mis à jour.`,
-        });
-      } catch (error) {
-        console.error("Erreur lors de la mise à jour des événements:", error);
-        res
-          .status(500)
-          .send({ message: "Erreur lors de la mise à jour des événements." });
+      // --- Synchronisation des registrations ---
+      const registrations = await Registration.find({
+        event: { $exists: true, $ne: null },
+      });
+      for (const reg of registrations) {
+        const updated = await Event.updateOne(
+          { _id: reg.event, registrations: { $ne: reg._id } },
+          { $push: { registrations: reg._id } }
+        );
+        if (updated.modifiedCount > 0) regsAdded++;
       }
+
+      // --- Synchronisation des bills via leur registration ---
+      const bills = await Bill.find({
+        registration: { $exists: true, $ne: null },
+      });
+      for (const bill of bills) {
+        const reg = await Registration.findById(bill.registration);
+        if (!reg?.event) continue; // pas d'event lié => on saute
+
+        const updated = await Event.updateOne(
+          { _id: reg.event, bills: { $ne: bill._id } },
+          { $push: { bills: bill._id } }
+        );
+        if (updated.modifiedCount > 0) billsAdded++;
+      }
+
+      res.status(200).json({
+        message: "Synchronisation terminée",
+        registrationsAjoutees: regsAdded,
+        billsAjoutees: billsAdded,
+      });
+    } catch (error) {
+      console.error(error);
+      res
+        .status(500)
+        .json({ message: "Erreur lors de la synchronisation", error });
     }
-  );
+  });
 
   /**Error handling */
   router.use((req: Request, res: Response) => {
