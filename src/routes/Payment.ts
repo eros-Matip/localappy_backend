@@ -7,6 +7,7 @@ import Customer from "../models/Customer";
 import Bill from "../models/Bill";
 import Event from "../models/Event";
 import { sendEventConfirmationEmail } from "../utils/sendEventConfirmation";
+import { Types } from "mongoose";
 
 dotenv.config();
 
@@ -169,7 +170,6 @@ router.get(
       await bill.save();
 
       event.capacity -= registration.quantity;
-
       const customer = await Customer.findById(registration.customer);
       if (!customer) {
         return res.status(404).json({ message: "Client introuvable" });
@@ -180,6 +180,7 @@ router.get(
       }
 
       if (event.capacity < 0) event.capacity = 0;
+      event.bills.push(bill._id as Types.ObjectId);
 
       // ENVOI EMAIL
       const eventDateFormatted = new Date(event.startingDate).toLocaleString(
@@ -251,6 +252,7 @@ router.post("/event/payment/confirm", async (req: Request, res: Response) => {
     await bill.save();
 
     event.capacity -= registration.quantity;
+    event.bills.push(bill._id as Types.ObjectId);
 
     const customer = await Customer.findById(registration.customer);
 
@@ -344,6 +346,7 @@ router.post("/event/payment/cash", async (req: Request, res: Response) => {
     }
 
     if (event.capacity < 0) event.capacity = 0;
+    event.bills.push(bill._id as Types.ObjectId);
     await event.save();
 
     // ENVOI EMAIL

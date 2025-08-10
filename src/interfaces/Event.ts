@@ -25,18 +25,8 @@ export default interface IEvent extends Document {
   };
   capacity: number;
   registrationOpen: boolean;
-  registrations: [
-    {
-      type: Types.ObjectId;
-      ref: "Registration";
-    },
-  ];
-  bills: [
-    {
-      type: Types.ObjectId;
-      ref: "Bill";
-    },
-  ];
+  registrations: Types.ObjectId[];
+  bills: Types.ObjectId[];
   favorieds: [
     { customer: { type: Types.ObjectId; ref: "Customer" }; date: Date },
   ];
