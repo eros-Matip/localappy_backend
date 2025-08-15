@@ -28,6 +28,10 @@ const CustomerIsAuthenticated = async (
         path: "eventsFavorites",
         model: "Event",
       },
+      {
+        path: "eventsReserved",
+        model: "Event",
+      },
       { path: "ownerAccount", model: "Owner", populate: "establishments" },
     ]);
 
