@@ -31,6 +31,7 @@ const CustomerIsAuthenticated = async (
       {
         path: "eventsReserved",
         model: "Event",
+        populate: "registrations",
       },
       { path: "ownerAccount", model: "Owner", populate: "establishments" },
     ]);

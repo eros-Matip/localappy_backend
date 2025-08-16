@@ -36,7 +36,7 @@ router.post(
         Customer.findOne({ email }).populate([
           { path: "themesFavorites", model: "Theme" },
           { path: "eventsFavorites", model: "Event" },
-          { path: "eventsReserved", model: "Event" },
+          { path: "eventsReserved", model: "Event", populate: "registrations" },
           { path: "ownerAccount", model: "Owner", populate: "establishments" },
         ]),
         Admin.findOne({ email }),
