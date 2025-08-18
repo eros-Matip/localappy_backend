@@ -94,7 +94,8 @@
   },
   "include": [
     "src/**/*",
-    "declarations.d.ts"
+    "declarations.d.ts",
+    "src/controllers/Event.ts"
   ],
   "exclude": [
     "node_modules",
