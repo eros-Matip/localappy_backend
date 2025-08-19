@@ -9,7 +9,11 @@ router.get(
   CustomerIsAuthenticated,
   controller.readRegistration
 );
-router.get("/get/", CustomerIsAuthenticated, controller.readAll);
+router.get(
+  "/getAllByCustomer/",
+  CustomerIsAuthenticated,
+  controller.getUserReservationsGroupedByDate
+);
 router.put(
   "/update/:registrationId",
   CustomerIsAuthenticated,

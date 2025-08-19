@@ -50,6 +50,7 @@ import FetchingInfoEntrepriseRoute from "./routes/FetchingSiret";
 import NotificationRoute from "./routes/SendNotification";
 import UpdatedPasswordLostRoute from "./routes/UpdatePasswordLost";
 import AdsRoutes from "./routes/Ads";
+import RegistrationRoutes from "./routes/Registration";
 import invoiceRoutes from "./routes/invoice.routes";
 // FUNCTIONS
 import Logging from "./library/Logging";
@@ -144,6 +145,7 @@ const startServer = () => {
   router.use("/contact/", ContactRoutes);
   router.use("/admin/", AdminRoutes);
   router.use("/ads/", AdsRoutes);
+  router.use("/registration/", RegistrationRoutes);
   router.use(LoginRoute);
   router.use(PaymentRoute);
   router.use(ResendCodeRoute);
