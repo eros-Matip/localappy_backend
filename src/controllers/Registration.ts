@@ -37,14 +37,9 @@ const getUserReservationsGroupedByDate = async (
 
     const pipeline: mongoose.PipelineStage[] = [
       {
-        // on garde seulement les réservations de l'utilisateur, payées/confirmées
-        $match: {
-          customer: user._id,
-          status: { $in: ["paid", "confirmed"] },
-        },
+        $match: { customer: user._id, status: { $in: ["paid", "confirmed"] } },
       },
       {
-        // jour local "YYYY-MM-DD" + ts brut pour le tri
         $addFields: {
           _dayKey: {
             $dateToString: { format: "%Y-%m-%d", date: "$date", timezone: tz },
@@ -53,27 +48,37 @@ const getUserReservationsGroupedByDate = async (
         },
       },
       {
-        // groupement par (event, _dayKey)
         $group: {
           _id: { event: "$event", dayKey: "$_dayKey" },
           qtyForThisDate: { $sum: "$quantity" },
-          tsMax: { $max: "$_ts" }, // le plus récent de la journée
+          tsMax: { $max: "$_ts" },
+          registrations: {
+            $push: {
+              _id: "$_id",
+              bill: "$bill",
+              invoiceNumber: "$invoiceNumber",
+              price: "$price",
+            },
+          },
+          totalPaid: { $sum: "$price" },
         },
       },
       {
-        // on ressort à plat
         $project: {
           eventId: "$_id.event",
           _regKey: "$_id.dayKey",
           _regTs: "$tsMax",
           _qtyForThisDate: "$qtyForThisDate",
+          _registrationIds: "$registrations._id",
+          _bills: "$registrations.bill",
+          _invoiceNumbers: "$registrations.invoiceNumber",
+          _totalPaid: "$totalPaid",
           _id: 0,
         },
       },
       {
-        // jointure avec la collection d'événements
         $lookup: {
-          from: "events", // nom de la collection Mongo
+          from: "events",
           localField: "eventId",
           foreignField: "_id",
           as: "event",
@@ -81,20 +86,24 @@ const getUserReservationsGroupedByDate = async (
       },
       { $unwind: "$event" },
       {
-        // ne renvoyer que les champs utiles pour ton écran
         $project: {
           _id: "$event._id",
           title: "$event.title",
           startingDate: "$event.startingDate",
+          endingDate: "$event.endingDate",
           image: "$event.image",
           theme: "$event.theme",
           address: "$event.address",
           _regKey: 1,
           _regTs: 1,
           _qtyForThisDate: 1,
+          _registrationIds: 1,
+          _bills: 1,
+          _invoiceNumbers: 1,
+          _totalPaid: 1,
         },
       },
-      { $sort: { _regTs: -1 } }, // récent -> ancien
+      { $sort: { _regTs: -1 } },
     ];
 
     const rows = await Registration.aggregate(pipeline).allowDiskUse(true);
