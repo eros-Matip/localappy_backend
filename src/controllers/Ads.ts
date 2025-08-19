@@ -11,7 +11,8 @@ import Establishment from "../models/Establishment";
 const createAd = async (req: Request, res: Response) => {
   try {
     const { type, title, description, event } = req.body;
-    const files = req.files as Express.Multer.File[];
+    const files =
+      (req.files as { [key: string]: Express.Multer.File[] })?.file || [];
 
     let finalTitle = title;
     let finalDescription = description;
@@ -52,6 +53,9 @@ const createAd = async (req: Request, res: Response) => {
         imageUrls = [eventFound.image];
       }
     }
+
+    console.log("🔍 req.files =", req.files);
+    console.log("🔍 req.file =", (req as any).file);
 
     // 📸 Si des fichiers sont envoyés, ils remplacent les images de l’event
     if (files && files.length > 0) {

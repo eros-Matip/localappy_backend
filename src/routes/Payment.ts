@@ -6,12 +6,41 @@ import Registration from "../models/Registration";
 import Customer from "../models/Customer";
 import Bill from "../models/Bill";
 import Event from "../models/Event";
+import { sendEventConfirmationEmail } from "../utils/sendEventConfirmation";
+import { Types } from "mongoose";
 
 dotenv.config();
 
+const toInt = (v: any) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+
+const dayRange = (d: Date) => {
+  const start = new Date(d);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(d);
+  end.setHours(23, 59, 59, 999);
+  return { start, end };
+};
+
+/** Compte les places déjà réservées (paid/confirmed) pour le même event et la même journée. */
+const countReservedForDay = async (
+  eventId: Types.ObjectId,
+  day: Date,
+  excludeId?: Types.ObjectId
+) => {
+  const { start, end } = dayRange(day);
+  const filter: any = {
+    event: eventId,
+    status: { $in: ["paid", "confirmed"] },
+    date: { $gte: start, $lte: end },
+  };
+  if (excludeId) filter._id = { $ne: excludeId };
+  const regs = await Registration.find(filter).select("quantity");
+  return regs.reduce((s, r) => s + (toInt(r.quantity) || 1), 0);
+};
+
 const router = express.Router();
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2025-02-24.acacia",
+  apiVersion: "2025-01-27.acacia",
 });
 
 // 🅿️ Configuration PayPal
@@ -143,48 +172,88 @@ router.get(
       }
 
       const registration = await Registration.findById(registrationId);
-      if (!registration) {
+      if (!registration)
         return res.status(404).json({ message: "Inscription introuvable" });
-      }
 
       const bill = await Bill.findOne({ registration: registration._id });
-      if (!bill) {
+      if (!bill)
         return res.status(404).json({ message: "Facture introuvable" });
-      }
 
       const event = await Event.findById(registration.event);
-      if (!event) {
+      if (!event)
         return res.status(404).json({ message: "Événement introuvable" });
-      }
 
+      // Idempotence
       if (registration.status === "paid" && bill.status === "paid") {
         return res.status(200).json({ message: "Déjà payé", payment });
       }
 
+      // Vérif capacité par jour
+      const capacityPerDay = toInt(event.capacity);
+      if (capacityPerDay <= 0) {
+        return res
+          .status(400)
+          .json({ message: "Capacité non configurée pour cet événement" });
+      }
+
+      const reservedCount = await countReservedForDay(
+        event._id as Types.ObjectId,
+        registration.date,
+        registration._id as Types.ObjectId
+      );
+      const remaining = capacityPerDay - reservedCount;
+
+      if (toInt(registration.quantity) > remaining) {
+        return res.status(400).json({
+          message: "Plus de places disponibles pour cette date",
+          remaining: Math.max(0, remaining),
+        });
+      }
+
+      // ✅ Marquer payé (NE PAS toucher event.capacity)
       registration.status = "paid";
       await registration.save();
 
       bill.status = "paid";
       await bill.save();
 
-      event.capacity -= registration.quantity;
+      event.bills.push(bill._id as Types.ObjectId);
+      event.registrations.push(registration._id as Types.ObjectId);
+      await event.save();
 
+      // Lier l'event au client si besoin
       const customer = await Customer.findById(registration.customer);
-      if (customer) {
-        if (!customer.eventsReserved.includes(event._id)) {
-          customer.eventsReserved.push(event._id);
-          await customer.save();
-        }
+      if (!customer)
+        return res.status(404).json({ message: "Client introuvable" });
+      if (!customer.eventsReserved.includes(event._id)) {
+        customer.eventsReserved.push(event._id);
+        await customer.save();
       }
 
-      if (event.capacity < 0) event.capacity = 0;
-      await event.save();
+      // Email : utiliser la date réservée
+      const eventDateFormatted = new Date(registration.date).toLocaleString(
+        "fr-FR"
+      );
+      const invoiceUrl = `https://localappy.fr/api/invoice/${registration._id}`;
+      const eventLink = `https://localappy.fr/events/${event._id}`;
+
+      await sendEventConfirmationEmail({
+        to: customer.email,
+        firstName: customer.account.firstname,
+        eventTitle: event.title,
+        eventDate: eventDateFormatted,
+        eventAddress: event.address,
+        quantity: registration.quantity,
+        eventLink,
+        invoiceUrl,
+      });
 
       return res.status(200).json({
         message: "Paiement PayPal confirmé",
         payment,
         registration,
         bill,
+        remainingAfter: remaining - toInt(registration.quantity),
       });
     } catch (error) {
       return res.status(500).json({
@@ -199,53 +268,90 @@ router.get(
 router.post("/event/payment/confirm", async (req: Request, res: Response) => {
   try {
     const { registrationId, billId } = req.body;
-
     if (!registrationId || !billId) {
       return res.status(400).json({ message: "Paramètres manquants" });
     }
 
     const registration = await Registration.findById(registrationId);
-    if (!registration) {
+    if (!registration)
       return res.status(404).json({ message: "Inscription introuvable" });
-    }
 
     const bill = await Bill.findById(billId);
-    if (!bill) {
-      return res.status(404).json({ message: "Facture introuvable" });
-    }
+    if (!bill) return res.status(404).json({ message: "Facture introuvable" });
 
     const event = await Event.findById(registration.event);
-    if (!event) {
+    if (!event)
       return res.status(404).json({ message: "Evénement introuvable" });
-    }
 
+    // Idempotence
     if (registration.status === "paid" && bill.status === "paid") {
       return res.status(200).json({ message: "Paiement déjà confirmé" });
     }
 
+    const capacityPerDay = toInt(event.capacity);
+    if (capacityPerDay <= 0) {
+      return res
+        .status(400)
+        .json({ message: "Capacité non configurée pour cet événement" });
+    }
+
+    const reservedCount = await countReservedForDay(
+      event._id as Types.ObjectId,
+      registration.date,
+      registration._id as Types.ObjectId
+    );
+    const remaining = capacityPerDay - reservedCount;
+
+    if (toInt(registration.quantity) > remaining) {
+      return res.status(400).json({
+        message: "Plus de places disponibles pour cette date",
+        remaining: Math.max(0, remaining),
+      });
+    }
+
+    // ✅ Marquer payé (sans décrémenter event.capacity)
     registration.status = "paid";
     await registration.save();
 
     bill.status = "paid";
     await bill.save();
 
-    event.capacity -= registration.quantity;
+    event.bills.push(bill._id as Types.ObjectId);
+    event.registrations.push(registration._id as Types.ObjectId);
+    await event.save();
 
+    // Lier l'event au client si besoin
     const customer = await Customer.findById(registration.customer);
-    if (customer) {
-      if (!customer.eventsReserved.includes(event._id)) {
-        customer.eventsReserved.push(event._id);
-        await customer.save();
-      }
+    if (!customer)
+      return res.status(404).json({ message: "Client introuvable" });
+    if (!customer.eventsReserved.includes(event._id)) {
+      customer.eventsReserved.push(event._id);
+      await customer.save();
     }
 
-    if (event.capacity < 0) event.capacity = 0;
-    await event.save();
+    // Email avec la date réservée
+    const eventDateFormatted = new Date(registration.date).toLocaleString(
+      "fr-FR"
+    );
+    const invoiceUrl = `https://localappy.fr/api/invoice/${registration._id}`;
+    const eventLink = `https://localappy.fr/events/${event._id}`;
+
+    await sendEventConfirmationEmail({
+      to: customer.email,
+      firstName: customer.account.firstname,
+      eventTitle: event.title,
+      eventDate: eventDateFormatted,
+      eventAddress: event.address,
+      quantity: registration.quantity,
+      eventLink,
+      invoiceUrl,
+    });
 
     return res.status(200).json({
       message: "Paiement confirmé",
       registration,
       bill,
+      remainingAfter: remaining - toInt(registration.quantity),
     });
   } catch (error) {
     return res.status(500).json({
@@ -259,53 +365,90 @@ router.post("/event/payment/confirm", async (req: Request, res: Response) => {
 router.post("/event/payment/cash", async (req: Request, res: Response) => {
   try {
     const { registrationId, billId } = req.body;
-
     if (!registrationId || !billId) {
       return res.status(400).json({ message: "Paramètres manquants" });
     }
 
     const registration = await Registration.findById(registrationId);
-    if (!registration) {
+    if (!registration)
       return res.status(404).json({ message: "Inscription introuvable" });
-    }
 
     const bill = await Bill.findById(billId);
-    if (!bill) {
-      return res.status(404).json({ message: "Facture introuvable" });
-    }
+    if (!bill) return res.status(404).json({ message: "Facture introuvable" });
 
     const event = await Event.findById(registration.event);
-    if (!event) {
+    if (!event)
       return res.status(404).json({ message: "Evénement introuvable" });
-    }
 
+    // Idempotence
     if (registration.status === "paid" && bill.status === "paid") {
       return res.status(200).json({ message: "Paiement déjà enregistré" });
     }
 
+    const capacityPerDay = toInt(event.capacity);
+    if (capacityPerDay <= 0) {
+      return res
+        .status(400)
+        .json({ message: "Capacité non configurée pour cet événement" });
+    }
+
+    const reservedCount = await countReservedForDay(
+      event._id as Types.ObjectId,
+      registration.date,
+      registration._id as Types.ObjectId
+    );
+    const remaining = capacityPerDay - reservedCount;
+
+    if (toInt(registration.quantity) > remaining) {
+      return res.status(400).json({
+        message: "Plus de places disponibles pour cette date",
+        remaining: Math.max(0, remaining),
+      });
+    }
+
+    // ✅ Enregistrer cash = payé
     registration.status = "paid";
     await registration.save();
 
     bill.status = "paid";
     await bill.save();
 
-    event.capacity -= registration.quantity;
+    event.bills.push(bill._id as Types.ObjectId);
+    event.registrations.push(registration._id as Types.ObjectId);
+    await event.save();
 
+    // Lier l'event au client si besoin
     const customer = await Customer.findById(registration.customer);
-    if (customer) {
-      if (!customer.eventsReserved.includes(event._id)) {
-        customer.eventsReserved.push(event._id);
-        await customer.save();
-      }
+    if (!customer)
+      return res.status(404).json({ message: "Client introuvable" });
+    if (!customer.eventsReserved.includes(event._id)) {
+      customer.eventsReserved.push(event._id);
+      await customer.save();
     }
 
-    if (event.capacity < 0) event.capacity = 0;
-    await event.save();
+    // Email (date réservée)
+    const eventDateFormatted = new Date(registration.date).toLocaleString(
+      "fr-FR"
+    );
+    const invoiceUrl = `https://localappy.fr/api/invoice/${registration._id}`;
+    const eventLink = `https://localappy.fr/events/${event._id}`;
+
+    await sendEventConfirmationEmail({
+      to: customer.email,
+      firstName: customer.account.firstname,
+      eventTitle: event.title,
+      eventDate: eventDateFormatted,
+      eventAddress: event.address,
+      quantity: registration.quantity,
+      eventLink,
+      invoiceUrl,
+    });
 
     return res.status(200).json({
       message: "Paiement en espèces enregistré",
       registration,
       bill,
+      remainingAfter: remaining - toInt(registration.quantity),
     });
   } catch (error) {
     return res.status(500).json({

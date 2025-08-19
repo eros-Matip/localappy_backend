@@ -12,6 +12,8 @@ import Customer from "../models/Customer";
 import Registration from "../models/Registration";
 import Bill from "../models/Bill";
 import cloudinary from "cloudinary";
+import { sendEventConfirmationEmail } from "../utils/sendEventConfirmation";
+import mongoose, { Types } from "mongoose";
 
 // Utiliser promisify pour rendre les fonctions fs asynchrones
 /**
@@ -1029,7 +1031,11 @@ const readEvent = async (req: Request, res: Response, next: NextFunction) => {
     const eventId = req.params.eventId;
     const { source } = req.body;
 
-    const event = await Event.findById(eventId);
+    const event = await Event.findById(eventId).populate({
+      path: "registrations",
+      model: "Registration",
+      populate: "customer",
+    });
     if (!event) {
       return res.status(404).json({ message: "Not found" });
     }
@@ -2057,88 +2063,229 @@ const getCoordinatesFromAPI = async (req: Request, res: Response) => {
   }
 };
 
+// POUR REGISTRATIOTOANEVENT
+const toInt = (v: any): number | null => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
+const normalizeDayRange = (input: Date) => {
+  const dayStart = new Date(input);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(input);
+  dayEnd.setHours(23, 59, 59, 999);
+  return { dayStart, dayEnd };
+};
 const registrationToAnEvent = async (req: Request, res: Response) => {
+  const session = await mongoose.startSession();
+
   try {
-    // Récupération de l'événement
-    const eventFinded = await Event.findById(req.params.eventId);
-    if (!eventFinded) {
-      return res.status(404).json({ message: "Événement introuvable" });
+    const { eventId } = req.params as { eventId: string };
+    const {
+      admin: customerId, // id du Customer (comme dans ton code)
+      date,
+      paymentMethod,
+      price,
+      quantity,
+    } = req.body as {
+      admin: string;
+      date: string;
+      paymentMethod?: string;
+      price?: number;
+      quantity?: number;
+    };
+    // ---- validations de base
+    if (!eventId) return res.status(400).json({ message: "eventId manquant" });
+
+    if (!customerId)
+      return res.status(400).json({ message: "Utilisateur manquant" });
+    if (!date)
+      return res
+        .status(400)
+        .json({ message: "La date de réservation est requise" });
+
+    const selected = new Date(date);
+    if (isNaN(selected.getTime())) {
+      return res.status(400).json({ message: "Date de réservation invalide" });
+    }
+    // -> journée passée si 23:59:59.999 de ce jour est < maintenant
+    const now = new Date();
+    const selectedEnd = new Date(selected);
+    selectedEnd.setHours(23, 59, 59, 999);
+
+    if (selectedEnd < now) {
+      return res.status(400).json({ message: "date déjà passée" });
+    }
+    const qty = toInt(quantity) ?? 1;
+    if (qty <= 0) {
+      return res.status(400).json({ message: "La quantité doit être ≥ 1" });
     }
 
-    if (eventFinded.registrationOpen === false) {
-      return res.status(404).json({ message: "Incription fermée" });
-    }
-    // Récupération du client
-    const customerFinded = await Customer.findById(req.body.admin);
-    if (!customerFinded) {
-      return res.status(404).json({ message: "Utilisateur introuvable" });
-    }
+    // ---- transaction pour éviter les races conditions
+    let resultPayload: any = null;
 
-    // Vérifier s'il reste des places disponibles
-    if (eventFinded.capacity <= 0) {
-      return res.status(400).json({ message: "Plus de places disponibles" });
-    }
+    await session.withTransaction(async () => {
+      // Recharges sous session
+      const eventFinded = await Event.findById(eventId).session(session);
+      if (!eventFinded) {
+        throw { status: 404, message: "Événement introuvable" };
+      }
+      if (eventFinded.registrationOpen === false) {
+        throw { status: 400, message: "Inscription fermée" };
+      }
 
-    const { paymentMethod, price, quantity } = req.body;
-    // Définition du prix (peut inclure des remises ou promotions si nécessaire)
+      const customerFinded =
+        await Customer.findById(customerId).session(session);
+      if (!customerFinded) {
+        throw { status: 404, message: "Utilisateur introuvable" };
+      }
 
-    // Création de l'inscription (Registration)
-    const ticketNumber = `TICKET-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      // (optionnel) vérifier que la date choisie est dans la plage de l'event
+      // Si tu as eventFinded.startingDate / eventFinded.endingDate :
+      if (eventFinded.startingDate) {
+        const start = new Date(eventFinded.startingDate);
+        if (selected < start)
+          throw {
+            status: 400,
+            message: "Date hors plage (avant début de l'événement)",
+          };
+      }
+      if (eventFinded.endingDate) {
+        const end = new Date(eventFinded.endingDate);
+        if (selected > end)
+          throw {
+            status: 400,
+            message: "Date hors plage (après fin de l'événement)",
+          };
+      }
 
-    const newRegistration = new Registration({
-      date: new Date(),
-      customer: customerFinded._id,
-      event: eventFinded._id,
-      price: price,
-      status: "pending",
-      paymentMethod: paymentMethod,
-      quantity: quantity || 1,
-      ticketNumber: ticketNumber,
-    });
+      // ---- capacité PAR JOUR (on ne décrémente plus l'event)
+      const capacityPerDay = toInt(eventFinded.capacity) ?? 0;
+      if (capacityPerDay <= 0) {
+        throw { status: 400, message: "Capacité non configurée ou nulle" };
+      }
 
-    await newRegistration.save();
-    const invoiceNumber = `INV-${Date.now()}-${Date.now()}`; // Génération d'un numéro de facture unique
-    let newBill = null;
+      // ---- comptage des réservations validées pour CE jour
+      const { dayStart, dayEnd } = normalizeDayRange(selected);
+      const ALLOWED = ["paid", "confirmed"];
 
-    if (price > 0) {
-      newBill = new Bill({
+      const regsSameDay = await Registration.find({
+        event: eventFinded._id,
+        status: { $in: ALLOWED },
+        date: { $gte: dayStart, $lte: dayEnd },
+      })
+        .select("quantity")
+        .session(session);
+
+      const reservedForDay = regsSameDay.reduce(
+        (sum, r) => sum + (toInt(r.quantity) ?? 1),
+        0
+      );
+      const remaining = capacityPerDay - reservedForDay;
+
+      if (qty > remaining) {
+        throw {
+          status: 400,
+          message: "Plus de places disponibles pour cette date",
+          remaining: Math.max(0, remaining),
+        };
+      }
+
+      // ---- création inscription
+      const unitPrice = toInt(price) ?? 0;
+      const ticketNumber = `TICKET-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+      const newRegistration = new Registration({
+        date: selected, // ✅ la date réservée (jour)
         customer: customerFinded._id,
-        registration: newRegistration._id,
-        amount: price * newRegistration.quantity,
-        status: "pending",
-        paymentMethod: paymentMethod,
-        invoiceNumber: invoiceNumber,
-        issuedDate: new Date(),
-        dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        items: [
-          {
-            description: `Inscription à l'événement ${eventFinded.title}`,
-            quantity: newRegistration.quantity,
-            price: price,
-          },
-        ],
+        event: eventFinded._id,
+        price: unitPrice,
+        status: unitPrice > 0 ? "pending" : "confirmed", // règle: paid/confirmed uniquement comptés
+        paymentMethod: paymentMethod ?? (unitPrice > 0 ? "unknown" : "free"),
+        quantity: qty,
+        ticketNumber,
       });
 
-      await newBill.save();
-    }
+      // ---- facture si payant
+      let newBill: any = null;
+      if (unitPrice > 0) {
+        const invoiceNumber = `INV-${Date.now()}-${Date.now()}`;
+        newBill = new Bill({
+          customer: customerFinded._id,
+          registration: newRegistration._id,
+          amount: unitPrice * newRegistration.quantity,
+          status: "pending",
+          paymentMethod: paymentMethod ?? "unknown",
+          invoiceNumber,
+          issuedDate: new Date(),
+          dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          items: [
+            {
+              description: `Inscription à l'événement ${eventFinded.title} (${selected.toLocaleDateString(
+                "fr-FR"
+              )})`,
+              quantity: newRegistration.quantity,
+              price: unitPrice,
+            },
+          ],
+        });
 
-    if (price <= 0) {
-      eventFinded.capacity -= newRegistration.quantity;
-      customerFinded.eventsReserved?.push(eventFinded._id);
-      await customerFinded.save();
+        await newBill.save({ session });
+      }
+
+      // ---- gratuit: on confirme + email tout de suite
+      if (unitPrice <= 0) {
+        // statut déjà "confirmed"
+        customerFinded.eventsReserved ??= [];
+        customerFinded.eventsReserved.push(eventFinded._id);
+
+        const eventDateFormatted = selected.toLocaleString("fr-FR");
+        const invoiceUrl = `https://localappy.fr/api/invoice/${newRegistration._id}`;
+        const eventLink = `https://localappy.fr/events/${eventFinded._id}`;
+
+        // NB: si besoin, envoie l'email après commit (outbox pattern)
+        await sendEventConfirmationEmail({
+          to: customerFinded.email,
+          firstName: customerFinded.account.firstname,
+          eventTitle: eventFinded.title,
+          eventDate: eventDateFormatted,
+          eventAddress: eventFinded.address,
+          quantity: newRegistration.quantity,
+          eventLink,
+          invoiceUrl,
+        });
+
+        await customerFinded.save({ session });
+      }
+
+      await newRegistration.save({ session });
+      eventFinded.registrations.push(newRegistration._id as Types.ObjectId);
       await eventFinded.save();
+
+      resultPayload = {
+        message: "Inscription créée avec succès",
+        registrationId: newRegistration._id,
+        billId: newBill ? newBill._id : null,
+        remainingForDay: remaining - qty,
+      };
+    });
+    return res.status(201).json(resultPayload);
+  } catch (error: any) {
+    const status = error?.status ?? 500;
+    if (status !== 500) {
+      // erreurs contrôlées
+      return res.status(status).json({
+        message: error?.message ?? "Erreur de validation",
+        ...(error?.remaining != null ? { remaining: error.remaining } : {}),
+      });
     }
 
-    return res.status(201).json({
-      message: "Inscription et facture créées avec succès",
-      registrationId: newRegistration._id,
-      billId: newBill ? newBill._id : null,
-    });
-  } catch (error) {
-    Retour.error({ message: "Erreur lors de l'inscription", error: error });
+    Retour.error({ message: "Erreur lors de l'inscription", error });
     return res
       .status(500)
-      .json({ message: "Erreur lors de l'inscription", error: error });
+      .json({ message: "Erreur lors de l'inscription", error });
+  } finally {
+    session.endSession();
   }
 };
 // Fonction pour supprimer un événement

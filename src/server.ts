@@ -50,6 +50,7 @@ import FetchingInfoEntrepriseRoute from "./routes/FetchingSiret";
 import NotificationRoute from "./routes/SendNotification";
 import UpdatedPasswordLostRoute from "./routes/UpdatePasswordLost";
 import AdsRoutes from "./routes/Ads";
+import invoiceRoutes from "./routes/invoice.routes";
 // FUNCTIONS
 import Logging from "./library/Logging";
 import AdminIsAuthenticated from "./middlewares/IsAuthenticated";
@@ -58,6 +59,7 @@ import OrganisateurRoute from "./routes/Organisateur";
 import Stripe from "stripe";
 import Registration from "./models/Registration";
 import Bill from "./models/Bill";
+import CustomerIsAuthenticated from "./middlewares/IsAuthenticated";
 
 // The server start only if mongo is already connected
 const startServer = () => {
@@ -151,26 +153,55 @@ const startServer = () => {
   router.use(NotificationRoute);
   router.use(UpdatedPasswordLostRoute);
   router.use(OrganisateurRoute);
+  router.use("/api", CustomerIsAuthenticated, invoiceRoutes);
+
   /** Healthcheck */
 
   router.all(
     "/test",
     AdminIsAuthenticated,
-    async (req: Request, res: Response, next: NextFunction) => {
+    async (req: Request, res: Response) => {
       try {
-        const result = await Event.updateMany(
-          { isDraft: true }, // condition : uniquement ceux qui sont en brouillon
-          { $set: { isDraft: false } } // mise à jour : les passer à false
-        );
+        let regsAdded = 0;
+        let billsAdded = 0;
 
-        res.status(200).send({
-          message: `${result.modifiedCount} événements ont été mis à jour.`,
+        // --- Synchronisation des registrations ---
+        const registrations = await Registration.find({
+          event: { $exists: true, $ne: null },
+        });
+        for (const reg of registrations) {
+          const updated = await Event.updateOne(
+            { _id: reg.event, registrations: { $ne: reg._id } },
+            { $push: { registrations: reg._id } }
+          );
+          if (updated.modifiedCount > 0) regsAdded++;
+        }
+
+        // --- Synchronisation des bills via leur registration ---
+        const bills = await Bill.find({
+          registration: { $exists: true, $ne: null },
+        });
+        for (const bill of bills) {
+          const reg = await Registration.findById(bill.registration);
+          if (!reg?.event) continue; // pas d'event lié => on saute
+
+          const updated = await Event.updateOne(
+            { _id: reg.event, bills: { $ne: bill._id } },
+            { $push: { bills: bill._id } }
+          );
+          if (updated.modifiedCount > 0) billsAdded++;
+        }
+
+        res.status(200).json({
+          message: "Synchronisation terminée",
+          registrationsAjoutees: regsAdded,
+          billsAjoutees: billsAdded,
         });
       } catch (error) {
-        console.error("Erreur lors de la mise à jour des événements:", error);
+        console.error(error);
         res
           .status(500)
-          .send({ message: "Erreur lors de la mise à jour des événements." });
+          .json({ message: "Erreur lors de la synchronisation", error });
       }
     }
   );

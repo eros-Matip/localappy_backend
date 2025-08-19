@@ -290,7 +290,7 @@ const addingOrRemoveFavorites = async (req: Request, res: Response) => {
             // Ajouter le client dans `favorieds` de l'événement
             if (type === "Event") {
               await model.findByIdAndUpdate(objectId, {
-                $addToSet: { favorieds: customer._id },
+                $addToSet: { favorieds: customer._id, date: new Date() },
               });
             }
           } else if (action === "remove") {
