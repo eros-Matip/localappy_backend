@@ -52,14 +52,39 @@ const getUserReservationsGroupedByDate = async (
           _id: { event: "$event", dayKey: "$_dayKey" },
           qtyForThisDate: { $sum: "$quantity" },
           tsMax: { $max: "$_ts" },
+
+          // on garde les infos registration utiles (incluant checkInStatus)
           registrations: {
             $push: {
               _id: "$_id",
               bill: "$bill",
               invoiceNumber: "$invoiceNumber",
               price: "$price",
+              checkInStatus: "$checkInStatus", // 👈 ajouté
             },
           },
+
+          // totaux par statut de check-in
+          checkedInCount: {
+            $sum: {
+              $cond: [
+                { $eq: ["$checkInStatus", "checked-in"] },
+                "$quantity",
+                0,
+              ],
+            },
+          },
+          pendingCount: {
+            $sum: {
+              $cond: [{ $eq: ["$checkInStatus", "pending"] }, "$quantity", 0],
+            },
+          },
+          noShowCount: {
+            $sum: {
+              $cond: [{ $eq: ["$checkInStatus", "no-show"] }, "$quantity", 0],
+            },
+          },
+
           totalPaid: { $sum: "$price" },
         },
       },
@@ -69,9 +94,22 @@ const getUserReservationsGroupedByDate = async (
           _regKey: "$_id.dayKey",
           _regTs: "$tsMax",
           _qtyForThisDate: "$qtyForThisDate",
+
+          // dérivés depuis registrations
           _registrationIds: "$registrations._id",
           _bills: "$registrations.bill",
           _invoiceNumbers: "$registrations.invoiceNumber",
+
+          // expose aussi tous les statuts si besoin fin
+          _checkInStatuses: "$registrations.checkInStatus",
+
+          // comptes par statut
+          _checkInCounts: {
+            checkedIn: "$checkedInCount",
+            pending: "$pendingCount",
+            noShow: "$noShowCount",
+          },
+
           _totalPaid: "$totalPaid",
           _id: 0,
         },
@@ -94,6 +132,7 @@ const getUserReservationsGroupedByDate = async (
           image: "$event.image",
           theme: "$event.theme",
           address: "$event.address",
+
           _regKey: 1,
           _regTs: 1,
           _qtyForThisDate: 1,
@@ -101,6 +140,10 @@ const getUserReservationsGroupedByDate = async (
           _bills: 1,
           _invoiceNumbers: 1,
           _totalPaid: 1,
+
+          // nouveaux champs check-in
+          _checkInStatuses: 1,
+          _checkInCounts: 1,
         },
       },
       { $sort: { _regTs: -1 } },
