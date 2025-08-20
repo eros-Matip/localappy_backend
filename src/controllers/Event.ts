@@ -14,6 +14,8 @@ import Bill from "../models/Bill";
 import cloudinary from "cloudinary";
 import { sendEventConfirmationEmail } from "../utils/sendEventConfirmation";
 import mongoose, { Types } from "mongoose";
+import IEvent from "../interfaces/Event";
+import { sendExpoPushNotifications } from "../utils/push";
 
 // Utiliser promisify pour rendre les fonctions fs asynchrones
 /**
@@ -844,7 +846,9 @@ const createEventForAnEstablishment = async (req: Request, res: Response) => {
     }
 
     const establishmentFinded = await Establishment.findById(establishmentId);
+
     if (!establishmentFinded) {
+      Retour.error("Establishment not found");
       return res.status(404).json({ message: "Establishment not found" });
     }
 
@@ -923,19 +927,56 @@ const createEventForAnEstablishment = async (req: Request, res: Response) => {
       // await establishmentFinded.save();
     }
 
-    const allCustomerFinded = await Customer.find()
-      .populate([
-        { path: "eventsAttended", model: "Event", select: "organizer" },
-        { path: "eventsReserved", model: "Event", select: "organizer" },
-        { path: "eventsFavorites", model: "Event", select: "organizer" },
-        { path: "establishmentFavorites", model: "Event", select: "organizer" },
-      ])
-      .select(
-        "eventsAttended eventsReserved eventsFavorites establishmentFavorites expoPushToken"
-      );
+    const estObjId = establishmentFinded._id as Types.ObjectId;
 
-    console.log("allCustomerFinded", allCustomerFinded);
+    // 1) IDs des events de cet établissement
+    const eventIds = await Event.find(
+      { "organizer.establishment": estObjId },
+      { _id: 1 }
+    ).distinct("_id");
 
+    // 2) Clients ayant au moins un de ces events (attended / reserved / favorites)
+    const customersWithThisEstablishment = await Customer.find({
+      $or: [
+        { eventsAttended: { $in: eventIds } },
+        { eventsReserved: { $in: eventIds } },
+        { eventsFavorites: { $in: eventIds } },
+        // Optionnel : ceux qui ont mis l’établissement en favori
+        { establishmentFavorites: estObjId },
+      ],
+    })
+      .select("expoPushToken")
+      .lean();
+
+    // 3) Tokens Expo uniques et valides
+    const tokens = Array.from(
+      new Set(
+        customersWithThisEstablishment
+          .map((c: any) => c.expoPushToken)
+          .filter((t: any) => typeof t === "string" && t.trim().length > 0)
+      )
+    );
+
+    const deepLink = `localappy://event/${draftEvent?._id}`; // lien pour ouvrir dans l'app expo
+
+    const webFallbackLink = `https://localappy.fr/open?link=${encodeURIComponent(
+      deepLink
+    )}`;
+
+    const { sent, invalidTokens } = await sendExpoPushNotifications(tokens, {
+      title: draftEvent.title,
+      body: `${establishmentFinded.name} vient de publier un nouvel évènement 🎉`,
+      data: {
+        url: deepLink, // ← utilisé par l’app pour naviguer
+        webUrl: webFallbackLink, // ← optionnel fallback web
+        eventId: draftEvent._id.toString(),
+      },
+      imageUrl: draftEvent.image?.[0], // (optionnel) image de la notif
+    });
+
+    console.log(
+      `Push envoyés: ${sent} | Tokens invalides: ${invalidTokens.length}`
+    );
     return res.status(201).json({
       message: "Event created successfully from draft",
       event: draftEvent,
