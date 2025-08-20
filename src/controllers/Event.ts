@@ -916,12 +916,25 @@ const createEventForAnEstablishment = async (req: Request, res: Response) => {
       isDraft: false,
     });
 
-    await draftEvent.save();
+    // await draftEvent.save();
 
     if (!establishmentFinded.events.includes(draftEvent._id)) {
       establishmentFinded.events.push(draftEvent._id);
-      await establishmentFinded.save();
+      // await establishmentFinded.save();
     }
+
+    const allCustomerFinded = await Customer.find()
+      .populate([
+        { path: "eventsAttended", model: "Event", select: "organizer" },
+        { path: "eventsReserved", model: "Event", select: "organizer" },
+        { path: "eventsFavorites", model: "Event", select: "organizer" },
+        { path: "establishmentFavorites", model: "Event", select: "organizer" },
+      ])
+      .select(
+        "eventsAttended eventsReserved eventsFavorites establishmentFavorites expoPushToken"
+      );
+
+    console.log("allCustomerFinded", allCustomerFinded);
 
     return res.status(201).json({
       message: "Event created successfully from draft",
