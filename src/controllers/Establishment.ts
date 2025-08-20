@@ -9,6 +9,7 @@ import fs from "fs";
 import IEvent from "../interfaces/Event";
 import slugify from "slugify";
 import { Types } from "mongoose";
+import Registration from "../models/Registration";
 
 const cloudinary = require("cloudinary");
 
@@ -187,51 +188,72 @@ const getAllInformation = async (req: Request, res: Response) => {
   try {
     const establishmentFinded = await Establishment.findById(
       req.params.establishmentId
-    ).populate("events");
+    ).populate({
+      path: "events",
+      model: "Event",
+      // On ne filtre pas : on veut aussi les événements terminés
+      populate: { path: "registrations", select: "quantity" },
+    });
 
     if (!establishmentFinded || !establishmentFinded.events) {
       return res.status(404).json({ error: "Etablissement introuvable" });
     }
 
-    const events = establishmentFinded.events as unknown as IEvent[];
-
+    // IMPORTANT : on ne change pas la forme du return (mêmes clés top-level)
     const statsByCategory: Record<string, number> = {
       publicités: 0,
       scannés: 0,
       promotions: 0,
-      inscriptions: 0,
+      inscriptions: 0, // ← deviendra total des places réservées (somme des quantities)
       clics: 0,
     };
 
-    for (const event of events) {
-      if (Array.isArray(event.clics)) {
-        for (const clic of event.clics) {
-          switch (clic.source?.toLowerCase()) {
-            case "publicités":
-              statsByCategory.publicités++;
-              break;
-            case "scannés":
-              statsByCategory.scannés++;
-              break;
-            case "promotions":
-              statsByCategory.promotions++;
-              break;
-            case "inscriptions":
-              statsByCategory.inscriptions++;
-              break;
-            default:
-              statsByCategory.clics++;
-              break;
+    const events = (establishmentFinded.events as unknown as IEvent[]).map(
+      (evt: any) => {
+        // 1) clics (hors "inscriptions" qui sera calculé via registrations)
+        if (Array.isArray(evt.clics)) {
+          for (const c of evt.clics) {
+            switch (c?.source?.toLowerCase()) {
+              case "publicités":
+                statsByCategory.publicités++;
+                break;
+              case "scannés":
+                statsByCategory.scannés++;
+                break;
+              case "promotions":
+                statsByCategory.promotions++;
+                break;
+              case "inscriptions":
+                // ignoré ici : on remplace par les vraies inscriptions (places)
+                break;
+              default:
+                statsByCategory.clics++;
+                break;
+            }
           }
         }
+
+        // 2) vraies inscriptions = somme des quantities
+        const registrationsCount = Array.isArray(evt.registrations)
+          ? evt.registrations.reduce(
+              (sum: number, r: any) => sum + (r?.quantity || 0),
+              0
+            )
+          : 0;
+
+        statsByCategory.inscriptions += registrationsCount;
+
+        // On enrichit l'event retourné avec un champ dérivé sans changer les clés top-level
+        const base = typeof evt.toObject === "function" ? evt.toObject() : evt;
+        return { ...base, registrationsCount };
       }
-    }
+    );
 
     return res.status(200).json({
       establishment: establishmentFinded,
       totalEvents: events.length,
-      statsByCategory,
-      events,
+      statsByCategory, // ← "inscriptions" = total des places réservées
+      events, // ← chaque event contient registrationsCount
     });
   } catch (error) {
     console.error("Erreur getAllInformation:", error);
