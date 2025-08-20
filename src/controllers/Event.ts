@@ -920,11 +920,11 @@ const createEventForAnEstablishment = async (req: Request, res: Response) => {
       isDraft: false,
     });
 
-    // await draftEvent.save();
+    await draftEvent.save();
 
     if (!establishmentFinded.events.includes(draftEvent._id)) {
       establishmentFinded.events.push(draftEvent._id);
-      // await establishmentFinded.save();
+      await establishmentFinded.save();
     }
 
     const estObjId = establishmentFinded._id as Types.ObjectId;
