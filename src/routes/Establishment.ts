@@ -3,7 +3,6 @@ import controller from "../controllers/Establishment";
 import OwnerIsAuthenticated from "../middlewares/OwnerIsAuthenticated";
 import multer from "multer";
 import { multerConfig } from "../middlewares/Multer";
-import AdminIsAuthenticated from "../middlewares/AdminIsAuthenticated";
 
 const router = express.Router();
 const upload = multer(multerConfig);

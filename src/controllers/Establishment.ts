@@ -8,8 +8,9 @@ import path from "path";
 import fs from "fs";
 import IEvent from "../interfaces/Event";
 import slugify from "slugify";
-import { Types } from "mongoose";
+import mongoose, { Types } from "mongoose";
 import Registration from "../models/Registration";
+import Customer from "../models/Customer";
 
 const cloudinary = require("cloudinary");
 
@@ -427,6 +428,97 @@ const updateEstablishment = async (req: Request, res: Response) => {
         };
       } else {
         (establishment as any)[key] = value;
+      }
+    }
+
+    // Si le client envoie staff en JSON string (form-data), on parse
+    if (typeof updates.staff === "string") {
+      try {
+        updates.staff = JSON.parse(updates.staff);
+      } catch {
+        /* ignore */
+      }
+    }
+
+    if (updates.staff !== undefined) {
+      // Empêche la boucle générique d'écraser le résultat
+      const staffPayload = updates.staff;
+      delete updates.staff;
+
+      // Helpers
+      const toObjectIds = (input: any): mongoose.Types.ObjectId[] => {
+        const arr = Array.isArray(input) ? input : [input];
+        return arr
+          .map((v) => (typeof v === "string" ? v.trim() : v))
+          .filter((v) => mongoose.isValidObjectId(v))
+          .map((v) => new mongoose.Types.ObjectId(v));
+      };
+
+      const ensureExistingCustomers = async (
+        ids: mongoose.Types.ObjectId[]
+      ) => {
+        if (!ids.length) return [];
+        const existing = await Customer.find({ _id: { $in: ids } }).select(
+          "_id"
+        );
+        const keep = new Set(existing.map((d) => String(d._id)));
+        return ids.filter((id) => keep.has(String(id)));
+      };
+
+      const uniq = (ids: mongoose.Types.ObjectId[]) => {
+        const seen = new Set<string>();
+        const out: mongoose.Types.ObjectId[] = [];
+        for (const id of ids) {
+          const s = String(id);
+          if (!seen.has(s)) {
+            seen.add(s);
+            out.push(id);
+          }
+        }
+        return out;
+      };
+
+      // État courant normalisé
+      const current: mongoose.Types.ObjectId[] = Array.isArray(
+        establishment.staff
+      )
+        ? establishment.staff.map((id: any) => new mongoose.Types.ObjectId(id))
+        : [];
+
+      // --- Traite les différents formats ---
+      if (Array.isArray(staffPayload)) {
+        // Remplacement complet
+        let setIds = await ensureExistingCustomers(toObjectIds(staffPayload));
+        establishment.staff = uniq(setIds);
+      } else if (staffPayload && typeof staffPayload === "object") {
+        // Remplacement explicite
+        if (Array.isArray(staffPayload.set)) {
+          let setIds = await ensureExistingCustomers(
+            toObjectIds(staffPayload.set)
+          );
+          establishment.staff = uniq(setIds);
+        } else {
+          // Ajouts incrémentaux
+          if (Array.isArray(staffPayload.add)) {
+            let addIds = await ensureExistingCustomers(
+              toObjectIds(staffPayload.add)
+            );
+            establishment.staff = uniq([...current, ...addIds]);
+          }
+          // Retraits incrémentaux
+          if (Array.isArray(staffPayload.remove)) {
+            const removeSet = new Set(
+              toObjectIds(staffPayload.remove).map(String)
+            );
+            establishment.staff = current.filter(
+              (id) => !removeSet.has(String(id))
+            );
+          }
+        }
+      } else {
+        console.warn(
+          "[updateEstablishment] 'staff' doit être un tableau d'IDs ou un objet { add/remove/set }."
+        );
       }
     }
 

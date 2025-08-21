@@ -38,6 +38,7 @@ router.post(
           { path: "eventsFavorites", model: "Event" },
           { path: "eventsReserved", model: "Event", populate: "registrations" },
           { path: "ownerAccount", model: "Owner", populate: "establishments" },
+          { path: "establishmentStaffOf", model: "Etablishment" },
         ]),
         Admin.findOne({ email }),
         Owner.findOne({ email }),

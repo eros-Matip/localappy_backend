@@ -97,6 +97,7 @@ router.post("/socialLogin", async (req: Request, res: Response) => {
       { path: "eventsReserved", model: "Event" },
       { path: "eventsFavorites", model: "Event" },
       { path: "ownerAccount", model: "Owner", populate: "establishments" },
+      { path: "establishmentStaffOf", model: "Etablishment" },
     ]);
 
     if (!customer) {

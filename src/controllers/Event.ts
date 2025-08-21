@@ -1389,6 +1389,7 @@ const updateEvent = async (req: Request, res: Response, next: NextFunction) => {
 
     // Appliquer les mises à jour des champs basiques
     event.title = req.body.title || event.title;
+    event.price = req.body.price || event.price;
     event.description = req.body.description || event.description;
     event.startingDate = req.body.startingDate
       ? new Date(req.body.startingDate)
@@ -1442,6 +1443,9 @@ const updateEvent = async (req: Request, res: Response, next: NextFunction) => {
       event.isDraft = req.body.isDraft;
     }
 
+    if (typeof req.body.registrationOpen === "boolean") {
+      event.registrationOpen = req.body.registrationOpen;
+    }
     // Mise à jour de l'image, si fournie
     if (req.body.image) {
       event.image = req.body.image;
