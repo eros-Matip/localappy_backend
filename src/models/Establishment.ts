@@ -65,6 +65,7 @@ const EstablishmentSchema = new Schema<IEstablishment>(
     },
     ads: [{ type: Schema.Types.ObjectId, ref: "Ads" }],
     owner: { type: Schema.Types.ObjectId, ref: "Owner" },
+    staff: [{ type: Schema.Types.ObjectId, ref: "Customer" }],
     events: [{ type: Schema.Types.ObjectId, ref: "Event" }],
     activated: { type: Boolean, default: false },
   },

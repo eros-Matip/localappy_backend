@@ -65,6 +65,7 @@ interface IEstablishment extends Document {
   acceptedPayments: IPaymentMethod[];
   legalInfo?: ILegalInfo;
   owner: Types.ObjectId;
+  staff: Types.ObjectId[];
   events: Types.ObjectId[];
   ads: Types.ObjectId[];
   activated: boolean;

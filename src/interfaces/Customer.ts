@@ -38,6 +38,7 @@ export default interface ICustomer extends Document {
     status: boolean;
     code: string | null;
   };
+  establishmentStaffOf: Types.ObjectId;
   expoPushToken: string;
   token: string;
   hash: string;

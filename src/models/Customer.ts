@@ -39,6 +39,7 @@ const customerSchema = new Schema<ICustomer>(
       { type: Schema.Types.ObjectId, ref: "Etablishment" },
     ], // Référence vers les établissements favoris du client
     ownerAccount: { type: Schema.Types.ObjectId, ref: "Owner" },
+    establishmentStaffOf: { type: Schema.Types.ObjectId, ref: "Etablishment" },
     passwordLosted: {
       status: { type: Boolean, default: false },
       code: { type: String },
