@@ -189,12 +189,13 @@ const getAllInformation = async (req: Request, res: Response) => {
   try {
     const establishmentFinded = await Establishment.findById(
       req.params.establishmentId
-    ).populate("staff", {
-      path: "events",
-      model: "Event",
-      // On ne filtre pas : on veut aussi les événements terminés
-      populate: { path: "registrations", select: "quantity" },
-    });
+    )
+      .populate({ path: "staff", model: "User" })
+      .populate({
+        path: "events",
+        model: "Event",
+        populate: { path: "registrations", select: "quantity" },
+      });
 
     if (!establishmentFinded || !establishmentFinded.events) {
       return res.status(404).json({ error: "Etablissement introuvable" });
