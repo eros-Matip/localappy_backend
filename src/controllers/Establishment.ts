@@ -192,7 +192,7 @@ const getAllInformation = async (req: Request, res: Response) => {
     ).populate([
       {
         path: "staff",
-        model: "User",
+        model: "Customer",
       },
       {
         path: "events",
