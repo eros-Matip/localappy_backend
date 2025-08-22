@@ -1,0 +1,44 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const mongoose_1 = require("mongoose");
+const NotificationSchema = new mongoose_1.Schema({
+    user: {
+        type: mongoose_1.Schema.Types.ObjectId,
+        ref: "Utilisateur",
+        index: true,
+        required: true,
+    },
+    channel: { type: String, default: "push" },
+    title: { type: String, required: true },
+    body: { type: String, required: true },
+    data: { type: mongoose_1.Schema.Types.Mixed },
+    imageUrl: { type: String },
+    tokensSent: [String],
+    invalidTokens: [String],
+    tickets: [
+        {
+            id: String,
+            status: String,
+            message: String,
+            details: mongoose_1.Schema.Types.Mixed,
+        },
+    ],
+    status: { type: String, default: "queued" },
+    error: String,
+    queuedAt: { type: Date, default: Date.now },
+    sentAt: Date,
+    deliveredAt: Date,
+    readAt: { type: Date, index: true },
+    clickedAt: Date,
+    event: { type: mongoose_1.Schema.Types.ObjectId, ref: "Event", index: true },
+    establishment: {
+        type: mongoose_1.Schema.Types.ObjectId,
+        ref: "Establishment",
+        index: true,
+    },
+    expireAt: { type: Date, index: { expireAfterSeconds: 0 } },
+}, { timestamps: true });
+NotificationSchema.index({ user: 1, createdAt: -1 });
+NotificationSchema.index({ user: 1, status: 1, createdAt: -1 });
+exports.default = (0, mongoose_1.model)("Notification", NotificationSchema);
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiTm90aWZpY2F0aW9uLmpzIiwic291cmNlUm9vdCI6IiIsInNvdXJjZXMiOlsiLi4vLi4vc3JjL21vZGVscy9Ob3RpZmljYXRpb24udHMiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6Ijs7QUFBQSx1Q0FBeUM7QUFHekMsTUFBTSxrQkFBa0IsR0FBRyxJQUFJLGlCQUFNLENBQ25DO0lBQ0UsSUFBSSxFQUFFO1FBQ0osSUFBSSxFQUFFLGlCQUFNLENBQUMsS0FBSyxDQUFDLFFBQVE7UUFDM0IsR0FBRyxFQUFFLGFBQWE7UUFDbEIsS0FBSyxFQUFFLElBQUk7UUFDWCxRQUFRLEVBQUUsSUFBSTtLQUNmO0lBQ0QsT0FBTyxFQUFFLEVBQUUsSUFBSSxFQUFFLE1BQU0sRUFBRSxPQUFPLEVBQUUsTUFBTSxFQUFFO0lBQzFDLEtBQUssRUFBRSxFQUFFLElBQUksRUFBRSxNQUFNLEVBQUUsUUFBUSxFQUFFLElBQUksRUFBRTtJQUN2QyxJQUFJLEVBQUUsRUFBRSxJQUFJLEVBQUUsTUFBTSxFQUFFLFFBQVEsRUFBRSxJQUFJLEVBQUU7SUFDdEMsSUFBSSxFQUFFLEVBQUUsSUFBSSxFQUFFLGlCQUFNLENBQUMsS0FBSyxDQUFDLEtBQUssRUFBRTtJQUNsQyxRQUFRLEVBQUUsRUFBRSxJQUFJLEVBQUUsTUFBTSxFQUFFO0lBRTFCLFVBQVUsRUFBRSxDQUFDLE1BQU0sQ0FBQztJQUNwQixhQUFhLEVBQUUsQ0FBQyxNQUFNLENBQUM7SUFDdkIsT0FBTyxFQUFFO1FBQ1A7WUFDRSxFQUFFLEVBQUUsTUFBTTtZQUNWLE1BQU0sRUFBRSxNQUFNO1lBQ2QsT0FBTyxFQUFFLE1BQU07WUFDZixPQUFPLEVBQUUsaUJBQU0sQ0FBQyxLQUFLLENBQUMsS0FBSztTQUM1QjtLQUNGO0lBRUQsTUFBTSxFQUFFLEVBQUUsSUFBSSxFQUFFLE1BQU0sRUFBRSxPQUFPLEVBQUUsUUFBUSxFQUFFO0lBQzNDLEtBQUssRUFBRSxNQUFNO0lBRWIsUUFBUSxFQUFFLEVBQUUsSUFBSSxFQUFFLElBQUksRUFBRSxPQUFPLEVBQUUsSUFBSSxDQUFDLEdBQUcsRUFBRTtJQUMzQyxNQUFNLEVBQUUsSUFBSTtJQUNaLFdBQVcsRUFBRSxJQUFJO0lBQ2pCLE1BQU0sRUFBRSxFQUFFLElBQUksRUFBRSxJQUFJLEVBQUUsS0FBSyxFQUFFLElBQUksRUFBRTtJQUNuQyxTQUFTLEVBQUUsSUFBSTtJQUVmLEtBQUssRUFBRSxFQUFFLElBQUksRUFBRSxpQkFBTSxDQUFDLEtBQUssQ0FBQyxRQUFRLEVBQUUsR0FBRyxFQUFFLE9BQU8sRUFBRSxLQUFLLEVBQUUsSUFBSSxFQUFFO0lBQ2pFLGFBQWEsRUFBRTtRQUNiLElBQUksRUFBRSxpQkFBTSxDQUFDLEtBQUssQ0FBQyxRQUFRO1FBQzNCLEdBQUcsRUFBRSxlQUFlO1FBQ3BCLEtBQUssRUFBRSxJQUFJO0tBQ1o7SUFHRCxRQUFRLEVBQUUsRUFBRSxJQUFJLEVBQUUsSUFBSSxFQUFFLEtBQUssRUFBRSxFQUFFLGtCQUFrQixFQUFFLENBQUMsRUFBRSxFQUFFO0NBQzNELEVBQ0QsRUFBRSxVQUFVLEVBQUUsSUFBSSxFQUFFLENBQ3JCLENBQUM7QUFHRixrQkFBa0IsQ0FBQyxLQUFLLENBQUMsRUFBRSxJQUFJLEVBQUUsQ0FBQyxFQUFFLFNBQVMsRUFBRSxDQUFDLENBQUMsRUFBRSxDQUFDLENBQUM7QUFDckQsa0JBQWtCLENBQUMsS0FBSyxDQUFDLEVBQUUsSUFBSSxFQUFFLENBQUMsRUFBRSxNQUFNLEVBQUUsQ0FBQyxFQUFFLFNBQVMsRUFBRSxDQUFDLENBQUMsRUFBRSxDQUFDLENBQUM7QUFFaEUsa0JBQWUsSUFBQSxnQkFBSyxFQUFnQixjQUFjLEVBQUUsa0JBQWtCLENBQUMsQ0FBQyJ9

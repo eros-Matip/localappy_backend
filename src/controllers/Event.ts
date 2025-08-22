@@ -14,7 +14,6 @@ import Bill from "../models/Bill";
 import cloudinary from "cloudinary";
 import { sendEventConfirmationEmail } from "../utils/sendEventConfirmation";
 import mongoose, { Types } from "mongoose";
-import IEvent from "../interfaces/Event";
 import { sendExpoPushNotifications } from "../utils/push";
 
 // Utiliser promisify pour rendre les fonctions fs asynchrones

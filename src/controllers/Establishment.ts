@@ -189,7 +189,7 @@ const getAllInformation = async (req: Request, res: Response) => {
   try {
     const establishmentFinded = await Establishment.findById(
       req.params.establishmentId
-    ).populate({
+    ).populate("staff", {
       path: "events",
       model: "Event",
       // On ne filtre pas : on veut aussi les événements terminés
