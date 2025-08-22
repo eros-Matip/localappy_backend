@@ -157,7 +157,16 @@ const readAll = async (req: Request, res: Response) => {
 const updateCustomer = async (req: Request, res: Response) => {
   try {
     const customerId = req.params.customerId;
-    const customer = await Customer.findById(customerId);
+    const customer = await Customer.findById(customerId).populate([
+      {
+        path: "themesFavorites",
+        model: "Theme",
+      },
+      {
+        path: "eventsFavorites",
+        model: "Event",
+      },
+    ]);
     if (!customer) {
       Retour.error("Customer was not found");
       return res.status(404).json({ message: "Customer was not found" });
