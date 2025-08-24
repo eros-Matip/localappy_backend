@@ -16,6 +16,8 @@ import { sendEventConfirmationEmail } from "../utils/sendEventConfirmation";
 import mongoose, { Types } from "mongoose";
 import IEvent from "../interfaces/Event";
 import { sendExpoPushNotifications } from "../utils/push";
+import Owner from "../models/Owner";
+const CryptoJS = require("crypto-js");
 
 // Utiliser promisify pour rendre les fonctions fs asynchrones
 /**
@@ -2342,6 +2344,202 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
     session.endSession();
   }
 };
+
+const isSameLocalDayParis = (a: Date, b: Date) => {
+  const fmt = new Intl.DateTimeFormat("fr-CA", {
+    // yyyy-mm-dd
+    timeZone: "Europe/Paris",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const da = fmt.format(a);
+  const db = fmt.format(b);
+  return da === db;
+};
+
+const scanATicketForAnEvent = async (req: Request, res: Response) => {
+  try {
+    const { url } = req.body;
+
+    if (!url) {
+      return res.status(404).json({ message: "url invalide" });
+    }
+
+    const bytes = CryptoJS.AES.decrypt(url, process.env.SALT_SCAN);
+    const originalText = bytes.toString(CryptoJS.enc.Utf8);
+
+    let registrationId: string;
+    let requesterId: string | undefined;
+
+    try {
+      const parsed = JSON.parse(originalText); // on parse le JSON
+      registrationId = parsed.registrationId;
+      requesterId = parsed.requesterId;
+    } catch (e) {
+      return res.status(400).json({ message: "Format du QR invalide." });
+    }
+
+    if (!mongoose.isValidObjectId(registrationId)) {
+      return res.status(400).json({ message: "registrationId invalide." });
+    }
+    if (requesterId && !mongoose.isValidObjectId(requesterId)) {
+      return res.status(400).json({ message: "requesterId invalide." });
+    }
+
+    // Qui scanne ? token prioritaire sinon requesterId
+    if (!requesterId) {
+      return res
+        .status(400)
+        .json({ message: "Aucun scanneur (byWho) fourni." });
+    }
+
+    // 2) Charger registration (source de vérité pour l’event)
+    const reg = await Registration.findById(registrationId).select(
+      "_id event status checkInStatus"
+    );
+    if (!reg)
+      return res
+        .status(404)
+        .json({ message: "Billet/registration introuvable." });
+
+    const now = new Date();
+    const regDate: Date | undefined = (reg as any)?.date;
+
+    if (!regDate) {
+      return res
+        .status(400)
+        .json({ message: "Date de la réservation absente." });
+    }
+    if (!isSameLocalDayParis(new Date(regDate), now)) {
+      return res.status(400).json({
+        message: "Billet non valable pour aujourd'hui.",
+      });
+    }
+    const checkInStatus = (reg as any)?.checkInStatus;
+    if (typeof checkInStatus === "string" && checkInStatus !== "pending") {
+      return res
+        .status(400)
+        .json({ message: "Billet non valide — entrée refusée." });
+    }
+    if (reg.status === "cancelled") {
+      return res
+        .status(400)
+        .json({ message: "Billet annulé — entrée refusée." });
+    }
+
+    // 3) Charger l'événement & établissement organisateur
+    const event = await Event.findById(reg.event).select(
+      "_id registrations organizer.establishment"
+    );
+    if (!event)
+      return res.status(404).json({ message: "Événement introuvable." });
+
+    const eventEstabId = (event as any)?.organizer?.establishment?.toString();
+    if (!eventEstabId) {
+      return res
+        .status(400)
+        .json({ message: "Aucun établissement rattaché à cet événement." });
+    }
+
+    // 4) Vérifier le rôle/autorisation & déterminer byWhoModel
+    let byWhoModel: "Customer" | "Owner" = "Customer";
+    let authorized = false;
+
+    // Chercher si byWho est Owner ou Customer
+    const [ownerDoc, customerDoc] = await Promise.all([
+      Owner.findById(requesterId).select("_id establishments establishment"),
+      Customer.findById(requesterId).select(
+        "_id establishmentStaffOf establishment establishments"
+      ),
+    ]);
+
+    if (ownerDoc) {
+      byWhoModel = "Owner";
+      const raw =
+        (ownerDoc as any).establishments ??
+        (ownerDoc as any).establishment ??
+        [];
+      const ownerEstabIds = Array.isArray(raw)
+        ? raw.map((id: any) => id?.toString())
+        : [raw?.toString()];
+      if (ownerEstabIds.filter(Boolean).includes(eventEstabId))
+        authorized = true;
+    }
+
+    if (!authorized && customerDoc) {
+      byWhoModel = "Customer";
+      const raw =
+        (customerDoc as any).establishmentStaffOf ??
+        (customerDoc as any).establishments ??
+        (customerDoc as any).establishment ??
+        [];
+      const staffOfIds = Array.isArray(raw)
+        ? raw.map((id: any) => id?.toString())
+        : [raw?.toString()];
+      if (staffOfIds.filter(Boolean).includes(eventEstabId)) authorized = true;
+    }
+
+    if (!authorized) {
+      return res.status(403).json({
+        message:
+          "Non autorisé : le scanneur n’est ni propriétaire ni staff de cet établissement.",
+      });
+    }
+
+    // 5) Ajout idempotent (pas de double scan)
+    const updated = await Event.findOneAndUpdate(
+      {
+        _id: event._id,
+        registrations: reg._id,
+        "entries.registration": { $ne: reg._id },
+      },
+      {
+        $push: {
+          entries: {
+            checkedInAt: new Date(),
+            registration: reg._id,
+            byWho: requesterId,
+            byWhoModel, // <-- clé importante pour refPath
+          },
+        },
+      },
+      { new: true }
+    ).select("_id entries");
+
+    if (!updated) {
+      const already = await Event.exists({
+        _id: event._id,
+        "entries.registration": reg._id,
+      });
+      if (already) {
+        return res.status(200).json({
+          ok: false,
+          alreadyScanned: true,
+          message: "Billet déjà scanné (check-in déjà enregistré).",
+        });
+      }
+      return res.status(404).json({
+        message:
+          "Incohérence : l'événement ne référence pas cette registration.",
+      });
+    }
+
+    // (optionnel) marquer la registration
+    // await Registration.updateOne({ _id: reg._id }, { $set: { checkedInAt: new Date(), checkInStatus: "done" } });
+
+    return res.json({
+      ok: true,
+      message: "Entrée enregistrée.",
+      entriesCount: updated.entries.length,
+      lastEntry: updated.entries[updated.entries.length - 1],
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: "Erreur interne." });
+  }
+};
+
 // Fonction pour supprimer un événement
 const deleteEvent = async (req: Request, res: Response, next: NextFunction) => {
   const eventId = req.params.eventId;
@@ -2744,6 +2942,7 @@ export default {
   // updateEventCoordinates,
   updateDescriptionsAndPrices,
   registrationToAnEvent,
+  scanATicketForAnEvent,
   deleteEvent,
   deleteDuplicateEvents,
   removeMidnightDates,

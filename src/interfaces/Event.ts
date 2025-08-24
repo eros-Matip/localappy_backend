@@ -1,5 +1,14 @@
 import { Types, Document } from "mongoose";
 
+export type ByWhoModel = "Customer" | "Owner";
+
+export interface IEventEntry {
+  checkedInAt: Date;
+  registration: Types.ObjectId; // ref: "Registration"
+  byWho: Types.ObjectId; // refPath: byWhoModel -> "Customer" | "Owner"
+  byWhoModel: ByWhoModel;
+}
+
 export default interface IEvent extends Document {
   _id: Types.ObjectId;
   title: string;
@@ -27,6 +36,7 @@ export default interface IEvent extends Document {
   registrationOpen: boolean;
   registrations: Types.ObjectId[];
   bills: Types.ObjectId[];
+  entries: IEventEntry[];
   favorieds: [
     { customer: { type: Types.ObjectId; ref: "Customer" }; date: Date },
   ];
