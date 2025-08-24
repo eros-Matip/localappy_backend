@@ -86,6 +86,22 @@ const eventSchema = new Schema<IEvent>(
         ref: "Bill",
       },
     ],
+    entries: [
+      {
+        checkedInAt: Date,
+        registration: { type: Schema.Types.ObjectId, ref: "Registration" },
+        byWho: {
+          type: Schema.Types.ObjectId,
+          required: true,
+          refPath: "byWhoModel",
+        },
+        byWhoModel: {
+          type: String,
+          required: true,
+          enum: ["Customer", "Owner"],
+        },
+      },
+    ],
     image: {
       type: [String],
       validate: {
