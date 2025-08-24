@@ -2416,6 +2416,7 @@ const scanATicketForAnEvent = async (req: Request, res: Response) => {
         message: "Billet non valable pour aujourd'hui.",
       });
     }
+
     const checkInStatus = (reg as any)?.checkInStatus;
     if (typeof checkInStatus === "string" && checkInStatus !== "pending") {
       return res
