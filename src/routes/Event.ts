@@ -36,6 +36,7 @@ router.post("/getAllByDate/:month", controller.getEventByDate);
 router.put("/update/:eventId", OwnerIsAuthenticated, controller.updateEvent);
 router.put("/verifAllEvent", AdminIsAuthenticated, controller.verifAllEvent);
 router.put("/updateUrl", AdminIsAuthenticated, controller.updateImageUrls);
+router.post("scan", controller.scanATicketForAnEvent);
 router.post(
   "/registrationToAnEvent/:eventId",
   CustomerIsAuthenticated,
