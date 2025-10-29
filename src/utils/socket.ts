@@ -23,8 +23,6 @@ export const initSocket = (app: Express): http.Server => {
   const nsp = io.of("/tickets");
 
   nsp.on("connection", (socket: Socket) => {
-    console.log("🎉 Nouveau client socket connecté :", socket.id);
-
     // 🧩 Associer l'utilisateur à sa socket
     socket.on("setUser", (userData) => {
       (socket as any).user = userData;
@@ -57,13 +55,15 @@ export const initSocket = (app: Express): http.Server => {
         const registration = await Registration.findById(payload.registrationId)
           .populate({
             path: "event",
+            select: "organizer", // on ne récupère que ce qui sert
             populate: {
               path: "organizer.establishment",
               model: "Establishment",
-              populate: {
-                path: "ownerAccount staff",
-                select: "_id",
-              },
+              select: "_id owner staff", // important : on veut ces champs
+              populate: [
+                { path: "owner", select: "_id" }, // Owner -> _id
+                { path: "staff", select: "_id" }, // Customer[] -> _id
+              ],
             },
           })
           .exec();
@@ -88,8 +88,7 @@ export const initSocket = (app: Express): http.Server => {
         // 🔒 2️⃣ Vérifier si l'utilisateur fait partie du staff ou est le gérant
         const userId = new Types.ObjectId(user._id);
         const isOwner =
-          establishment.ownerAccount &&
-          userId.equals(establishment.ownerAccount._id);
+          establishment.owner && userId.equals(establishment.owner._id);
 
         const isStaff =
           Array.isArray(establishment.staff) &&
