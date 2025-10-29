@@ -1,38 +1,15 @@
-// MODULES
-import { Request, Response, NextFunction } from "express";
+// src/server.ts
+import "dotenv/config";
+import express, { Request, Response, NextFunction } from "express";
+import cors from "cors";
 import http from "http";
 import mongoose from "mongoose";
+import cron from "node-cron";
+import cloudinary from "cloudinary";
 import config from "./config/config";
-import cors from "cors";
 
-const express = require("express");
-const router = express();
-const cloudinary = require("cloudinary");
-const cron = require("node-cron");
-const CryptoJS = require("crypto-js");
-
-mongoose
-  .set("strictQuery", false)
-  .connect(`${config.mongooseUrl}`, { retryWrites: true, w: "majority" })
-  .then(() => {
-    Logging.info("mongoDB is cennected");
-    startServer();
-  })
-  .catch((error) => {
-    Logging.error("Unable to connect");
-    Logging.error(error);
-  });
-
-// Stockage de photos avec Cloudinary
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_NAME,
-  api_key: process.env.API_KEY_CLOUDINARY,
-  api_secret: process.env.API_SECRET_CLOUDINARY,
-});
-
-// Library
-
-// MODELS
+// SOCKET
+import { initSocket } from "./utils/socket";
 
 // ROUTES
 import EventRoutes from "./routes/Event";
@@ -52,122 +29,99 @@ import UpdatedPasswordLostRoute from "./routes/UpdatePasswordLost";
 import AdsRoutes from "./routes/Ads";
 import RegistrationRoutes from "./routes/Registration";
 import invoiceRoutes from "./routes/invoice.routes";
-// FUNCTIONS
-import Logging from "./library/Logging";
-import AdminIsAuthenticated from "./middlewares/IsAuthenticated";
-import Event from "./models/Event";
 import OrganisateurRoute from "./routes/Organisateur";
-import Stripe from "stripe";
+
+// MODELS (pour le CRON)
 import Registration from "./models/Registration";
 import Bill from "./models/Bill";
+import Event from "./models/Event";
+
+// MIDDLEWARES / UTILS
+import AdminIsAuthenticated from "./middlewares/IsAuthenticated";
 import CustomerIsAuthenticated from "./middlewares/IsAuthenticated";
+import Logging from "./library/Logging";
 
-// The server start only if mongo is already connected
-const startServer = () => {
-  // Check tous les Jours à 00:00 si nous avons changé de mois.
+const app = express();
 
-  cron.schedule("0 0 0 * * *", async () => {
-    console.log("🔄 [CRON] Nettoyage des registrations pending...");
+// Cloudinary (v2)
+cloudinary.v2.config({
+  cloud_name: process.env.CLOUDINARY_NAME,
+  api_key: process.env.API_KEY_CLOUDINARY,
+  api_secret: process.env.API_SECRET_CLOUDINARY,
+});
 
-    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-
-    try {
-      const pendingRegistrations = await Registration.find({
-        status: "pending",
-        date: { $lt: oneDayAgo },
+(async function bootstrap() {
+  try {
+    mongoose
+      .set("strictQuery", false)
+      .connect(`${config.mongooseUrl}`, { retryWrites: true, w: "majority" })
+      .then(() => {
+        Logging.info("mongoDB is cennected");
+      })
+      .catch((error) => {
+        Logging.error("Unable to connect");
+        Logging.error(error);
       });
+    Logging.info("MongoDB connected");
 
-      for (const reg of pendingRegistrations) {
-        // Vérifie si un paiement Stripe est en cours (optionnel)
+    // ---------- Middlewares ----------
+    const allowedOrigins = ["http://localhost:3000"]; // ajoute tes domaines prod ici
+    app.use(cors({ origin: allowedOrigins }));
+    app.use(express.json());
+    app.use(express.urlencoded({ extended: true }));
 
-        const bill = await Bill.findOne({
-          registration: reg._id,
-          status: "pending",
-        });
-
-        if (bill) {
-          await bill.deleteOne();
-          console.log(`🧾 Bill supprimée: ${bill._id}`);
-        }
-
-        await reg.deleteOne();
-        console.log(`🎟️ Registration supprimée: ${reg._id}`);
-      }
-
-      console.log("✅ [CRON] Nettoyage terminé.");
-    } catch (error) {
-      console.error("❌ [CRON] Erreur lors du nettoyage :", error);
-    }
-  });
-
-  const allowedOrigins = ["http://localhost:3000"];
-
-  const options: cors.CorsOptions = {
-    origin: allowedOrigins,
-  };
-
-  router.use(cors(options));
-  router.use(express.json({}));
-
-  router.use((req: Request, res: Response, next: NextFunction) => {
-    res.on("finish", () => {
-      Logging.info(
-        `Server Started -> Methode: [${req.method}] - Url: [${req.originalUrl}] - Ip: [${req.socket.remoteAddress}] - Status: [${res.statusCode}]`
-      );
+    app.use((req: Request, res: Response, next: NextFunction) => {
+      res.on("finish", () => {
+        Logging.info(
+          `[${req.method}] ${req.originalUrl} - ${req.socket.remoteAddress} - ${res.statusCode}`
+        );
+      });
+      next();
     });
-    next();
-  });
 
-  router.use(express.urlencoded({ extended: true }));
-
-  // The rules of the API
-  router.use((req: Request, res: Response, next: NextFunction) => {
-    res.header("Access-Control-Allow-Origin", "*");
-    res.header(
-      "Access-Control-Allow-Headers",
-      "Origin, X-Requested-with, Content-Type, Accept,Authorization"
-    );
-    if (req.method == "OPTIONS") {
+    // (headers extra si besoin)
+    app.use((req, res, next) => {
+      res.header("Access-Control-Allow-Origin", "*");
       res.header(
-        "Access-Control-Allow-Methods",
-        "PUT, POST, PATCH, DELETE, GET"
+        "Access-Control-Allow-Headers",
+        "Origin, X-Requested-with, Content-Type, Accept, Authorization"
       );
-      return res.status(200).json({});
-    }
-    next();
-  });
+      if (req.method === "OPTIONS") {
+        res.header(
+          "Access-Control-Allow-Methods",
+          "PUT, POST, PATCH, DELETE, GET"
+        );
+        return res.status(200).json({});
+      }
+      next();
+    });
 
-  router.use("/event/", EventRoutes);
-  router.use("/owner/", OwnerRoutes);
-  router.use("/establishment/", EstablishmentRoutes);
-  router.use("/customer/", CustomerRoutes);
-  router.use("/customer/", CustomerRoutes);
-  router.use("/contact/", ContactRoutes);
-  router.use("/admin/", AdminRoutes);
-  router.use("/ads/", AdsRoutes);
-  router.use("/registration/", RegistrationRoutes);
-  router.use(LoginRoute);
-  router.use(PaymentRoute);
-  router.use(ResendCodeRoute);
-  router.use(socialLoginRoute);
-  router.use(verifPhoneRoute);
-  router.use(FetchingInfoEntrepriseRoute);
-  router.use(NotificationRoute);
-  router.use(UpdatedPasswordLostRoute);
-  router.use(OrganisateurRoute);
-  router.use("/api", CustomerIsAuthenticated, invoiceRoutes);
+    // ---------- Routes ----------
+    app.use("/event", EventRoutes);
+    app.use("/owner", OwnerRoutes);
+    app.use("/establishment", EstablishmentRoutes);
+    app.use("/customer", CustomerRoutes);
+    app.use("/contact", ContactRoutes);
+    app.use("/admin", AdminRoutes);
+    app.use("/ads", AdsRoutes);
+    app.use("/registration", RegistrationRoutes);
+    app.use(LoginRoute);
+    app.use(PaymentRoute);
+    app.use(ResendCodeRoute);
+    app.use(socialLoginRoute);
+    app.use(verifPhoneRoute);
+    app.use(FetchingInfoEntrepriseRoute);
+    app.use(NotificationRoute);
+    app.use(UpdatedPasswordLostRoute);
+    app.use("/organisateur", OrganisateurRoute);
+    app.use("/api", CustomerIsAuthenticated, invoiceRoutes);
 
-  /** Healthcheck */
-
-  router.all(
-    "/test",
-    AdminIsAuthenticated,
-    async (req: Request, res: Response) => {
+    // ---------- Healthcheck ----------
+    app.all("/test", AdminIsAuthenticated, async (_req, res) => {
       try {
         let regsAdded = 0;
         let billsAdded = 0;
 
-        // --- Synchronisation des registrations ---
         const registrations = await Registration.find({
           event: { $exists: true, $ne: null },
         });
@@ -179,14 +133,12 @@ const startServer = () => {
           if (updated.modifiedCount > 0) regsAdded++;
         }
 
-        // --- Synchronisation des bills via leur registration ---
         const bills = await Bill.find({
           registration: { $exists: true, $ne: null },
         });
         for (const bill of bills) {
           const reg = await Registration.findById(bill.registration);
-          if (!reg?.event) continue; // pas d'event lié => on saute
-
+          if (!reg?.event) continue;
           const updated = await Event.updateOne(
             { _id: reg.event, bills: { $ne: bill._id } },
             { $push: { bills: bill._id } }
@@ -205,22 +157,60 @@ const startServer = () => {
           .status(500)
           .json({ message: "Erreur lors de la synchronisation", error });
       }
-    }
-  );
+    });
 
-  /**Error handling */
-  router.use((req: Request, res: Response) => {
-    const error = new Error(
-      `Route has been not found -> Methode: [${req.method}] - Url: [${req.originalUrl}] - Ip: [${req.socket.remoteAddress}]`
+    // ---------- 404 ----------
+    app.use((req: Request, res: Response) => {
+      const message = `Route not found -> [${req.method}] ${req.originalUrl}`;
+      Logging.error(message);
+      return res.status(404).json(message);
+    });
+
+    // ---------- CRON (nettoyage des registrations en attente) ----------
+    cron.schedule("0 0 0 * * *", async () => {
+      Logging.info("🔄 [CRON] Nettoyage des registrations pending...");
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      try {
+        const pending = await Registration.find({
+          status: "pending",
+          date: { $lt: oneDayAgo },
+        });
+        for (const reg of pending) {
+          const bill = await Bill.findOne({
+            registration: reg._id,
+            status: "pending",
+          });
+          if (bill) await bill.deleteOne();
+          await reg.deleteOne();
+        }
+        Logging.info("✅ [CRON] Nettoyage terminé.");
+      } catch (err) {
+        Logging.error(`❌ [CRON] ${String(err)}`);
+      }
+    });
+
+    // ---------- HTTP + Socket.IO ----------
+    const server: http.Server = initSocket(app); // crée http.createServer(app) + branche Socket.IO
+    const PORT = Number(config.port || 4000);
+
+    server.listen(PORT, () =>
+      Logging.info(`HTTP + Socket.IO listening on :${PORT}`)
     );
 
-    Logging.error(error.message);
-    return res.status(404).json(error.message);
-  });
+    // Arrêt propre
+    const shutdown = () => {
+      Logging.info("Shutting down...");
+      server.close(() => {
+        mongoose.connection.close(false).then(() => process.exit(0));
+      });
+    };
+    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", shutdown);
 
-  http
-    .createServer(router)
-    .listen(config.port, () =>
-      Logging.info(`Server is started on new port ${config.port}`)
-    );
-};
+    // Export (tests e2e)
+    module.exports = { app, server };
+  } catch (err) {
+    Logging.error(`Bootstrap error: ${String(err)}`);
+    process.exit(1);
+  }
+})();

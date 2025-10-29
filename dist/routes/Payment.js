@@ -44,7 +44,7 @@ const countReservedForDay = (eventId, day, excludeId) => __awaiter(void 0, void 
 });
 const router = express_1.default.Router();
 const stripe = new stripe_1.default(process.env.STRIPE_SECRET_KEY, {
-    apiVersion: "2025-01-27.acacia",
+    apiVersion: "2025-02-24.acacia",
 });
 paypal_rest_sdk_1.default.configure({
     mode: "sandbox",
