@@ -3,6 +3,8 @@ import http from "http";
 import { Server, Socket } from "socket.io";
 import { Express } from "express";
 import { validateRegistrationAndCheckIn } from "../controllers/Registration";
+import Registration from "../models/Registration";
+import { Types } from "mongoose";
 
 type ScanPayload =
   | { registrationId: string; ticketNumber?: never }
@@ -48,19 +50,68 @@ export const initSocket = (app: Express): http.Server => {
           role: string;
         } | null;
 
-        // Si tu gères déjà l'auth en amont, tu peux retirer ce check.
-        if (!user || user.role !== "merchant") {
+        if (!user) {
           return socket.emit("registration:error", {
-            code: "FORBIDDEN",
-            message: "Rôle commerçant requis",
+            code: "UNAUTHORIZED",
+            message: "Utilisateur non authentifié",
           });
         }
 
+        // Récupération de la registration pour remonter jusqu’à l’événement
+        const registration = await Registration.findById(payload.registrationId)
+          .populate({
+            path: "event",
+            populate: {
+              path: "organizer.establishment",
+              model: "Establishment",
+              populate: {
+                path: "staff ownerAccount",
+                select: "_id",
+              },
+            },
+          })
+          .exec();
+
+        if (!registration || !registration.event) {
+          return socket.emit("registration:error", {
+            code: "NOT_FOUND",
+            message: "Événement ou ticket introuvable",
+          });
+        }
+
+        const event = registration.event as any;
+        const establishment = event.organizer?.establishment;
+
+        if (!establishment) {
+          return socket.emit("registration:error", {
+            code: "NOT_FOUND",
+            message: "Établissement associé introuvable",
+          });
+        }
+
+        // Vérifie si le user est le propriétaire OU un membre du staff
+        const userId = new Types.ObjectId(user._id);
+        const isOwner =
+          establishment.ownerAccount &&
+          userId.equals(establishment.ownerAccount._id);
+
+        const isStaff =
+          Array.isArray(establishment.staff) &&
+          establishment.staff.some((s: any) =>
+            userId.equals(new Types.ObjectId(s._id))
+          );
+
+        if (!isOwner && !isStaff) {
+          return socket.emit("registration:error", {
+            code: "FORBIDDEN",
+            message:
+              "Accès refusé — seuls le gérant ou les membres du staff peuvent valider un ticket.",
+          });
+        }
+
+        // ✅ Validation et check-in
         const result = await validateRegistrationAndCheckIn({
-          registrationId:
-            "registrationId" in payload ? payload.registrationId : undefined,
-          ticketNumber:
-            "ticketNumber" in payload ? payload.ticketNumber : undefined,
+          registrationId: payload.registrationId,
           merchantId: user._id,
         });
 
@@ -69,16 +120,17 @@ export const initSocket = (app: Express): http.Server => {
 
         nsp.to(roomName(rid)).emit("registration:update", {
           registrationId: rid,
-          status: reg.status, // e.g. "paid" | "confirmed"
-          checkInStatus: reg.checkInStatus, // "checked-in"
+          status: reg.status,
+          checkInStatus: reg.checkInStatus,
           checkedInAt: reg.checkedInAt ?? reg.updatedAt,
-          checkedInBy: reg.checkedInBy ?? user._id,
+          checkedInBy: user._id,
           already: result.code === "ALREADY_SCANNED",
         });
       } catch (err: any) {
+        console.error("❌ Erreur lors du scan :", err);
         socket.emit("registration:error", {
           code: "SCAN_FAILED",
-          message: err?.message || "Unknown error",
+          message: err?.message || "Erreur interne du serveur",
         });
       }
     });
