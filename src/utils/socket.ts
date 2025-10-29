@@ -14,25 +14,24 @@ function roomName(registrationId: string) {
   return `registration:${registrationId}`;
 }
 
-/**
- * Initialise Socket.IO sur un serveur HTTP commun avec Express.
- * - Namespace: /tickets (peut être renommé si besoin)
- * - Événements:
- *    - registration:join { registrationId }
- *    - registration:scan { registrationId } | { ticketNumber }  // pas de vérif QR ici
- *    - registration:update { registrationId, checkInStatus, ... }
- *    - registration:error { code, message }
- */
 export const initSocket = (app: Express): http.Server => {
   const server = http.createServer(app);
   const io = new Server(server, {
-    cors: { origin: "*" }, // ajuste pour la prod
+    cors: { origin: "*" },
   });
 
   const nsp = io.of("/tickets");
 
   nsp.on("connection", (socket: Socket) => {
-    // Rejoindre la room d'une registration
+    console.log("🎉 Nouveau client socket connecté :", socket.id);
+
+    // 🧩 Associer l'utilisateur à sa socket
+    socket.on("setUser", (userData) => {
+      (socket as any).user = userData;
+      console.log("👤 Utilisateur attaché à la socket :", userData);
+    });
+
+    // Rejoindre une room
     socket.on(
       "registration:join",
       ({ registrationId }: { registrationId: string }) => {
@@ -42,22 +41,19 @@ export const initSocket = (app: Express): http.Server => {
       }
     );
 
-    // Scan par le commerçant (PAS de vérification de qrToken ici)
+    // Scan par un gérant / staff
     socket.on("registration:scan", async (payload: ScanPayload) => {
       try {
-        const user = (socket as any).user as {
-          _id: string;
-          role: string;
-        } | null;
+        const user = (socket as any).user as { _id: string } | null;
 
-        if (!user) {
+        if (!user?._id) {
           return socket.emit("registration:error", {
             code: "UNAUTHORIZED",
             message: "Utilisateur non authentifié",
           });
         }
 
-        // Récupération de la registration pour remonter jusqu’à l’événement
+        // 🔎 1️⃣ Récupération du ticket + event + établissement
         const registration = await Registration.findById(payload.registrationId)
           .populate({
             path: "event",
@@ -65,7 +61,7 @@ export const initSocket = (app: Express): http.Server => {
               path: "organizer.establishment",
               model: "Establishment",
               populate: {
-                path: "staff ownerAccount",
+                path: "ownerAccount staff",
                 select: "_id",
               },
             },
@@ -89,7 +85,7 @@ export const initSocket = (app: Express): http.Server => {
           });
         }
 
-        // Vérifie si le user est le propriétaire OU un membre du staff
+        // 🔒 2️⃣ Vérifier si l'utilisateur fait partie du staff ou est le gérant
         const userId = new Types.ObjectId(user._id);
         const isOwner =
           establishment.ownerAccount &&
@@ -109,7 +105,7 @@ export const initSocket = (app: Express): http.Server => {
           });
         }
 
-        // ✅ Validation et check-in
+        // ✅ 3️⃣ Valider le check-in
         const result = await validateRegistrationAndCheckIn({
           registrationId: payload.registrationId,
           merchantId: user._id,
@@ -118,6 +114,7 @@ export const initSocket = (app: Express): http.Server => {
         const reg = result.registration as any;
         const rid = (reg._id || "").toString();
 
+        // 🔄 4️⃣ Émettre la mise à jour à tous les clients connectés à cette registration
         nsp.to(roomName(rid)).emit("registration:update", {
           registrationId: rid,
           status: reg.status,
@@ -125,6 +122,11 @@ export const initSocket = (app: Express): http.Server => {
           checkedInAt: reg.checkedInAt,
           checkedInBy: reg.checkedInBy,
           already: result.code === "ALREADY_SCANNED",
+        });
+
+        socket.emit("registration:validated", {
+          registrationId: rid,
+          message: "Ticket validé avec succès ✅",
         });
       } catch (err: any) {
         console.error("❌ Erreur lors du scan :", err);
@@ -134,13 +136,7 @@ export const initSocket = (app: Express): http.Server => {
         });
       }
     });
-
-    socket.on("disconnect", () => {
-      // noop
-    });
   });
 
   return server;
 };
-
-export default initSocket;
