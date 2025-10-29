@@ -92,9 +92,7 @@ export const initSocket = (app: Express): http.Server => {
 
         const isStaff =
           Array.isArray(establishment.staff) &&
-          establishment.staff.some((s: any) =>
-            userId.equals(new Types.ObjectId(s._id))
-          );
+          establishment.staff.some((s: any) => userId.equals(s._id));
 
         if (!isOwner && !isStaff) {
           return socket.emit("registration:error", {
