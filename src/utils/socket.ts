@@ -122,8 +122,8 @@ export const initSocket = (app: Express): http.Server => {
           registrationId: rid,
           status: reg.status,
           checkInStatus: reg.checkInStatus,
-          checkedInAt: reg.checkedInAt ?? reg.updatedAt,
-          checkedInBy: user._id,
+          checkedInAt: reg.checkedInAt,
+          checkedInBy: reg.checkedInBy,
           already: result.code === "ALREADY_SCANNED",
         });
       } catch (err: any) {

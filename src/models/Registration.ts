@@ -28,6 +28,9 @@ const registrationSchema = new Schema<IRegistration>(
       enum: ["pending", "checked-in", "no-show"],
       default: "pending",
     },
+    checkedInAt: { type: Date },
+    checkedInBy: { type: Schema.Types.ObjectId }, // ou "User" si tu veux être plus générique
+
     ticketNumber: { type: String, required: false, unique: true },
     referrer: { type: Schema.Types.ObjectId, ref: "Customer", required: false },
     specialRequests: { type: String, required: false },
