@@ -5,7 +5,9 @@ import { Express } from "express";
 import { validateRegistrationAndCheckIn } from "../controllers/Registration";
 import Registration from "../models/Registration";
 import { Types } from "mongoose";
+
 import IRegistration from "../interfaces/Registration";
+import IEvent from "../interfaces/Event";
 
 type ScanPayload =
   | { registrationId: string; ticketNumber?: never }
@@ -17,6 +19,7 @@ function roomName(registrationId: string) {
 
 export const initSocket = (app: Express): http.Server => {
   const server = http.createServer(app);
+
   const io = new Server(server, {
     cors: { origin: "*" },
   });
@@ -24,12 +27,15 @@ export const initSocket = (app: Express): http.Server => {
   const nsp = io.of("/tickets");
 
   nsp.on("connection", (socket: Socket) => {
-    // 🧩 on associe l'user à la socket
+    console.log("🟢 Nouvelle connexion socket /tickets :", socket.id);
+
+    // le front envoie l'user ici
     socket.on("setUser", (userData) => {
       (socket as any).user = userData;
-      console.log("👤 Utilisateur attaché à la socket :", userData);
+      console.log("👤 Utilisateur attaché :", userData);
     });
 
+    // rejoindre une room
     socket.on(
       "registration:join",
       ({ registrationId }: { registrationId: string }) => {
@@ -39,11 +45,14 @@ export const initSocket = (app: Express): http.Server => {
       }
     );
 
-    // 💥 scan
+    // scan
     socket.on("registration:scan", async (payload: ScanPayload) => {
       try {
-        const user = (socket as any).user as { _id: string } | null;
-
+        // A. check user sur la socket
+        const user = (socket as any).user as {
+          _id: string;
+          role?: string;
+        } | null;
         if (!user?._id) {
           return socket.emit("registration:error", {
             code: "UNAUTHORIZED",
@@ -51,13 +60,19 @@ export const initSocket = (app: Express): http.Server => {
           });
         }
 
-        // 1️⃣ on récupère la registration + event + établissement
-        const registration = (await Registration.findById(
-          payload.registrationId
-        )
+        // B. construire la requête
+        const query: any = {};
+        if ("registrationId" in payload && payload.registrationId) {
+          query._id = payload.registrationId;
+        } else if ("ticketNumber" in payload && payload.ticketNumber) {
+          query.ticketNumber = payload.ticketNumber;
+        }
+
+        // C. récupérer la registration + event + establishment + customer
+        const registrationDoc = await Registration.findOne(query)
           .populate({
             path: "event",
-            select: "title address startingDate endingDate organizer",
+            select: "title startingDate endingDate organizer",
             populate: {
               path: "organizer.establishment",
               model: "Establishment",
@@ -72,18 +87,47 @@ export const initSocket = (app: Express): http.Server => {
             path: "customer",
             select: "firstname name lastname email phone",
           })
-          .exec()) as IRegistration & { _id: Types.ObjectId };
+          .exec();
 
-        if (!registration || !registration.event) {
+        if (!registrationDoc) {
           return socket.emit("registration:error", {
             code: "NOT_FOUND",
             message: "Événement ou ticket introuvable",
           });
         }
 
-        const event: any = registration.event;
-        const establishment = event.organizer?.establishment;
+        // ✅ on enlève le Document Mongoose
+        const registrationObj = registrationDoc.toObject() as unknown;
 
+        // 🔐 type peuplé
+        type PopulatedRegistration = IRegistration & {
+          _id: Types.ObjectId; // 👈 ICI on force
+          event?: IEvent & {
+            organizer?: {
+              establishment?: {
+                _id: Types.ObjectId;
+                name?: string;
+                owner?: { _id: Types.ObjectId };
+                staff?: Array<{ _id: Types.ObjectId }>;
+                phone?: string;
+                email?: string;
+              };
+            };
+          };
+          customer?: {
+            _id: Types.ObjectId;
+            firstname?: string;
+            name?: string;
+            lastname?: string;
+            email?: string;
+            phone?: string;
+          };
+        };
+
+        const registration = registrationObj as PopulatedRegistration;
+
+        // D. contrôle d’accès
+        const establishment = registration.event?.organizer?.establishment;
         if (!establishment) {
           return socket.emit("registration:error", {
             code: "NOT_FOUND",
@@ -91,35 +135,21 @@ export const initSocket = (app: Express): http.Server => {
           });
         }
 
-        // 2️⃣ 👉 AVANT de valider, on peut déjà renvoyer les infos pour l'affichage
-        // ça te permet sur le front d'afficher le nom de l'event, le client, la quantité, etc.
-        socket.emit("registration:data", {
-          registrationId: registration?._id.toString(),
-          eventTitle: event.title,
-          eventAddress: event.address,
-          eventStart: event.startingDate,
-          eventEnd: event.endingDate,
-          customerName:
-            registration.customer &&
-            [
-              (registration.customer as any).firstname,
-              (registration.customer as any).lastname ||
-                (registration.customer as any).name,
-            ]
-              .filter(Boolean)
-              .join(" "),
-          customerEmail: (registration.customer as any)?.email,
-          customerPhone: (registration.customer as any)?.phone,
-          quantity: registration.quantity,
-        });
-
-        // 3️⃣ on vérifie que l'utilisateur peut valider
         const userId = new Types.ObjectId(user._id);
+
         const isOwner =
-          establishment.owner && userId.equals(establishment.owner._id);
+          establishment.owner &&
+          userId.equals(
+            (establishment.owner as any)._id
+              ? (establishment.owner as any)._id
+              : (establishment.owner as any)
+          );
+
         const isStaff =
           Array.isArray(establishment.staff) &&
-          establishment.staff.some((s: any) => userId.equals(s._id));
+          establishment.staff.some((s: any) =>
+            userId.equals(s._id ? s._id : s)
+          );
 
         if (!isOwner && !isStaff) {
           return socket.emit("registration:error", {
@@ -129,16 +159,16 @@ export const initSocket = (app: Express): http.Server => {
           });
         }
 
-        // 4️⃣ on valide pour de vrai
+        // E. check-in
         const result = await validateRegistrationAndCheckIn({
-          registrationId: payload.registrationId,
+          registrationId: registration._id.toString(), // 👈 plus d’erreur ici
           merchantId: user._id,
         });
 
         const reg = result.registration as any;
         const rid = (reg._id || "").toString();
 
-        // 5️⃣ on notifie les rooms
+        // F. broadcast
         nsp.to(roomName(rid)).emit("registration:update", {
           registrationId: rid,
           status: reg.status,
@@ -148,10 +178,24 @@ export const initSocket = (app: Express): http.Server => {
           already: result.code === "ALREADY_SCANNED",
         });
 
-        // 6️⃣ on confirme à celui qui a scanné
+        // G. renvoyer au client qui a scanné les infos pour l’affichage
         socket.emit("registration:validated", {
           registrationId: rid,
-          message: "Ticket validé avec succès ✅",
+          already: result.code === "ALREADY_SCANNED",
+          message:
+            result.code === "ALREADY_SCANNED"
+              ? "Ticket déjà validé ✅"
+              : "Ticket validé avec succès ✅",
+          eventTitle: registration.event?.title,
+          eventDate: registration.event?.startingDate,
+          customerName:
+            registration.customer?.firstname ||
+            registration.customer?.name ||
+            registration.customer?.lastname ||
+            "Client",
+          customerEmail: registration.customer?.email,
+          customerPhone: registration.customer?.phone,
+          quantity: registration.quantity,
         });
       } catch (err: any) {
         console.error("❌ Erreur lors du scan :", err);
@@ -161,7 +205,13 @@ export const initSocket = (app: Express): http.Server => {
         });
       }
     });
+
+    socket.on("disconnect", () => {
+      console.log("🔴 Socket /tickets déconnectée :", socket.id);
+    });
   });
 
   return server;
 };
+
+export default initSocket;
