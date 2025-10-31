@@ -5,6 +5,7 @@ import { Express } from "express";
 import { validateRegistrationAndCheckIn } from "../controllers/Registration";
 import Registration from "../models/Registration";
 import { Types } from "mongoose";
+import IRegistration from "../interfaces/Registration";
 
 type ScanPayload =
   | { registrationId: string; ticketNumber?: never }
@@ -23,13 +24,12 @@ export const initSocket = (app: Express): http.Server => {
   const nsp = io.of("/tickets");
 
   nsp.on("connection", (socket: Socket) => {
-    // 🧩 Associer l'utilisateur à sa socket
+    // 🧩 on associe l'user à la socket
     socket.on("setUser", (userData) => {
       (socket as any).user = userData;
       console.log("👤 Utilisateur attaché à la socket :", userData);
     });
 
-    // Rejoindre une room
     socket.on(
       "registration:join",
       ({ registrationId }: { registrationId: string }) => {
@@ -39,7 +39,7 @@ export const initSocket = (app: Express): http.Server => {
       }
     );
 
-    // Scan par un gérant / staff
+    // 💥 scan
     socket.on("registration:scan", async (payload: ScanPayload) => {
       try {
         const user = (socket as any).user as { _id: string } | null;
@@ -51,22 +51,28 @@ export const initSocket = (app: Express): http.Server => {
           });
         }
 
-        // 🔎 1️⃣ Récupération du ticket + event + établissement
-        const registration = await Registration.findById(payload.registrationId)
+        // 1️⃣ on récupère la registration + event + établissement
+        const registration = (await Registration.findById(
+          payload.registrationId
+        )
           .populate({
             path: "event",
-            select: "organizer", // on ne récupère que ce qui sert
+            select: "title address startingDate endingDate organizer",
             populate: {
               path: "organizer.establishment",
               model: "Establishment",
-              select: "_id owner staff", // important : on veut ces champs
+              select: "_id name owner staff phone email",
               populate: [
-                { path: "owner", select: "_id" }, // Owner -> _id
-                { path: "staff", select: "_id" }, // Customer[] -> _id
+                { path: "owner", select: "_id" },
+                { path: "staff", select: "_id" },
               ],
             },
           })
-          .exec();
+          .populate({
+            path: "customer",
+            select: "firstname name lastname email phone",
+          })
+          .exec()) as IRegistration & { _id: Types.ObjectId };
 
         if (!registration || !registration.event) {
           return socket.emit("registration:error", {
@@ -75,7 +81,7 @@ export const initSocket = (app: Express): http.Server => {
           });
         }
 
-        const event = registration.event as any;
+        const event: any = registration.event;
         const establishment = event.organizer?.establishment;
 
         if (!establishment) {
@@ -85,11 +91,32 @@ export const initSocket = (app: Express): http.Server => {
           });
         }
 
-        // 🔒 2️⃣ Vérifier si l'utilisateur fait partie du staff ou est le gérant
+        // 2️⃣ 👉 AVANT de valider, on peut déjà renvoyer les infos pour l'affichage
+        // ça te permet sur le front d'afficher le nom de l'event, le client, la quantité, etc.
+        socket.emit("registration:data", {
+          registrationId: registration?._id.toString(),
+          eventTitle: event.title,
+          eventAddress: event.address,
+          eventStart: event.startingDate,
+          eventEnd: event.endingDate,
+          customerName:
+            registration.customer &&
+            [
+              (registration.customer as any).firstname,
+              (registration.customer as any).lastname ||
+                (registration.customer as any).name,
+            ]
+              .filter(Boolean)
+              .join(" "),
+          customerEmail: (registration.customer as any)?.email,
+          customerPhone: (registration.customer as any)?.phone,
+          quantity: registration.quantity,
+        });
+
+        // 3️⃣ on vérifie que l'utilisateur peut valider
         const userId = new Types.ObjectId(user._id);
         const isOwner =
           establishment.owner && userId.equals(establishment.owner._id);
-
         const isStaff =
           Array.isArray(establishment.staff) &&
           establishment.staff.some((s: any) => userId.equals(s._id));
@@ -102,7 +129,7 @@ export const initSocket = (app: Express): http.Server => {
           });
         }
 
-        // ✅ 3️⃣ Valider le check-in
+        // 4️⃣ on valide pour de vrai
         const result = await validateRegistrationAndCheckIn({
           registrationId: payload.registrationId,
           merchantId: user._id,
@@ -111,7 +138,7 @@ export const initSocket = (app: Express): http.Server => {
         const reg = result.registration as any;
         const rid = (reg._id || "").toString();
 
-        // 🔄 4️⃣ Émettre la mise à jour à tous les clients connectés à cette registration
+        // 5️⃣ on notifie les rooms
         nsp.to(roomName(rid)).emit("registration:update", {
           registrationId: rid,
           status: reg.status,
@@ -121,6 +148,7 @@ export const initSocket = (app: Express): http.Server => {
           already: result.code === "ALREADY_SCANNED",
         });
 
+        // 6️⃣ on confirme à celui qui a scanné
         socket.emit("registration:validated", {
           registrationId: rid,
           message: "Ticket validé avec succès ✅",
