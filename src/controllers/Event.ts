@@ -2319,7 +2319,9 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
 
       await newRegistration.save({ session });
       eventFinded.registrations.push(newRegistration._id as Types.ObjectId);
+      customerFinded.bills.push(newBill._id as Types.ObjectId);
       await eventFinded.save();
+      await customerFinded.save();
 
       resultPayload = {
         message: "Inscription créée avec succès",

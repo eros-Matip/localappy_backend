@@ -187,7 +187,7 @@ export const initSocket = (app: Express): http.Server => {
               ? "Ticket déjà validé ✅"
               : "Ticket validé avec succès ✅",
           eventTitle: registration.event?.title,
-          eventDate: registration.event?.startingDate,
+          eventDate: registration.date,
           customerName:
             registration.customer?.firstname ||
             registration.customer?.name ||
