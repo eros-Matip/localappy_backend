@@ -2297,11 +2297,13 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
             },
           ],
         });
-        establishmentFinded.amountAvailable =
-          (establishmentFinded.amountAvailable ?? 0) + newBill.amount;
 
         await newBill.save({ session });
-        await establishmentFinded.save({ session });
+        await Establishment.updateOne(
+          { _id: establishmentFinded._id },
+          { $inc: { amountAvailable: newBill.amount } },
+          { session }
+        );
       }
 
       // ---- gratuit: on confirme + email tout de suite
