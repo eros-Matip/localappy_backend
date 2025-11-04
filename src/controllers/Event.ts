@@ -2141,7 +2141,7 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
   try {
     const { eventId } = req.params as { eventId: string };
     const {
-      admin: customerId, // id du Customer (comme dans ton code)
+      admin: customerId,
       date,
       paymentMethod,
       price,
@@ -2153,9 +2153,8 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
       price?: number;
       quantity?: number;
     };
-    // ---- validations de base
-    if (!eventId) return res.status(400).json({ message: "eventId manquant" });
 
+    if (!eventId) return res.status(400).json({ message: "eventId manquant" });
     if (!customerId)
       return res.status(400).json({ message: "Utilisateur manquant" });
     if (!date)
@@ -2167,73 +2166,70 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
     if (isNaN(selected.getTime())) {
       return res.status(400).json({ message: "Date de réservation invalide" });
     }
-    // -> journée passée si 23:59:59.999 de ce jour est < maintenant
+
+    // on vérifie que le jour n'est pas passé
     const now = new Date();
     const selectedEnd = new Date(selected);
     selectedEnd.setHours(23, 59, 59, 999);
-
     if (selectedEnd < now) {
       return res.status(400).json({ message: "date déjà passée" });
     }
+
     const qty = toInt(quantity) ?? 1;
     if (qty <= 0) {
       return res.status(400).json({ message: "La quantité doit être ≥ 1" });
     }
 
-    // ---- transaction pour éviter les races conditions
     let resultPayload: any = null;
 
     await session.withTransaction(async () => {
-      // Recharges sous session
+      // 1. Récupérations sous session
       const eventFinded = await Event.findById(eventId).session(session);
       const establishmentFinded = await Establishment.findOne({
         events: eventId,
       }).session(session);
+      const customerFinded =
+        await Customer.findById(customerId).session(session);
 
       if (!eventFinded) {
         throw { status: 404, message: "Événement introuvable" };
       }
-
       if (!establishmentFinded) {
         throw { status: 404, message: "Etablissement introuvable" };
       }
-
+      if (!customerFinded) {
+        throw { status: 404, message: "Utilisateur introuvable" };
+      }
       if (eventFinded.registrationOpen === false) {
         throw { status: 400, message: "Inscription fermée" };
       }
 
-      const customerFinded =
-        await Customer.findById(customerId).session(session);
-      if (!customerFinded) {
-        throw { status: 404, message: "Utilisateur introuvable" };
-      }
-
-      // (optionnel) vérifier que la date choisie est dans la plage de l'event
-      // Si tu as eventFinded.startingDate / eventFinded.endingDate :
+      // optionnel: vérifier plage de l’event
       if (eventFinded.startingDate) {
         const start = new Date(eventFinded.startingDate);
-        if (selected < start)
+        if (selected < start) {
           throw {
             status: 400,
             message: "Date hors plage (avant début de l'événement)",
           };
+        }
       }
       if (eventFinded.endingDate) {
         const end = new Date(eventFinded.endingDate);
-        if (selected > end)
+        if (selected > end) {
           throw {
             status: 400,
             message: "Date hors plage (après fin de l'événement)",
           };
+        }
       }
 
-      // ---- capacité PAR JOUR (on ne décrémente plus l'event)
+      // 2. Capacité par jour
       const capacityPerDay = toInt(eventFinded.capacity) ?? 0;
       if (capacityPerDay <= 0) {
         throw { status: 400, message: "Capacité non configurée ou nulle" };
       }
 
-      // ---- comptage des réservations validées pour CE jour
       const { dayStart, dayEnd } = normalizeDayRange(selected);
       const ALLOWED = ["paid", "confirmed"];
 
@@ -2259,29 +2255,33 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
         };
       }
 
-      // ---- création inscription
+      // 3. Création de la registration
       const unitPrice = toInt(price) ?? 0;
-      const ticketNumber = `TICKET-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      const ticketNumber = `TICKET-${Date.now()}-${Math.floor(
+        Math.random() * 1000
+      )}`;
 
       const newRegistration = new Registration({
-        date: selected, // ✅ la date réservée (jour)
+        date: selected,
         customer: customerFinded._id,
         event: eventFinded._id,
         price: unitPrice,
-        status: unitPrice > 0 ? "pending" : "confirmed", // règle: paid/confirmed uniquement comptés
+        status: unitPrice > 0 ? "pending" : "confirmed",
         paymentMethod: paymentMethod ?? (unitPrice > 0 ? "unknown" : "free"),
         quantity: qty,
         ticketNumber,
       });
 
-      // ---- facture si payant
+      // 4. Bill si payant
       let newBill: any = null;
       if (unitPrice > 0) {
         const invoiceNumber = `INV-${Date.now()}-${Date.now()}`;
+        const billAmount = unitPrice * newRegistration.quantity;
+
         newBill = new Bill({
           customer: customerFinded._id,
           registration: newRegistration._id,
-          amount: unitPrice * newRegistration.quantity,
+          amount: billAmount,
           status: "pending",
           paymentMethod: paymentMethod ?? "unknown",
           invoiceNumber,
@@ -2298,17 +2298,19 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
           ],
         });
 
+        // on sauve la facture dans la session
         await newBill.save({ session });
+
+        // ✅ on incrémente le montant dispo de l'établissement
         await Establishment.updateOne(
           { _id: establishmentFinded._id },
-          { $inc: { amountAvailable: newBill.amount } },
+          { $inc: { amountAvailable: billAmount } },
           { session }
         );
       }
 
-      // ---- gratuit: on confirme + email tout de suite
+      // 5. Si gratuit, on confirme + on envoie l'email (facultatif)
       if (unitPrice <= 0) {
-        // statut déjà "confirmed"
         customerFinded.eventsReserved ??= [];
         customerFinded.eventsReserved.push(eventFinded._id);
 
@@ -2316,7 +2318,6 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
         const invoiceUrl = `https://localappy.fr/api/invoice/${newRegistration._id}`;
         const eventLink = `https://localappy.fr/events/${eventFinded._id}`;
 
-        // NB: si besoin, envoie l'email après commit (outbox pattern)
         await sendEventConfirmationEmail({
           to: customerFinded.email,
           firstName: customerFinded.account.firstname,
@@ -2331,13 +2332,22 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
         await customerFinded.save({ session });
       }
 
+      // 6. Lier registration à l’event
+      eventFinded.registrations.push(
+        newRegistration._id as unknown as Types.ObjectId
+      );
+      await eventFinded.save({ session });
+
+      // 7. Lier bill au customer (si payant)
+      if (newBill) {
+        customerFinded.bills.push(newBill._id as Types.ObjectId);
+      }
+      await customerFinded.save({ session });
+
+      // 8. Sauver la registration
       await newRegistration.save({ session });
-      eventFinded.registrations.push(newRegistration._id as Types.ObjectId);
-      customerFinded.bills.push(newBill._id as Types.ObjectId);
 
-      await eventFinded.save();
-      await customerFinded.save();
-
+      // 9. Payload de réponse
       resultPayload = {
         message: "Inscription créée avec succès",
         registrationId: newRegistration._id,
@@ -2345,18 +2355,17 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
         remainingForDay: remaining - qty,
       };
     });
+
     return res.status(201).json(resultPayload);
   } catch (error: any) {
     const status = error?.status ?? 500;
     if (status !== 500) {
-      // erreurs contrôlées
       return res.status(status).json({
         message: error?.message ?? "Erreur de validation",
         ...(error?.remaining != null ? { remaining: error.remaining } : {}),
       });
     }
-
-    Retour.error({ message: "Erreur lors de l'inscription", error });
+    console.error("Erreur lors de l'inscription", error);
     return res
       .status(500)
       .json({ message: "Erreur lors de l'inscription", error });
