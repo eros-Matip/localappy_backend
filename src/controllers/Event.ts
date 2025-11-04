@@ -2297,7 +2297,9 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
             },
           ],
         });
-        establishmentFinded.amountAvailable + newBill.amount;
+        establishmentFinded.amountAvailable =
+          (establishmentFinded.amountAvailable ?? 0) + newBill.amount;
+
         await newBill.save({ session });
         await establishmentFinded.save({ session });
       }
