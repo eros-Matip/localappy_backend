@@ -38,7 +38,6 @@ const EstablishmentSchema = new Schema<IEstablishment>(
         default: undefined,
       },
     },
-
     description: { type: String }, // Description du commerce
     logo: { type: String }, // Image principale ou logo
     photos: { type: [String] },
@@ -50,7 +49,7 @@ const EstablishmentSchema = new Schema<IEstablishment>(
         _id: false,
       },
     ],
-
+    notifications: [{ type: Schema.Types.ObjectId, ref: "Notification" }],
     acceptedPayments: [
       {
         type: { type: String },
@@ -65,6 +64,8 @@ const EstablishmentSchema = new Schema<IEstablishment>(
     },
     ads: [{ type: Schema.Types.ObjectId, ref: "Ads" }],
     owner: { type: Schema.Types.ObjectId, ref: "Owner" },
+    amountAvailable: { type: Number, default: 0 },
+    refund: [{ customer: Schema.Types.ObjectId, amount: Number }],
     staff: [{ type: Schema.Types.ObjectId, ref: "Customer" }],
     events: [{ type: Schema.Types.ObjectId, ref: "Event" }],
     activated: { type: Boolean, default: false },

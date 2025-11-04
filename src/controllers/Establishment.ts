@@ -309,6 +309,119 @@ const getPublicInformation = async (req: Request, res: Response) => {
   }
 };
 
+const getTicketsStatsByEstablishment = async (req: Request, res: Response) => {
+  try {
+    const { establishmentId } = req.params;
+
+    if (!mongoose.isValidObjectId(establishmentId)) {
+      return res.status(400).json({ message: "Invalid establishment id" });
+    }
+
+    const estId = new mongoose.Types.ObjectId(establishmentId);
+
+    const pipeline = [
+      // 1. on ne prend que les registrations “vraies”
+      {
+        $match: {
+          status: { $in: ["paid", "confirmed"] }, // ← ajuste ici si besoin
+        },
+      },
+      // 2. on récupère l'event de chaque registration
+      {
+        $lookup: {
+          from: "events", // nom de la collection Event
+          localField: "event",
+          foreignField: "_id",
+          as: "event",
+        },
+      },
+      { $unwind: "$event" },
+      // 3. on filtre sur l'établissement de l'organisateur
+      {
+        $match: {
+          "event.organizer.establishment": estId,
+        },
+      },
+      // 4. on calcule le total de la registration
+      //    total = price * quantity + somme(extras.price)
+      {
+        $addFields: {
+          extrasTotal: {
+            $cond: [{ $isArray: "$extras" }, { $sum: "$extras.price" }, 0],
+          },
+        },
+      },
+      {
+        $addFields: {
+          ticketAmount: {
+            $add: [
+              { $multiply: ["$price", "$quantity"] },
+              { $ifNull: ["$extrasTotal", 0] },
+            ],
+          },
+        },
+      },
+      // 5. on groupe par event pour avoir le détail
+      {
+        $group: {
+          _id: "$event._id",
+          title: { $first: "$event.title" },
+          date: { $first: "$event.startingDate" },
+          ticketsCount: { $sum: "$quantity" }, // si 1 reg = 3 tickets
+          registrationsCount: { $sum: 1 }, // nombre de lignes de registration
+          totalAmount: { $sum: "$ticketAmount" },
+        },
+      },
+      // 6. on regroupe tout pour l'établissement
+      {
+        $group: {
+          _id: null,
+          establishment: { $first: estId },
+          events: {
+            $push: {
+              eventId: "$_id",
+              title: "$title",
+              date: "$date",
+              ticketsCount: "$ticketsCount",
+              registrationsCount: "$registrationsCount",
+              totalAmount: "$totalAmount",
+            },
+          },
+          totalTickets: { $sum: "$ticketsCount" },
+          totalRegistrations: { $sum: "$registrationsCount" },
+          totalAmount: { $sum: "$totalAmount" },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          establishment: 1,
+          totalTickets: 1,
+          totalRegistrations: 1,
+          totalAmount: 1,
+          events: 1,
+        },
+      },
+    ];
+
+    const result = await (Registration as any).aggregate(pipeline);
+    if (!result || result.length === 0) {
+      return res.json({
+        establishment: establishmentId,
+        totalTickets: 0,
+        totalRegistrations: 0,
+        totalAmount: 0,
+        events: [],
+      });
+    }
+
+    return res.json(result[0]);
+  } catch (err) {
+    Retour.error(`getTicketsStatsByEstablishment error: ${err} `);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+
 // Fonction pour mettre à jour un établissement
 // 🔧 Supprime les clés undefined dans un objet
 const removeUndefined = (obj: Record<string, any>) =>
@@ -564,6 +677,7 @@ export default {
   getAllInformation,
   getPublicInformation,
   // fetchEstablishmentsByJson,
+  getTicketsStatsByEstablishment,
   updateEstablishment,
   deleteEstablishment,
 };

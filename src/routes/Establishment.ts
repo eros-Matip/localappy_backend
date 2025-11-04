@@ -25,6 +25,13 @@ router.get(
   OwnerIsAuthenticated,
   controller.getAllInformation
 );
+
+router.get(
+  "/getTicketsStatsByEstablishment/:establishmentId",
+  OwnerIsAuthenticated,
+  controller.getTicketsStatsByEstablishment
+);
+
 router.get(
   "/getPublicInformation/:establishmentId",
   controller.getPublicInformation

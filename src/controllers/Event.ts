@@ -2186,9 +2186,18 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
     await session.withTransaction(async () => {
       // Recharges sous session
       const eventFinded = await Event.findById(eventId).session(session);
+      const establishmentFinded = await Establishment.findOne({
+        events: eventId,
+      }).session(session);
+
       if (!eventFinded) {
         throw { status: 404, message: "Événement introuvable" };
       }
+
+      if (!establishmentFinded) {
+        throw { status: 404, message: "Etablissement introuvable" };
+      }
+
       if (eventFinded.registrationOpen === false) {
         throw { status: 400, message: "Inscription fermée" };
       }
@@ -2288,8 +2297,9 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
             },
           ],
         });
-
+        establishmentFinded.amountAvailable + newBill.amount;
         await newBill.save({ session });
+        await establishmentFinded.save({ session });
       }
 
       // ---- gratuit: on confirme + email tout de suite
@@ -2320,6 +2330,7 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
       await newRegistration.save({ session });
       eventFinded.registrations.push(newRegistration._id as Types.ObjectId);
       customerFinded.bills.push(newBill._id as Types.ObjectId);
+
       await eventFinded.save();
       await customerFinded.save();
 

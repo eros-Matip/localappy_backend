@@ -67,7 +67,10 @@ interface IEstablishment extends Document {
   owner: Types.ObjectId;
   staff: Types.ObjectId[];
   events: Types.ObjectId[];
+  notifications: Types.ObjectId[];
   ads: Types.ObjectId[];
+  amountAvailable: number;
+  refund: { customer: Types.ObjectId; amount: number }[];
   activated: boolean;
 }
 
