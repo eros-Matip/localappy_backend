@@ -2135,6 +2135,7 @@ const normalizeDayRange = (input: Date) => {
   dayEnd.setHours(23, 59, 59, 999);
   return { dayStart, dayEnd };
 };
+
 const registrationToAnEvent = async (req: Request, res: Response) => {
   const session = await mongoose.startSession();
 
@@ -2150,7 +2151,7 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
       admin: string;
       date: string;
       paymentMethod?: string;
-      price?: number;
+      price?: number; // ⚠️ on va le traiter comme MONTANT TOTAL
       quantity?: number;
     };
 
@@ -2255,8 +2256,19 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
         };
       }
 
-      // 3. Création de la registration
-      const unitPrice = toInt(price) ?? 0;
+      // 3. Prix : on traite le price du body comme un MONTANT TOTAL
+      // si pas de price envoyé, on essaie de reconstruire
+      const totalAmountFromBody = typeof price === "number" ? price : undefined;
+      const eventUnitPrice = toInt((eventFinded as any).price) ?? 0;
+      const totalAmount =
+        totalAmountFromBody !== undefined
+          ? totalAmountFromBody
+          : eventUnitPrice * qty;
+
+      // on déduit un prix unitaire "logique" pour stocker dans la registration
+      const unitPrice =
+        qty > 0 ? Math.round((totalAmount / qty) * 100) / 100 : totalAmount;
+
       const ticketNumber = `TICKET-${Date.now()}-${Math.floor(
         Math.random() * 1000
       )}`;
@@ -2265,23 +2277,22 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
         date: selected,
         customer: customerFinded._id,
         event: eventFinded._id,
-        price: unitPrice,
-        status: unitPrice > 0 ? "pending" : "confirmed",
-        paymentMethod: paymentMethod ?? (unitPrice > 0 ? "unknown" : "free"),
+        price: unitPrice, // prix par ticket
+        status: totalAmount > 0 ? "pending" : "confirmed",
+        paymentMethod: paymentMethod ?? (totalAmount > 0 ? "unknown" : "free"),
         quantity: qty,
         ticketNumber,
       });
 
       // 4. Bill si payant
       let newBill: any = null;
-      if (unitPrice > 0) {
+      if (totalAmount > 0) {
         const invoiceNumber = `INV-${Date.now()}-${Date.now()}`;
-        const billAmount = unitPrice * newRegistration.quantity;
 
         newBill = new Bill({
           customer: customerFinded._id,
           registration: newRegistration._id,
-          amount: billAmount,
+          amount: totalAmount,
           status: "pending",
           paymentMethod: paymentMethod ?? "unknown",
           invoiceNumber,
@@ -2292,25 +2303,16 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
               description: `Inscription à l'événement ${eventFinded.title} (${selected.toLocaleDateString(
                 "fr-FR"
               )})`,
-              quantity: newRegistration.quantity,
+              quantity: qty,
               price: unitPrice,
             },
           ],
         });
 
-        // on sauve la facture dans la session
         await newBill.save({ session });
-
-        // ✅ on incrémente le montant dispo de l'établissement
-        await Establishment.updateOne(
-          { _id: establishmentFinded._id },
-          { $inc: { amountAvailable: billAmount } },
-          { session }
-        );
       }
 
-      // 5. Si gratuit, on confirme + on envoie l'email (facultatif)
-      if (unitPrice <= 0) {
+      if (totalAmount <= 0) {
         customerFinded.eventsReserved ??= [];
         customerFinded.eventsReserved.push(eventFinded._id);
 
@@ -2332,22 +2334,18 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
         await customerFinded.save({ session });
       }
 
-      // 6. Lier registration à l’event
       eventFinded.registrations.push(
         newRegistration._id as unknown as Types.ObjectId
       );
       await eventFinded.save({ session });
 
-      // 7. Lier bill au customer (si payant)
       if (newBill) {
         customerFinded.bills.push(newBill._id as Types.ObjectId);
       }
       await customerFinded.save({ session });
 
-      // 8. Sauver la registration
       await newRegistration.save({ session });
 
-      // 9. Payload de réponse
       resultPayload = {
         message: "Inscription créée avec succès",
         registrationId: newRegistration._id,
