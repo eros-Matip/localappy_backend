@@ -2151,7 +2151,7 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
       admin: string;
       date: string;
       paymentMethod?: string;
-      price?: number; // ⚠️ on va le traiter comme MONTANT TOTAL
+      price?: number; // on va le traiter comme montant total
       quantity?: number;
     };
 
@@ -2184,7 +2184,7 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
     let resultPayload: any = null;
 
     await session.withTransaction(async () => {
-      // 1. Récupérations sous session
+      // 1. Récupérations
       const eventFinded = await Event.findById(eventId).session(session);
       const establishmentFinded = await Establishment.findOne({
         events: eventId,
@@ -2192,20 +2192,16 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
       const customerFinded =
         await Customer.findById(customerId).session(session);
 
-      if (!eventFinded) {
-        throw { status: 404, message: "Événement introuvable" };
-      }
-      if (!establishmentFinded) {
+      if (!eventFinded) throw { status: 404, message: "Événement introuvable" };
+      if (!establishmentFinded)
         throw { status: 404, message: "Etablissement introuvable" };
-      }
-      if (!customerFinded) {
+      if (!customerFinded)
         throw { status: 404, message: "Utilisateur introuvable" };
-      }
       if (eventFinded.registrationOpen === false) {
         throw { status: 400, message: "Inscription fermée" };
       }
 
-      // optionnel: vérifier plage de l’event
+      // optionnel : vérifier plage de l’event
       if (eventFinded.startingDate) {
         const start = new Date(eventFinded.startingDate);
         if (selected < start) {
@@ -2256,16 +2252,17 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
         };
       }
 
-      // 3. Prix : on traite le price du body comme un MONTANT TOTAL
-      // si pas de price envoyé, on essaie de reconstruire
-      const totalAmountFromBody = typeof price === "number" ? price : undefined;
+      // 3. Montant : on traite "price" du body comme un MONTANT TOTAL
+      const totalAmountFromBody =
+        typeof price === "number" && !isNaN(price) ? price : undefined;
       const eventUnitPrice = toInt((eventFinded as any).price) ?? 0;
+
       const totalAmount =
         totalAmountFromBody !== undefined
           ? totalAmountFromBody
           : eventUnitPrice * qty;
 
-      // on déduit un prix unitaire "logique" pour stocker dans la registration
+      // prix unitaire à stocker dans la registration
       const unitPrice =
         qty > 0 ? Math.round((totalAmount / qty) * 100) / 100 : totalAmount;
 
@@ -2277,14 +2274,14 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
         date: selected,
         customer: customerFinded._id,
         event: eventFinded._id,
-        price: unitPrice, // prix par ticket
+        price: unitPrice,
         status: totalAmount > 0 ? "pending" : "confirmed",
         paymentMethod: paymentMethod ?? (totalAmount > 0 ? "unknown" : "free"),
         quantity: qty,
         ticketNumber,
       });
 
-      // 4. Bill si payant
+      // 4. Bill + crédit établissement
       let newBill: any = null;
       if (totalAmount > 0) {
         const invoiceNumber = `INV-${Date.now()}-${Date.now()}`;
@@ -2292,7 +2289,7 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
         newBill = new Bill({
           customer: customerFinded._id,
           registration: newRegistration._id,
-          amount: totalAmount,
+          amount: totalAmount, // ← montant total
           status: "pending",
           paymentMethod: paymentMethod ?? "unknown",
           invoiceNumber,
@@ -2310,8 +2307,16 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
         });
 
         await newBill.save({ session });
+
+        // ✅ on crédite l'établissement avec le bon montant
+        await Establishment.updateOne(
+          { _id: establishmentFinded._id },
+          { $inc: { amountAvailable: totalAmount } },
+          { session } // IMPORTANT
+        );
       }
 
+      // 5. Si gratuit : on confirme direct + mail
       if (totalAmount <= 0) {
         customerFinded.eventsReserved ??= [];
         customerFinded.eventsReserved.push(eventFinded._id);
@@ -2334,16 +2339,19 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
         await customerFinded.save({ session });
       }
 
+      // 6. Lier registration à l’event
       eventFinded.registrations.push(
         newRegistration._id as unknown as Types.ObjectId
       );
       await eventFinded.save({ session });
 
+      // 7. Lier bill au customer
       if (newBill) {
         customerFinded.bills.push(newBill._id as Types.ObjectId);
       }
       await customerFinded.save({ session });
 
+      // 8. Sauver la registration
       await newRegistration.save({ session });
 
       resultPayload = {
