@@ -320,30 +320,17 @@ const getTicketsStatsByEstablishment = async (req: Request, res: Response) => {
     const estId = new mongoose.Types.ObjectId(establishmentId);
 
     const pipeline = [
-      // 1. on ne prend que les registrations “vraies”
-      {
-        $match: {
-          status: { $in: ["paid", "confirmed"] }, // ← ajuste ici si besoin
-        },
-      },
-      // 2. on récupère l'event de chaque registration
+      { $match: { status: { $in: ["paid", "confirmed"] } } },
       {
         $lookup: {
-          from: "events", // nom de la collection Event
+          from: "events",
           localField: "event",
           foreignField: "_id",
           as: "event",
         },
       },
       { $unwind: "$event" },
-      // 3. on filtre sur l'établissement de l'organisateur
-      {
-        $match: {
-          "event.organizer.establishment": estId,
-        },
-      },
-      // 4. on calcule le total de la registration
-      //    total = price * quantity + somme(extras.price)
+      { $match: { "event.organizer.establishment": estId } },
       {
         $addFields: {
           extrasTotal: {
@@ -361,18 +348,16 @@ const getTicketsStatsByEstablishment = async (req: Request, res: Response) => {
           },
         },
       },
-      // 5. on groupe par event pour avoir le détail
       {
         $group: {
           _id: "$event._id",
           title: { $first: "$event.title" },
           date: { $first: "$event.startingDate" },
-          ticketsCount: { $sum: "$quantity" }, // si 1 reg = 3 tickets
-          registrationsCount: { $sum: 1 }, // nombre de lignes de registration
+          ticketsCount: { $sum: "$quantity" },
+          registrationsCount: { $sum: 1 },
           totalAmount: { $sum: "$ticketAmount" },
         },
       },
-      // 6. on regroupe tout pour l'établissement
       {
         $group: {
           _id: null,
@@ -404,18 +389,24 @@ const getTicketsStatsByEstablishment = async (req: Request, res: Response) => {
       },
     ];
 
-    const result = await (Registration as any).aggregate(pipeline);
-    if (!result || result.length === 0) {
+    const stats = await (Registration as any).aggregate(pipeline);
+    const establishment = await Establishment.findById(establishmentId).lean();
+
+    if (!stats || stats.length === 0) {
       return res.json({
         establishment: establishmentId,
         totalTickets: 0,
         totalRegistrations: 0,
         totalAmount: 0,
+        amountAvailable: establishment?.amountAvailable ?? 0,
         events: [],
       });
     }
 
-    return res.json(result[0]);
+    return res.json({
+      ...stats[0],
+      amountAvailable: establishment?.amountAvailable ?? 0,
+    });
   } catch (err) {
     Retour.error(`getTicketsStatsByEstablishment error: ${err} `);
     return res.status(500).json({ message: "Server error" });
