@@ -35,10 +35,21 @@ const customerSchema = new Schema<ICustomer>(
     eventsFavorites: [{ type: Schema.Types.ObjectId, ref: "Event" }],
     themesFavorites: [{ type: Schema.Types.ObjectId, ref: "Theme" }],
     customersFavorites: [{ type: Schema.Types.ObjectId, ref: "Customer" }],
+
     establishmentFavorites: [
       { type: Schema.Types.ObjectId, ref: "Etablishment" },
     ], // Référence vers les établissements favoris du client
     ownerAccount: { type: Schema.Types.ObjectId, ref: "Owner" },
+    establishmentStaffAsking: [
+      {
+        date: Date,
+        establishment: { type: Schema.Types.ObjectId, ref: "Etablishment" },
+        establishmentName: String,
+        role: String, // "Staff", "Manager", etc.
+        askedBy: Schema.Types.ObjectId, // l'owner qui a fait la demande
+        response: Boolean,
+      },
+    ],
     establishmentStaffOf: { type: Schema.Types.ObjectId, ref: "Etablishment" },
     passwordLosted: {
       status: { type: Boolean, default: false },

@@ -33,6 +33,7 @@ const OwnerIsAuthenticated = async (
     if (!resourceId) {
       return res.status(400).json({ error: "Resource ID not found in URL" });
     }
+    console.log("resourceType", resourceType);
 
     // Si c'est une création d'événement (POST) -> pas besoin de vérifier l'existence d'un événement
     if (resourceType === "event" && req.method === "POST") {
@@ -40,7 +41,12 @@ const OwnerIsAuthenticated = async (
       req.body.owner = ownerFinded;
       return next(); // Passer à l'étape suivante (création de l'événement)
     }
-
+    // Si c'est une création d'événement (POST) -> pas besoin de vérifier l'existence d'un événement
+    if (resourceType === "customer" && req.method === "POST") {
+      // Ajouter le propriétaire à la requête
+      req.body.owner = ownerFinded;
+      return next(); // Passer à l'étape suivante (création de l'événement)
+    }
     // Pour les autres requêtes (GET, PUT, DELETE) sur un événement
     if (resourceType === "event" && req.method !== "POST") {
       // Vérification si l'événement appartient à l'un des établissements du propriétaire

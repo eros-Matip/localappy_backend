@@ -3,6 +3,7 @@ import controller from "../controllers/Customer";
 import AdminIsAuthenticated from "../middlewares/IsAuthenticated";
 import multer from "multer";
 import { multerConfig } from "../middlewares/Multer";
+import OwnerIsAuthenticated from "../middlewares/OwnerIsAuthenticated";
 
 const router = express.Router();
 
@@ -18,6 +19,16 @@ router.put(
   cpUpload,
   controller.updateCustomer
 );
+router.post(
+  "/inviteStaff/:establishmentId",
+  OwnerIsAuthenticated,
+  controller.inviteStaff
+);
+router.post(
+  "/respondToStaffInvitation/:invitationId",
+  controller.respondToStaffInvitation
+);
+
 router.put(
   "/addingOrRemoveFavorites",
   AdminIsAuthenticated,

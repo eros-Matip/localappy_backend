@@ -38,6 +38,14 @@ export default interface ICustomer extends Document {
     status: boolean;
     code: string | null;
   };
+  establishmentStaffAsking: {
+    date: Date;
+    establishment: Types.ObjectId;
+    establishmentName: string;
+    role?: string; // "Staff", "Manager", etc.
+    askedBy?: Types.ObjectId; // l'owner qui a fait la demande
+    response?: boolean;
+  }[];
   establishmentStaffOf: Types.ObjectId;
   expoPushToken: string;
   token: string;
