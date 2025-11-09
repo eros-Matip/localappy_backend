@@ -479,7 +479,8 @@ const respondToStaffInvitation = async (req: Request, res: Response) => {
     // on stocke un booléen (true = accept, false = reject)
     (customer.establishmentStaffAsking[idx] as any).response =
       response === "accept";
-
+    customer.establishmentStaffOf =
+      customer.establishmentStaffAsking[idx].establishment;
     await customer.save();
 
     // si l'utilisateur refuse → on s'arrête là

@@ -616,12 +616,27 @@ const updateEstablishment = async (req: Request, res: Response) => {
           }
           // Retraits incrémentaux
           if (Array.isArray(staffPayload.remove)) {
-            const removeSet = new Set(
-              toObjectIds(staffPayload.remove).map(String)
-            );
+            const removedIds = toObjectIds(staffPayload.remove);
+
+            const removeSet = new Set(removedIds.map(String));
+            // on met à jour l'établissement
             establishment.staff = current.filter(
               (id) => !removeSet.has(String(id))
             );
+
+            // on met à jour les customers
+            if (establishmentId) {
+              await Customer.updateMany(
+                { _id: { $in: removedIds } },
+                {
+                  $pull: {
+                    establishmentStaffOf: new mongoose.Types.ObjectId(
+                      establishmentId
+                    ),
+                  },
+                }
+              );
+            }
           }
         }
       } else {
