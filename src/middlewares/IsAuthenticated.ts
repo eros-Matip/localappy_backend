@@ -34,6 +34,11 @@ const CustomerIsAuthenticated = async (
         populate: "registrations",
       },
       { path: "ownerAccount", model: "Owner", populate: "establishments" },
+      {
+        path: "establishmentStaffOf",
+        model: "Establishment",
+        select: "name",
+      },
     ]);
 
     // Si un utilisateur est trouvé avec ce token
