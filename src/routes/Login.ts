@@ -40,7 +40,7 @@ router.post(
           { path: "ownerAccount", model: "Owner", populate: "establishments" },
           {
             path: "establishmentStaffOf",
-            model: "Etablishment",
+            model: "Establishment",
             select: "name",
           },
         ]),
