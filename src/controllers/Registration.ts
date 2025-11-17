@@ -4,21 +4,191 @@ import { NextFunction, Request, Response } from "express";
 import Registration from "../models/Registration";
 import mongoose, { Types } from "mongoose";
 import Retour from "../library/Retour";
+import Establishment from "../models/Establishment";
+import Event from "../models/Event";
 
-const readRegistration = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  const registrationId = req.params.registrationId;
+const readRegistrationByEstablishment = async (req: Request, res: Response) => {
+  try {
+    const { establishmentId } = req.params;
+    const tz = (req.query.tz as string) || "Europe/Paris";
 
-  return Registration.findById(registrationId)
-    .then((registration) =>
-      registration
-        ? res.status(200).json({ message: registration })
-        : res.status(404).json({ message: "Not found" })
-    )
-    .catch((error) => res.status(500).json({ error: error.message }));
+    if (!establishmentId || !mongoose.isValidObjectId(establishmentId)) {
+      return res.status(400).json({ error: "Invalid establishmentId" });
+    }
+
+    const est = await Establishment.findById(establishmentId);
+    if (!est) {
+      return res.status(404).json({ error: "Establishment not found" });
+    }
+
+    const estObjectId = new mongoose.Types.ObjectId(establishmentId);
+
+    const pipeline: mongoose.PipelineStage[] = [
+      // 1) On joint l'event à partir des registrations
+      {
+        $lookup: {
+          from: "events",
+          localField: "event",
+          foreignField: "_id",
+          as: "event",
+        },
+      },
+      { $unwind: "$event" },
+
+      // 2) Filtre : registrations des events de CET établissement + status
+      {
+        $match: {
+          "event.organizer.establishment": estObjectId,
+          status: { $in: ["paid", "confirmed"] }, // commente si tu veux voir tous les statuts
+        },
+      },
+
+      // 3) Lookup du customer
+      {
+        $lookup: {
+          from: "customers",
+          localField: "customer",
+          foreignField: "_id",
+          as: "customer",
+        },
+      },
+      { $unwind: "$customer" },
+
+      // 4) Ajout des clés de date + timestamp
+      {
+        $addFields: {
+          _dayKey: {
+            $dateToString: {
+              format: "%Y-%m-%d",
+              date: "$date",
+              timezone: tz,
+            },
+          },
+          _ts: { $toLong: "$date" },
+        },
+      },
+
+      // 5) Groupement par event + jour
+      {
+        $group: {
+          _id: { event: "$event._id", dayKey: "$_dayKey" },
+
+          qtyForThisDate: { $sum: "$quantity" },
+          tsMax: { $max: "$_ts" },
+
+          // 👉 On garde les registrations + infos customer
+          registrations: {
+            $push: {
+              _id: "$_id",
+              bill: "$bill",
+              invoiceNumber: "$invoiceNumber",
+              price: "$price",
+              quantity: "$quantity",
+              checkInStatus: "$checkInStatus",
+
+              customer: {
+                _id: "$customer._id",
+                // adapte selon ton schéma Customer
+                firstname: "$customer.account.firstname",
+                lastname: "$customer.account.name",
+                email: "$customer.email",
+              },
+            },
+          },
+
+          checkedInCount: {
+            $sum: {
+              $cond: [
+                { $eq: ["$checkInStatus", "checked-in"] },
+                "$quantity",
+                0,
+              ],
+            },
+          },
+          pendingCount: {
+            $sum: {
+              $cond: [{ $eq: ["$checkInStatus", "pending"] }, "$quantity", 0],
+            },
+          },
+          noShowCount: {
+            $sum: {
+              $cond: [{ $eq: ["$checkInStatus", "no-show"] }, "$quantity", 0],
+            },
+          },
+
+          totalPaid: { $sum: "$price" },
+
+          eventDoc: { $first: "$event" },
+        },
+      },
+
+      // 6) Projection intermédiaire : 1 ligne = (date, event)
+      {
+        $project: {
+          _id: 0,
+          dayKey: "$_id.dayKey",
+          regTs: "$tsMax",
+
+          eventId: "$eventDoc._id",
+          title: "$eventDoc.title",
+          startingDate: "$eventDoc.startingDate",
+          endingDate: "$eventDoc.endingDate",
+          image: "$eventDoc.image",
+          theme: "$eventDoc.theme",
+          address: "$eventDoc.address",
+
+          registrations: 1,
+
+          checkInCounts: {
+            checkedIn: "$checkedInCount",
+            pending: "$pendingCount",
+            noShow: "$noShowCount",
+          },
+
+          qtyForThisDate: "$qtyForThisDate",
+          totalPaid: "$totalPaid",
+        },
+      },
+
+      // 7) Regroupement par DATE, avec un tableau d'events
+      {
+        $group: {
+          _id: "$dayKey",
+          date: { $first: "$dayKey" },
+          regTs: { $max: "$regTs" },
+          events: {
+            $push: {
+              eventId: "$eventId",
+              title: "$title",
+              startingDate: "$startingDate",
+              endingDate: "$endingDate",
+              image: "$image",
+              theme: "$theme",
+              address: "$address",
+
+              registrations: "$registrations", // 🔥 chaque registration a maintenant son customer
+
+              checkInCounts: "$checkInCounts",
+              qtyForThisDate: "$qtyForThisDate",
+              totalPaid: "$totalPaid",
+            },
+          },
+        },
+      },
+
+      // 8) Tri des dates (plus récentes d'abord)
+      { $sort: { regTs: -1 } },
+    ];
+
+    const rows = await Registration.aggregate(pipeline).allowDiskUse(true);
+    Retour.info(
+      `Registration grouped by date & event for establishment ${establishmentId}, items: ${rows.length}`
+    );
+    return res.status(200).json({ items: rows });
+  } catch (error: any) {
+    console.error("readRegistrationByEstablishment error:", error);
+    return res.status(500).json({ error: error.message || "Server error" });
+  }
 };
 
 const getUserReservationsGroupedByDate = async (
@@ -237,7 +407,7 @@ const deleteRegistration = async (
 };
 
 export default {
-  readRegistration,
+  readRegistrationByEstablishment,
   getUserReservationsGroupedByDate,
   updateRegistration,
   deleteRegistration,

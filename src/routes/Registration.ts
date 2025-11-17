@@ -5,9 +5,9 @@ import CustomerIsAuthenticated from "../middlewares/IsAuthenticated";
 const router = express.Router();
 
 router.get(
-  "/get/:registrationId",
+  "/getAllByEstablishment/:establishmentId",
   CustomerIsAuthenticated,
-  controller.readRegistration
+  controller.readRegistrationByEstablishment
 );
 router.get(
   "/getAllByCustomer/",
