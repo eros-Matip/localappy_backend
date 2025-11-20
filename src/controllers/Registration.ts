@@ -5,7 +5,6 @@ import Registration from "../models/Registration";
 import mongoose, { Types } from "mongoose";
 import Retour from "../library/Retour";
 import Establishment from "../models/Establishment";
-import Event from "../models/Event";
 
 const readRegistrationByEstablishment = async (req: Request, res: Response) => {
   try {
@@ -88,7 +87,6 @@ const readRegistrationByEstablishment = async (req: Request, res: Response) => {
 
               customer: {
                 _id: "$customer._id",
-                // adapte selon ton schéma Customer
                 firstname: "$customer.account.firstname",
                 lastname: "$customer.account.name",
                 email: "$customer.email",
@@ -139,6 +137,11 @@ const readRegistrationByEstablishment = async (req: Request, res: Response) => {
 
           registrations: 1,
 
+          // on garde les compteurs bruts pour le group suivant
+          checkedInCount: 1,
+          pendingCount: 1,
+          noShowCount: 1,
+
           checkInCounts: {
             checkedIn: "$checkedInCount",
             pending: "$pendingCount",
@@ -156,6 +159,13 @@ const readRegistrationByEstablishment = async (req: Request, res: Response) => {
           _id: "$dayKey",
           date: { $first: "$dayKey" },
           regTs: { $max: "$regTs" },
+
+          // 👉 compteurs JOURNÉE
+          totalTicketsForDay: { $sum: "$qtyForThisDate" }, // tous les billets
+          checkedInForDay: { $sum: "$checkedInCount" }, // déjà scannés
+          pendingForDay: { $sum: "$pendingCount" }, // à scanner
+          noShowForDay: { $sum: "$noShowCount" },
+
           events: {
             $push: {
               eventId: "$eventId",
@@ -166,7 +176,7 @@ const readRegistrationByEstablishment = async (req: Request, res: Response) => {
               theme: "$theme",
               address: "$address",
 
-              registrations: "$registrations", // 🔥 chaque registration a maintenant son customer
+              registrations: "$registrations", // chaque registration a son customer
 
               checkInCounts: "$checkInCounts",
               qtyForThisDate: "$qtyForThisDate",
