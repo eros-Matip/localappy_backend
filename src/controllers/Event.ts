@@ -2313,7 +2313,6 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
 
         const eventDateFormatted = selected.toLocaleString("fr-FR");
         const invoiceUrl = `https://localappy.fr/api/invoice/${newRegistration._id}`;
-
         const deepLink = `localappy://event/${eventFinded?._id}`; // lien pour ouvrir dans l'app expo
         const eventLink = `https://localappy.fr/open?link=${encodeURIComponent(
           deepLink

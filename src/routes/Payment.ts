@@ -233,8 +233,10 @@ router.get(
         "fr-FR"
       );
       const invoiceUrl = `https://localappy.fr/api/invoice/${registration._id}`;
-      const eventLink = `https://localappy.fr/events/${event._id}`;
-
+      const deepLink = `localappy://event/${event?._id}`; // lien pour ouvrir dans l'app expo
+      const eventLink = `https://localappy.fr/open?link=${encodeURIComponent(
+        deepLink
+      )}`;
       await sendEventConfirmationEmail({
         to: customer.email,
         firstName: customer.account.firstname,
@@ -332,7 +334,10 @@ router.post("/event/payment/confirm", async (req: Request, res: Response) => {
       "fr-FR"
     );
     const invoiceUrl = `https://localappy.fr/api/invoice/${registration._id}`;
-    const eventLink = `https://localappy.fr/events/${event._id}`;
+    const deepLink = `localappy://event/${event?._id}`; // lien pour ouvrir dans l'app expo
+    const eventLink = `https://localappy.fr/open?link=${encodeURIComponent(
+      deepLink
+    )}`;
 
     await sendEventConfirmationEmail({
       to: customer.email,
@@ -429,7 +434,10 @@ router.post("/event/payment/cash", async (req: Request, res: Response) => {
       "fr-FR"
     );
     const invoiceUrl = `https://localappy.fr/api/invoice/${registration._id}`;
-    const eventLink = `https://localappy.fr/events/${event._id}`;
+    const deepLink = `localappy://event/${event?._id}`; // lien pour ouvrir dans l'app expo
+    const eventLink = `https://localappy.fr/open?link=${encodeURIComponent(
+      deepLink
+    )}`;
 
     await sendEventConfirmationEmail({
       to: customer.email,
