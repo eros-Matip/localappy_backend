@@ -2313,7 +2313,11 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
 
         const eventDateFormatted = selected.toLocaleString("fr-FR");
         const invoiceUrl = `https://localappy.fr/api/invoice/${newRegistration._id}`;
-        const eventLink = `https://localappy.fr/events/${eventFinded._id}`;
+
+        const deepLink = `localappy://event/${eventFinded?._id}`; // lien pour ouvrir dans l'app expo
+        const eventLink = `https://localappy.fr/open?link=${encodeURIComponent(
+          deepLink
+        )}`;
 
         // NB: si besoin, envoie l'email après commit (outbox pattern)
         await sendEventConfirmationEmail({
