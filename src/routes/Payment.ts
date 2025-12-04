@@ -39,13 +39,11 @@ const countReservedForDay = async (
 };
 
 const router = express.Router();
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2025-01-27.acacia",
-});
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
 // 🅿️ Configuration PayPal
 paypal.configure({
-  mode: "sandbox", // "live" en production
+  mode: "live", // "live" en production
   client_id: process.env.PAYPAL_CLIENT_ID!,
   client_secret: process.env.PAYPAL_CLIENT_SECRET!,
 });
@@ -101,7 +99,7 @@ router.post("/event/payment", async (req: Request, res: Response) => {
                   currency: currency.toUpperCase(),
                 },
                 description,
-                custom: registrationId, // Ajout d’info
+                custom: registrationId,
               },
             ],
             redirect_urls: {

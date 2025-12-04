@@ -8,11 +8,9 @@ const eventSchema = new Schema<IEvent>(
       type: [String],
       validate: {
         validator: function (themes: string[]) {
-          // Si theme est undefined ou non fourni, ne pas valider (laisse passer)
           if (!themes || !Array.isArray(themes) || themes.length === 0) {
             return true;
           }
-          // Sinon, valider que chaque thème n'est pas vide
           return themes.every(
             (theme) => typeof theme === "string" && theme.trim() !== ""
           );
@@ -28,16 +26,16 @@ const eventSchema = new Schema<IEvent>(
       lng: Number,
       geo: {
         type: {
-          type: String, // Type géospatial (doit être "Point")
+          type: String,
           enum: ["Point"],
           required: false,
         },
         coordinates: {
-          type: [Number], // Tableau contenant [longitude, latitude]
+          type: [Number],
           required: false,
           validate: {
             validator: function (coordinates: number[]) {
-              return coordinates.length === 2; // Longitude et latitude
+              return coordinates.length === 2;
             },
             message:
               "Les coordonnées doivent contenir exactement deux valeurs : [longitude, latitude].",
@@ -112,10 +110,26 @@ const eventSchema = new Schema<IEvent>(
       },
     },
     description: String,
+    translations: [
+      {
+        lang: { type: String, required: true }, // "fr", "en", "es", ...
+        title: { type: String },
+        description: { type: String },
+        shortDescription: { type: String },
+        _id: false,
+      },
+    ],
+
     color: String,
   },
   { timestamps: true }
 );
+
+eventSchema.index({
+  title: 1,
+  address: 1,
+  startingDate: 1,
+});
 
 const Event = model<IEvent>("Event", eventSchema);
 export default Event;

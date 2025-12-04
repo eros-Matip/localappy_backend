@@ -4,9 +4,16 @@ export type ByWhoModel = "Customer" | "Owner";
 
 export interface IEventEntry {
   checkedInAt: Date;
-  registration: Types.ObjectId; // ref: "Registration"
-  byWho: Types.ObjectId; // refPath: byWhoModel -> "Customer" | "Owner"
+  registration: Types.ObjectId;
+  byWho: Types.ObjectId;
   byWhoModel: ByWhoModel;
+}
+
+export interface IEventTranslation {
+  lang: string; // "fr", "en", "es", "de", "nl", etc.
+  title?: string;
+  description?: string;
+  shortDescription?: string;
 }
 
 export default interface IEvent extends Document {
@@ -17,12 +24,11 @@ export default interface IEvent extends Document {
   endingDate: Date;
   address: string;
   location: {
-    lat: number; // Latitude pour compatibilité avec l'ancien format
-    lng: number; // Longitude pour compatibilité avec l'ancien format
+    lat: number;
+    lng: number;
     geo?: {
-      // Champ géospatial (facultatif pour éviter de casser l'ancien code)
       type: "Point";
-      coordinates: [number, number]; // [longitude, latitude]
+      coordinates: [number, number];
     };
   };
   price: number;
@@ -52,7 +58,12 @@ export default interface IEvent extends Document {
     phone: string;
   };
   image: string[];
+
+  // Texte principal FR
   description: string;
+  // 🔥 MULTILINGUE propre et modulable
+  translations: IEventTranslation[];
+
   color: string;
   isDraft: boolean;
 }

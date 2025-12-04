@@ -369,17 +369,6 @@ function extractPriceSpecification(fileData: any) {
       const price = spec["schema:price"]; // Nouveau traitement
       const currency = spec["schema:priceCurrency"];
 
-      console.log(
-        "Max Prices:",
-        maxPrices,
-        "Min Prices:",
-        minPrices,
-        "Price:",
-        price,
-        "Currency:",
-        currency
-      );
-
       // Si maxPrice ou minPrice ne sont pas définis, utiliser le champ "price"
       if (!maxPrices && price) {
         maxPrice = Math.max(maxPrice, parseFloat(price));
@@ -421,22 +410,43 @@ function extractPriceSpecification(fileData: any) {
     });
   });
 
-  console.log(
-    "Final Values - Min Price:",
-    minPrice,
-    "Max Price:",
-    maxPrice,
-    "Currency:",
-    priceCurrency
-  );
-
   return {
     priceCurrency,
     minPrice,
     maxPrice,
-    price: maxPrice, // Utiliser le prix maximum comme prix principal
+    price: minPrice,
   };
 }
+
+const extractTranslations = (fileData: any) => {
+  const translations = [];
+
+  // Labels (title)
+  const labels = fileData["rdfs:label"] || {};
+
+  // Comment (short description)
+  const comments = fileData["rdfs:comment"] || {};
+
+  // Long description
+  const descObj = fileData.hasDescription?.[0]?.["dc:description"] || {};
+
+  const supportedLangs = new Set([
+    ...Object.keys(labels),
+    ...Object.keys(comments),
+    ...Object.keys(descObj),
+  ]);
+
+  for (const lang of supportedLangs) {
+    translations.push({
+      lang,
+      title: labels[lang]?.[0] || undefined,
+      shortDescription: comments[lang]?.[0] || undefined,
+      description: descObj[lang]?.[0] || undefined,
+    });
+  }
+
+  return translations;
+};
 
 // const updateOrCreateEventFromJSON = async (
 //   req: Request,
@@ -474,7 +484,6 @@ function extractPriceSpecification(fileData: any) {
 
 //     for (const file of AllEvents) {
 //       try {
-//         console.info(`Traitement du fichier : ${file.file}`);
 //         const filePath = path.join(basePath, file.file);
 //         const fileData = JSON.parse(fs.readFileSync(filePath, "utf-8"));
 //         // Titre et description
@@ -593,6 +602,7 @@ function extractPriceSpecification(fileData: any) {
 //           const newEvent = new Event({
 //             title,
 //             description,
+//             translations: extractTranslations(fileData),
 //             address: extractAddress(fileData),
 //             location: {
 //               lat: newLat,
@@ -610,7 +620,9 @@ function extractPriceSpecification(fileData: any) {
 //           });
 //           await newEvent.save();
 //           createdEvents.push({ id: newEvent._id, title: newEvent.title });
-//           console.info(`Nouvel événement créé : ${newEvent.title}`);
+//           Retour.info(
+//             `<<n°:${createdEvents.length} Nouvel événement créé>>: ${newEvent.title}`
+//           );
 //         } else {
 //           dbEvent.description = description;
 //           Object(dbEvent).location = {
@@ -620,11 +632,12 @@ function extractPriceSpecification(fileData: any) {
 //           };
 //           dbEvent.image = images;
 //           dbEvent.price = Object(priceSpecification).price;
+//           dbEvent.translations = extractTranslations(fileData);
 //           dbEvent.priceSpecification = priceSpecification;
 //           dbEvent.acceptedPaymentMethod = acceptedPaymentMethod;
 //           await dbEvent.save();
 //           updatedEvents.push({ id: dbEvent._id, title: dbEvent.title });
-//           console.info(`Événement mis à jour : ${dbEvent.title}`);
+//           Retour.info(`Événement mis à jour : ${dbEvent.title}`);
 //         }
 //       } catch (error) {
 //         unmatchedFiles.push(file.file);
