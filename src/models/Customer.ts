@@ -36,10 +36,10 @@ const customerSchema = new Schema<ICustomer>(
     themesFavorites: [{ type: Schema.Types.ObjectId, ref: "Theme" }],
     customersFavorites: [{ type: Schema.Types.ObjectId, ref: "Customer" }],
     establishmentFavorites: [
-      { type: Schema.Types.ObjectId, ref: "Etablishment" },
+      { type: Schema.Types.ObjectId, ref: "Establishment" },
     ], // Référence vers les établissements favoris du client
     ownerAccount: { type: Schema.Types.ObjectId, ref: "Owner" },
-    establishmentStaffOf: { type: Schema.Types.ObjectId, ref: "Etablishment" },
+    establishmentStaffOf: { type: Schema.Types.ObjectId, ref: "Establishment" },
     passwordLosted: {
       status: { type: Boolean, default: false },
       code: { type: String },

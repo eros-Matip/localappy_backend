@@ -2953,7 +2953,7 @@ export default {
   getEventsByPosition,
   getEventByDate,
   updateEvent,
-  // updateOrCreateEventFromJSON,
+  // updateOrCreateEventFromJSON
   // updateEventForParis,
   // migrateData,
   getCoordinatesFromAPI,
