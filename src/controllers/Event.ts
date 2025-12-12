@@ -923,6 +923,7 @@ const createEventForAnEstablishment = async (req: Request, res: Response) => {
         email: req.body.organizer?.email || draftEvent.organizer.email,
         phone: req.body.organizer?.phone || draftEvent.organizer.phone,
       },
+      translations: req.body.translations,
       registrationOpen:
         req.body.registrationOpen !== undefined
           ? req.body.registrationOpen
