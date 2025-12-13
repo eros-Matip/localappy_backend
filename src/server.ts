@@ -40,6 +40,7 @@ import OwnerRoutes from "./routes/Owner";
 import EstablishmentRoutes from "./routes/Establishment";
 import CustomerRoutes from "./routes/Customer";
 import LoginRoute from "./routes/Login";
+import ToolsRoutes from "./routes/Tools";
 import PaymentRoute from "./routes/Payment";
 import socialLoginRoute from "./routes/LoginBySocial";
 import verifPhoneRoute from "./routes/VerifCode";
@@ -147,6 +148,7 @@ const startServer = () => {
   router.use("/ads/", AdsRoutes);
   router.use("/registration/", RegistrationRoutes);
   router.use(LoginRoute);
+  router.use(ToolsRoutes);
   router.use(PaymentRoute);
   router.use(ResendCodeRoute);
   router.use(socialLoginRoute);
