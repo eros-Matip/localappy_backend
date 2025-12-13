@@ -53,7 +53,6 @@ CONTRAINTES :
 - 6 à 10 phrases.
 - Style : chaleureux, clair, concret (on explique ce qu'il va se passer).
 - Ton : positif, accessible au grand public.
-- Pas de markdown, pas de titre.
 - Terminer par une phrase douce, par exemple : "Nous serons ravis de vous accueillir."
 
 DONNÉES DE L'ÉVÉNEMENT :
@@ -62,6 +61,11 @@ DONNÉES DE L'ÉVÉNEMENT :
 - Adresse : ${address || "non précisée"}
 - Date de début : ${startingDate || "non précisée"}
 - Date de fin : ${endingDate || "non précisée"}
+
+FORMAT :
+- Écris un texte fluide, composé de 2 à 4 paragraphes bien séparés.
+- Chaque paragraphe doit contenir 2 à 3 phrases.
+- Sauts de ligne REQUIS entre les paragraphes.
 
 DESCRIPTION EXISTANTE A ENRICHIR (peut être vide) :
 ${partialDescription || "Aucune description fournie."}
