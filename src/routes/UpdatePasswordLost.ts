@@ -78,7 +78,7 @@ router.post(
 
       const emailParams = new EmailParams()
         .setFrom(sender)
-        .setTo([recipient]) // ✅ Correction ici, on utilise setTo([])
+        .setTo([recipient])
         .setSubject("Réinitialisation de votre mot de passe")
         .setTemplateId("neqvygm5v3z40p7w")
         .setPersonalization(personalization);
