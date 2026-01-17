@@ -7,6 +7,14 @@ const EstablishmentSchema = new Schema<IEstablishment>(
     email: String,
     phone: String,
     type: { type: [String] }, // Types d'activité (café, restaurant, boutique...)
+
+    // ✅ NOUVEAU (safe) : différencier entreprise / association
+    legalForm: {
+      type: String,
+      enum: ["company", "association"],
+      default: "company",
+    },
+
     address: {
       street: { type: String },
       city: { type: String },
@@ -42,6 +50,7 @@ const EstablishmentSchema = new Schema<IEstablishment>(
     description: { type: String }, // Description du commerce
     logo: { type: String }, // Image principale ou logo
     photos: { type: [String] },
+
     openingHours: [
       {
         dayOfWeek: { type: String },
@@ -57,19 +66,32 @@ const EstablishmentSchema = new Schema<IEstablishment>(
         label: { type: String },
       },
     ],
+
     legalInfo: {
-      siret: { type: String },
+      // ✅ EXISTANT : on garde
+      siret: { type: String }, // entreprise OU association si elle en a un
       insuranceCertificate: { type: String },
-      KBis: { public_id: String, secure_url: String },
+      KBis: { public_id: String, secure_url: String }, // entreprise
       activityCodeNAF: { type: String },
+
+      // ✅ NOUVEAU (safe) : RNA association
+      rna: { type: String },
+
+      // ✅ NOUVEAU (safe) : document légal association (statuts, récépissé, JO, etc.)
+      legalDocument: {
+        public_id: { type: String },
+        secure_url: { type: String },
+        label: { type: String }, // ex: "Statuts", "Récépissé"
+      },
     },
+
     ads: [{ type: Schema.Types.ObjectId, ref: "Ads" }],
     owner: { type: Schema.Types.ObjectId, ref: "Owner" },
     staff: [{ type: Schema.Types.ObjectId, ref: "Customer" }],
     events: [{ type: Schema.Types.ObjectId, ref: "Event" }],
     activated: { type: Boolean, default: false },
   },
-  { timestamps: true } // Ajoute automatiquement `createdAt` et `updatedAt`
+  { timestamps: true }
 );
 
 const Establishment = model<IEstablishment>(

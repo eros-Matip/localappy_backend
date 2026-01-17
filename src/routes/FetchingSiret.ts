@@ -143,6 +143,7 @@ router.post(
           society: found.name ?? null,
           currentName: null,
           siret: found.siret ?? null,
+          rna: found.rna ?? null,
           adressLabel: `${address} ${zip} ${city}`.trim(),
           adress: address || null,
           zip,

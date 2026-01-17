@@ -38,16 +38,25 @@ interface IPaymentMethod {
 }
 
 interface ILegalInfo {
-  siret: { type: String };
+  siret?: string;
+  rna?: string;
   insuranceCertificate?: string;
+
   KBis?: {
     public_id: string;
     secure_url: string;
   };
+
+  legalDocument?: {
+    // pour association (statuts / récépissé / etc.)
+    public_id: string;
+    secure_url: string;
+    label?: string;
+  };
+
   activityCodeNAF?: string;
 }
 
-// Interface principale pour l’établissement
 interface IEstablishment extends Document {
   name: string;
   email: string;
@@ -58,12 +67,15 @@ interface IEstablishment extends Document {
   address: IAddress;
   location: ILocation;
   contact?: IContact;
-  logo: { type: String };
+  logo: string;
   photos: string[];
   description?: string;
   openingHours: IOpeningHours[];
   acceptedPayments: IPaymentMethod[];
+
+  legalForm: "company" | "association";
   legalInfo?: ILegalInfo;
+
   owner: Types.ObjectId;
   staff: Types.ObjectId[];
   events: Types.ObjectId[];

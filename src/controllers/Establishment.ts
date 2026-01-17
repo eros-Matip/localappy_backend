@@ -14,8 +14,18 @@ import Customer from "../models/Customer";
 
 const cloudinary = require("cloudinary");
 
-// Fonction pour créer un nouvel établissement avec les données récupérées depuis l'INSEE
-const createEstablishment = async (req: Request, res: Response) => {
+const normalizeRna = (input: string): string | null => {
+  if (!input) return null;
+  const cleaned = String(input)
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .replace(/[^A-Z0-9]/g, "");
+  if (/^W\d{9}$/.test(cleaned)) return cleaned;
+  if (/^\d{9}$/.test(cleaned)) return `W${cleaned}`;
+  return null;
+};
+
+export const createEstablishment = async (req: Request, res: Response) => {
   const {
     activity,
     website,
@@ -25,69 +35,85 @@ const createEstablishment = async (req: Request, res: Response) => {
     adressLabel,
     society,
     siret,
+    rna, // ✅ nouveau : RNA association
     adress,
     city,
     zip,
     activityCodeNAF,
+    legalForm, // ✅ "company" | "association"
   } = req.body;
 
-  if (
-    !activity ||
-    !adressLabel ||
-    !society ||
-    !siret ||
-    !adress ||
-    !city ||
-    !zip
-  ) {
-    Retour.warn("Some value is missing");
-    return res.status(404).json({ message: "Some value is missing" });
-  }
-  console.log(Object(req.files).file);
+  const form = String(legalForm || "company");
+  const isAssociation = form === "association";
 
-  if (!Object(req.files).file) {
-    Retour.warn("KBis is missing");
-    return res.status(400).json({ message: "KBis is missing" });
+  // ✅ champs communs obligatoires
+  if (!activity || !adressLabel || !society || !adress || !city || !zip) {
+    Retour.warn("Some value is missing");
+    return res.status(400).json({ message: "Some value is missing" });
   }
-  // Récupération des informations de l'établissement dans req.body
-  const fileKeys = req.files ? Object(req.files).file : []; // Récupérer le fichier KBis envoyé
+
+  // ✅ validation entreprise vs asso
+  if (!isAssociation) {
+    if (!siret || !/^\d{14}$/.test(String(siret).trim())) {
+      Retour.warn("SIRET missing/invalid");
+      return res.status(400).json({ message: "SIRET manquant ou invalide." });
+    }
+  } else {
+    // RNA fortement recommandé pour une asso (sinon doublons)
+    const rnaNorm = normalizeRna(rna);
+    if (!rnaNorm) {
+      Retour.warn("RNA missing/invalid");
+      return res.status(400).json({
+        message:
+          "RNA manquant ou invalide. Format attendu: W######### ou #########",
+      });
+    }
+  }
+
+  // ✅ fichier requis : KBis pour entreprise, document légal pour asso
+  const fileArr = req.files ? (Object(req.files) as any).file : [];
+  const hasFile = Array.isArray(fileArr) && fileArr.length > 0;
+
+  if (!hasFile) {
+    Retour.warn(
+      isAssociation ? "Legal document is missing" : "KBis is missing",
+    );
+    return res.status(400).json({
+      message: isAssociation
+        ? "Document légal association manquant (statuts/récépissé)."
+        : "KBis is missing",
+    });
+  }
 
   try {
-    // Vérifier si le propriétaire existe dans la base de données
+    // ✅ owner
     const owner = await Owner.findById(req.body.owner);
-
     if (!owner) {
       Retour.warn("Owner not found");
       return res.status(404).json({ message: "Owner not found" });
     }
-
-    // Vérifier si le propriétaire est validé
     if (!owner.isVerified) {
       Retour.warn("Owner not verified");
       return res.status(400).json({ message: "Owner not verified" });
     }
 
-    // Chemin du dossier Cloudinary pour cet Owner
+    // ✅ upload Cloudinary (KBis ou doc association)
     const cloudinaryFolder = `${owner.account.firstname}_${owner.account.name}_folder`;
 
-    // Téléchargement du fichier KBis (s'il est fourni)
-    let kbisUploadResult = null;
-    if (fileKeys.length > 0) {
-      kbisUploadResult = await cloudinary.v2.uploader.upload(fileKeys[0].path, {
-        folder: cloudinaryFolder, // Télécharger dans le dossier spécifique de l'owner
-        public_id: "KBis", // Nom du fichier
-        resource_type: "image", // Spécifier que c'est une image
-      });
-    }
+    const uploadResult = await cloudinary.v2.uploader.upload(fileArr[0].path, {
+      folder: cloudinaryFolder,
+      public_id: isAssociation ? "AssociationDocument" : "KBis",
+      resource_type: "image",
+    });
 
-    // Obtenir les coordonnées de l'adresse via l'API adresse.data.gouv.fr
+    // ✅ geocode
     const responseApiGouv = await axios.get(
       `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(
-        adressLabel
-      )}`
+        adressLabel,
+      )}`,
     );
 
-    if (!responseApiGouv.data.features.length) {
+    if (!responseApiGouv.data.features?.length) {
       Retour.warn("Invalid address, no coordinates found.");
       return res
         .status(400)
@@ -97,74 +123,106 @@ const createEstablishment = async (req: Request, res: Response) => {
     const latitude = responseApiGouv.data.features[0].geometry.coordinates[1];
     const longitude = responseApiGouv.data.features[0].geometry.coordinates[0];
 
-    // Vérifier si un établissement avec le même nom et la même localisation existe déjà
-    const existingEstablishment = await Establishment.findOne({
-      name: society,
-      siret: siret,
-    });
-
-    if (existingEstablishment) {
-      Retour.warn("An establishment with the same name already exists");
-      return res.status(409).json({
-        message: "An establishment with the same name already exists",
+    // ✅ unicité
+    if (!isAssociation) {
+      const existing = await Establishment.findOne({
+        "legalInfo.siret": String(siret).trim(),
       });
+
+      if (existing) {
+        Retour.warn("Establishment already exists (SIRET)");
+        return res.status(409).json({
+          message: "An establishment with the same SIRET already exists",
+        });
+      }
+    } else {
+      const rnaNorm = normalizeRna(rna)!;
+
+      const existing = await Establishment.findOne({
+        legalForm: "association",
+        "legalInfo.rna": rnaNorm,
+      });
+
+      if (existing) {
+        Retour.warn("Establishment already exists (RNA)");
+        return res.status(409).json({
+          message: "An association with the same RNA already exists",
+        });
+      }
     }
 
-    // Créer un nouvel établissement avec les données de l'INSEE et les données utilisateur
+    // ✅ création
     const establishment = new Establishment({
       name: society,
-      type: activity,
-      siret: siret,
-      picture: {
-        public_id: "",
-        secure_url: "",
-      },
+      type: Array.isArray(activity) ? activity : [activity],
+      legalForm: isAssociation ? "association" : "company",
+
       address: {
         street: adress,
-        city: city,
+        city,
         postalCode: zip,
         country: "FRANCE",
       },
+
       location: {
         lat: latitude,
         lng: longitude,
       },
+
       contact: {
         website,
         socialMedia: { facebook, instagram, twitter },
       },
+
       legalInfo: {
-        registrationNumber: siret,
-        KBis: kbisUploadResult
+        // entreprise
+        siret: !isAssociation
+          ? String(siret).trim()
+          : siret
+            ? String(siret).trim()
+            : undefined,
+        KBis: !isAssociation
           ? {
-              public_id: kbisUploadResult.public_id,
-              secure_url: kbisUploadResult.secure_url,
+              public_id: uploadResult.public_id,
+              secure_url: uploadResult.secure_url,
             }
-          : null, // Enregistrer les infos Cloudinary pour le KBis
-        activityCodeNAF: activityCodeNAF,
+          : undefined,
+
+        // association
+        rna: isAssociation ? normalizeRna(rna)! : undefined,
+        legalDocument: isAssociation
+          ? {
+              public_id: uploadResult.public_id,
+              secure_url: uploadResult.secure_url,
+              label: "Statuts / Récépissé",
+            }
+          : undefined,
+
+        activityCodeNAF: activityCodeNAF || undefined,
       },
+
       owner: owner._id,
       events: [],
+      ads: [],
+      staff: [],
+      activated: false,
     });
 
-    // Sauvegarder l'établissement dans la base de données
     await establishment.save();
 
-    // Ajouter l'établissement à la liste des établissements du propriétaire
-    owner.establishments.push(Object(establishment)._id);
+    owner.establishments.push((establishment as any)._id);
     await owner.save();
 
-    // Retourner la réponse avec l'établissement créé
     Retour.info("Establishment created successfully");
     return res.status(201).json({
       message: "Establishment created successfully",
       establishment,
     });
-  } catch (error) {
-    Retour.error(`Error creating establishment: ${error}`);
+  } catch (error: any) {
+    Retour.error(`Error creating establishment: ${error?.message || error}`);
     return res.status(500).json({
       error: "Failed to create establishment",
-      details: error,
+      details: error?.message || error,
     });
   }
 };
@@ -188,7 +246,7 @@ const getAllFiles = (directory: string): string[] => {
 const getAllInformation = async (req: Request, res: Response) => {
   try {
     const establishmentFinded = await Establishment.findById(
-      req.params.establishmentId
+      req.params.establishmentId,
     ).populate([
       {
         path: "staff",
@@ -243,7 +301,7 @@ const getAllInformation = async (req: Request, res: Response) => {
         const registrationsCount = Array.isArray(evt.registrations)
           ? evt.registrations.reduce(
               (sum: number, r: any) => sum + (r?.quantity || 0),
-              0
+              0,
             )
           : 0;
 
@@ -252,7 +310,7 @@ const getAllInformation = async (req: Request, res: Response) => {
         // On enrichit l'event retourné avec un champ dérivé sans changer les clés top-level
         const base = typeof evt.toObject === "function" ? evt.toObject() : evt;
         return { ...base, registrationsCount };
-      }
+      },
     );
 
     return res.status(200).json({
@@ -273,10 +331,10 @@ const getAllInformation = async (req: Request, res: Response) => {
 const getPublicInformation = async (req: Request, res: Response) => {
   try {
     const establishment = await Establishment.findById(
-      req.params.establishmentId
+      req.params.establishmentId,
     )
       .select(
-        "name description address location photos openingHours logo events contact acceptedPayments"
+        "name description address location photos openingHours logo events contact acceptedPayments",
       )
       .populate({
         path: "events",
@@ -391,7 +449,7 @@ const updateEstablishment = async (req: Request, res: Response) => {
 
       try {
         const { data } = await axios.get(
-          `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(fullAddress)}&limit=1`
+          `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(fullAddress)}&limit=1`,
         );
 
         if (data?.features?.length > 0) {
@@ -460,11 +518,11 @@ const updateEstablishment = async (req: Request, res: Response) => {
       };
 
       const ensureExistingCustomers = async (
-        ids: mongoose.Types.ObjectId[]
+        ids: mongoose.Types.ObjectId[],
       ) => {
         if (!ids.length) return [];
         const existing = await Customer.find({ _id: { $in: ids } }).select(
-          "_id"
+          "_id",
         );
         const keep = new Set(existing.map((d) => String(d._id)));
         return ids.filter((id) => keep.has(String(id)));
@@ -485,7 +543,7 @@ const updateEstablishment = async (req: Request, res: Response) => {
 
       // État courant normalisé
       const current: mongoose.Types.ObjectId[] = Array.isArray(
-        establishment.staff
+        establishment.staff,
       )
         ? establishment.staff.map((id: any) => new mongoose.Types.ObjectId(id))
         : [];
@@ -499,30 +557,30 @@ const updateEstablishment = async (req: Request, res: Response) => {
         // Remplacement explicite
         if (Array.isArray(staffPayload.set)) {
           let setIds = await ensureExistingCustomers(
-            toObjectIds(staffPayload.set)
+            toObjectIds(staffPayload.set),
           );
           establishment.staff = uniq(setIds);
         } else {
           // Ajouts incrémentaux
           if (Array.isArray(staffPayload.add)) {
             let addIds = await ensureExistingCustomers(
-              toObjectIds(staffPayload.add)
+              toObjectIds(staffPayload.add),
             );
             establishment.staff = uniq([...current, ...addIds]);
           }
           // Retraits incrémentaux
           if (Array.isArray(staffPayload.remove)) {
             const removeSet = new Set(
-              toObjectIds(staffPayload.remove).map(String)
+              toObjectIds(staffPayload.remove).map(String),
             );
             establishment.staff = current.filter(
-              (id) => !removeSet.has(String(id))
+              (id) => !removeSet.has(String(id)),
             );
           }
         }
       } else {
         console.warn(
-          "[updateEstablishment] 'staff' doit être un tableau d'IDs ou un objet { add/remove/set }."
+          "[updateEstablishment] 'staff' doit être un tableau d'IDs ou un objet { add/remove/set }.",
         );
       }
     }
@@ -549,7 +607,7 @@ const deleteEstablishment = async (req: Request, res: Response) => {
     // Optionnel : Retirer l'établissement de la liste des établissements du propriétaire
     await Owner.updateOne(
       { establishments: id },
-      { $pull: { establishments: id } }
+      { $pull: { establishments: id } },
     );
 
     // Retourner un message de succès après suppression
