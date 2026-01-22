@@ -71,7 +71,7 @@ const createEstablishment = async (req: Request, res: Response) => {
   }
 
   // ✅ fichier requis : KBis pour entreprise, document légal pour asso
-  const fileArr = req.files ? (Object(req.files) as any).file : [];
+  const fileArr = req.files ? (Object(req.files) as any).photos : [];
   const hasFile = Array.isArray(fileArr) && fileArr.length > 0;
 
   if (!hasFile) {
