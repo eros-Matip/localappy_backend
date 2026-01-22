@@ -25,7 +25,7 @@ const normalizeRna = (input: string): string | null => {
   return null;
 };
 
-export const createEstablishment = async (req: Request, res: Response) => {
+const createEstablishment = async (req: Request, res: Response) => {
   const {
     activity,
     website,
