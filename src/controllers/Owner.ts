@@ -56,16 +56,16 @@ agenda.define("delete unverified owner", async (job: Job) => {
     }
   } catch (error) {
     Retour.error(
-      `Failed to delete unverified owner with ID ${job.attrs.data.ownerId}`
+      `Failed to delete unverified owner with ID ${job.attrs.data.ownerId}`,
     );
     console.error(
       `Failed to delete unverified owner with ID ${job.attrs.data.ownerId}:`,
-      error
+      error,
     );
   }
 });
 
-export const createOwner = async (req: Request, res: Response) => {
+const createOwner = async (req: Request, res: Response) => {
   try {
     const {
       email,
@@ -241,10 +241,10 @@ const updateOwner = async (req: Request, res: Response) => {
 // Supprimer un propriétaire par son ID
 const deleteOwner = async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const { ownerId } = req.params;
 
     // Supprimer l'owner par son ID
-    const deletedOwner = await Owner.findByIdAndDelete(id);
+    const deletedOwner = await Owner.findByIdAndDelete(ownerId);
     if (!deletedOwner) {
       return res.status(404).json({ message: "Owner not found" });
     }
