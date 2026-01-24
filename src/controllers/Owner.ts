@@ -108,8 +108,6 @@ const createOwner = async (req: Request, res: Response) => {
 
     const fileKeys = req.files ? Object(req.files).file : [];
 
-    console.log("fileKeys", fileKeys);
-
     if (!fileKeys.length) {
       console.error("Identity document is missing");
       return res.status(400).json({ message: "Identity document is missing" });

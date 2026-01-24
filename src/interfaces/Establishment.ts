@@ -1,5 +1,18 @@
 import { Document, Types } from "mongoose";
 
+export interface IStaffPublic {
+  _id: Types.ObjectId;
+  email: string;
+  account: {
+    firstname: string;
+    name: string;
+    phoneNumber?: number;
+  };
+  picture?: { url?: string; public_id?: string } | null;
+  role?: string;
+  isActive?: boolean;
+}
+
 interface IOpeningHours {
   dayOfWeek: string;
   opens: string;
@@ -48,7 +61,6 @@ interface ILegalInfo {
   };
 
   legalDocument?: {
-    // pour association (statuts / récépissé / etc.)
     public_id: string;
     secure_url: string;
     label?: string;
@@ -77,7 +89,10 @@ interface IEstablishment extends Document {
   legalInfo?: ILegalInfo;
 
   owner: Types.ObjectId;
-  staff: Types.ObjectId[];
+
+  // ✅ soit ObjectId (DB), soit objets (API populate)
+  staff: Types.ObjectId[] | IStaffPublic[];
+
   events: Types.ObjectId[];
   ads: Types.ObjectId[];
   activated: boolean;

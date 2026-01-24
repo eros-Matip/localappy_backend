@@ -8,7 +8,7 @@ const cloudinary = require("cloudinary");
 import Customer from "../models/Customer";
 import Retour from "../library/Retour";
 import axios from "axios";
-import mongoose from "mongoose";
+import mongoose, { Types } from "mongoose";
 import Event from "../models/Event";
 import Theme from "../models/Theme";
 import Establishment from "../models/Establishment";
@@ -59,7 +59,7 @@ const createCustomer = async (req: Request, res: Response) => {
     if (address && city && zip) {
       try {
         const responseApiGouv = await axios.get(
-          `https://api-adresse.data.gouv.fr/search/?q=${address} ${zip} ${city}`
+          `https://api-adresse.data.gouv.fr/search/?q=${address} ${zip} ${city}`,
         );
 
         // Vérifie que l'API a retourné des données valides
@@ -214,7 +214,7 @@ const updateCustomer = async (req: Request, res: Response) => {
     await customer.save();
 
     Retour.log(
-      `customer ${customer.account.firstname} ${customer.account.name} has updated`
+      `customer ${customer.account.firstname} ${customer.account.name} has updated`,
     );
 
     return res.status(200).json({ message: "Customer updated", customer });
@@ -280,7 +280,7 @@ const addingOrRemoveFavorites = async (req: Request, res: Response) => {
       customerFavorites: mongoose.Types.ObjectId[],
       model: any,
       type: string,
-      field?: string
+      field?: string,
     ) => {
       for (const value of arr) {
         let target;
@@ -304,7 +304,7 @@ const addingOrRemoveFavorites = async (req: Request, res: Response) => {
             }
           } else if (action === "remove") {
             const index = customerFavorites.findIndex((favId) =>
-              favId.equals(objectId)
+              favId.equals(objectId),
             );
             if (index !== -1) {
               customerFavorites.splice(index, 1);
@@ -327,7 +327,7 @@ const addingOrRemoveFavorites = async (req: Request, res: Response) => {
         eventsFavoritesArr,
         Object(customer).eventsFavorites,
         Event,
-        "Event"
+        "Event",
       );
     }
     if (themesFavoritesArr) {
@@ -336,7 +336,7 @@ const addingOrRemoveFavorites = async (req: Request, res: Response) => {
         Object(customer).themesFavorites,
         Theme,
         "Theme",
-        "theme" // Recherche par le champ `theme`
+        "theme", // Recherche par le champ `theme`
       );
     }
     if (customersFavoritesArr) {
@@ -344,7 +344,7 @@ const addingOrRemoveFavorites = async (req: Request, res: Response) => {
         customersFavoritesArr,
         Object(customer).customersFavorites,
         Customer,
-        "Customer"
+        "Customer",
       );
     }
     if (establishmentFavoritesArr) {
@@ -352,7 +352,7 @@ const addingOrRemoveFavorites = async (req: Request, res: Response) => {
         establishmentFavoritesArr,
         Object(customer).establishmentFavorites,
         Establishment,
-        "Establishment"
+        "Establishment",
       );
     }
 
@@ -372,12 +372,234 @@ const addingOrRemoveFavorites = async (req: Request, res: Response) => {
   }
 };
 
+// --- helpers ---
+const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const uniqObjectIds = (arr: (Types.ObjectId | string)[]) => {
+  const seen = new Set<string>();
+  const out: Types.ObjectId[] = [];
+  for (const v of arr) {
+    const id =
+      typeof v === "string"
+        ? new Types.ObjectId(v)
+        : new Types.ObjectId(v as any);
+    const key = id.toString();
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(id);
+    }
+  }
+  return out;
+};
+
+/**
+ * POST /customer/inviteStaff/:establishmentId
+ * Body: { firstname, name, email, role?, admin }
+ * admin: string (customerId) ou objet { _id: string }
+ */
+const inviteStaff = async (req: Request, res: Response) => {
+  try {
+    const { establishmentId } = req.params;
+    const { firstname, name, email, role, owner } = req.body;
+
+    if (!mongoose.isValidObjectId(establishmentId)) {
+      return res.status(400).json({ message: "Invalid establishmentId" });
+    }
+
+    const adminId =
+      typeof owner === "string" ? owner : (owner?._id as string | undefined);
+
+    if (!adminId || !mongoose.isValidObjectId(adminId)) {
+      return res.status(400).json({ message: "Admin ID is required" });
+    }
+
+    if (!firstname?.trim() || !name?.trim() || !email?.trim()) {
+      return res.status(400).json({
+        message: "firstname, name and email are required",
+      });
+    }
+
+    const establishmentFinded = await Establishment.findById(establishmentId);
+    if (!establishmentFinded) {
+      return res.status(404).json({ message: "Establishment not found" });
+    }
+
+    // ✅ recherche customer insensible à la casse
+    const emailLower = String(email).trim().toLowerCase();
+    const firstnameRx = new RegExp(`^${escapeRegex(firstname.trim())}$`, "i");
+    const nameRx = new RegExp(`^${escapeRegex(name.trim())}$`, "i");
+
+    const customer = await Customer.findOne({
+      email: emailLower,
+      "account.firstname": firstnameRx,
+      "account.name": nameRx,
+    });
+
+    if (!customer) {
+      return res.status(404).json({ message: "Customer not found" });
+    }
+
+    // 🔒 pas de nouvelle invitation si une invitation en attente existe déjà
+    const askingArr = Array.isArray((customer as any).establishmentStaffAsking)
+      ? ((customer as any).establishmentStaffAsking as any[])
+      : [];
+
+    const alreadyPending = askingArr.some((inv) => {
+      const sameEst = inv?.establishment?.toString() === establishmentId;
+      const notAnswered = typeof inv?.response !== "boolean";
+      return sameEst && notAnswered;
+    });
+
+    if (alreadyPending) {
+      return res.status(409).json({ message: "Invitation already pending" });
+    }
+
+    // push invitation
+    (customer as any).establishmentStaffAsking = askingArr;
+    (customer as any).establishmentStaffAsking.push({
+      date: new Date(),
+      establishment: new Types.ObjectId(establishmentId),
+      establishmentName: establishmentFinded.name,
+      role: role || "Staff",
+      askedBy: new Types.ObjectId(adminId),
+      response: undefined,
+    });
+
+    await customer.save();
+    return res.status(200).json({ message: "invitation sent" });
+  } catch (err) {
+    console.error("[inviteStaff] error:", err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+/**
+ * PUT /customer/respondStaffInvitation/:invitationId
+ * Body: { response: "accept" | "reject" }
+ *
+ * ⚠️ nécessite un middleware auth qui pose req.user._id
+ */
+const respondToStaffInvitation = async (req: Request, res: Response) => {
+  try {
+    const { invitationId } = req.params;
+    const { response } = req.body; // "accept" | "reject"
+    const userId = (req as any).user?._id || req.body.customerId;
+
+    if (!userId || !mongoose.isValidObjectId(String(userId))) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    if (!mongoose.isValidObjectId(invitationId)) {
+      return res.status(400).json({ message: "Invalid invitationId" });
+    }
+
+    if (!["accept", "reject"].includes(response)) {
+      return res.status(400).json({ message: "Invalid response" });
+    }
+
+    const customer = await Customer.findById(userId);
+    if (!customer) {
+      return res.status(404).json({ message: "Customer not found" });
+    }
+
+    const askingArr = Array.isArray((customer as any).establishmentStaffAsking)
+      ? ((customer as any).establishmentStaffAsking as any[])
+      : [];
+
+    const idx = askingArr.findIndex((a) => a?._id?.toString() === invitationId);
+
+    if (idx === -1) {
+      return res
+        .status(404)
+        .json({ message: "Invitation not found on customer" });
+    }
+
+    const invitation = askingArr[idx];
+
+    // 🔒 déjà répondu => 409
+    if (typeof invitation.response === "boolean") {
+      return res.status(409).json({
+        message: "This invitation has already been answered",
+      });
+    }
+
+    // ✅ stocker bool (true accept / false reject)
+    invitation.response = response === "accept";
+
+    // si reject -> save et return
+    if (response === "reject") {
+      (customer as any).establishmentStaffAsking = askingArr;
+      await customer.save();
+      return res.status(200).json({
+        message: "Invitation rejected",
+        customer,
+      });
+    }
+
+    // accept -> push estId dans establishmentStaffOf
+    const estId = invitation.establishment;
+    if (!estId || !mongoose.isValidObjectId(String(estId))) {
+      return res
+        .status(400)
+        .json({ message: "Invalid establishment on invite" });
+    }
+
+    const staffOf = Array.isArray((customer as any).establishmentStaffOf)
+      ? ((customer as any).establishmentStaffOf as any[])
+      : [];
+
+    const alreadyStaffOf = staffOf.some(
+      (id) => id?.toString() === String(estId),
+    );
+
+    if (!alreadyStaffOf) {
+      staffOf.push(new Types.ObjectId(estId));
+    }
+
+    (customer as any).establishmentStaffAsking = askingArr;
+    (customer as any).establishmentStaffOf = uniqObjectIds(staffOf);
+
+    const savedCustomer = await customer.save();
+
+    // push customer dans establishment.staff
+    const establishment = await Establishment.findById(estId);
+    if (!establishment) {
+      return res.status(404).json({ message: "Establishment not found" });
+    }
+
+    const estStaff = Array.isArray((establishment as any).staff)
+      ? ((establishment as any).staff as any[])
+      : [];
+
+    const alreadyIn = estStaff.some(
+      (id) => id?.toString() === String(savedCustomer._id),
+    );
+
+    if (!alreadyIn) {
+      (establishment as any).staff = uniqObjectIds([
+        ...estStaff.map((x) => String(x)),
+        String(savedCustomer._id),
+      ]);
+      await establishment.save();
+    }
+
+    return res.status(200).json({
+      message: "Invitation accepted",
+      customer: savedCustomer,
+      establishment,
+    });
+  } catch (err) {
+    console.error("[respondToStaffInvitation] error:", err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
 const deleteCustomer = async (req: Request, res: Response) => {
   return Customer.findByIdAndDelete(req.body.admin)
     .then((customer) =>
       customer
         ? res.status(200).json({ message: "Customer is deleted" })
-        : res.status(404).json({ message: "Customer not found" })
+        : res.status(404).json({ message: "Customer not found" }),
     )
     .catch((error) => {
       Retour.error("Error catched");
@@ -391,5 +613,7 @@ export default {
   readAll,
   updateCustomer,
   addingOrRemoveFavorites,
+  inviteStaff,
+  respondToStaffInvitation,
   deleteCustomer,
 };

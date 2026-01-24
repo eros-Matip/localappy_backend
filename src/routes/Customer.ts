@@ -3,6 +3,8 @@ import controller from "../controllers/Customer";
 import AdminIsAuthenticated from "../middlewares/IsAuthenticated";
 import multer from "multer";
 import { multerConfig } from "../middlewares/Multer";
+import OwnerIsAuthenticated from "../middlewares/OwnerIsAuthenticated";
+import CustomerIsAuthenticated from "../middlewares/IsAuthenticated";
 
 const router = express.Router();
 
@@ -16,12 +18,25 @@ router.put(
   "/update/:customerId",
   AdminIsAuthenticated,
   cpUpload,
-  controller.updateCustomer
+  controller.updateCustomer,
 );
 router.put(
   "/addingOrRemoveFavorites",
   AdminIsAuthenticated,
-  controller.addingOrRemoveFavorites
+  controller.addingOrRemoveFavorites,
+);
+// Owner invite un staff
+router.post(
+  "/inviteStaff/:establishmentId",
+  OwnerIsAuthenticated,
+  controller.inviteStaff,
+);
+
+// Customer répond à une invitation
+router.put(
+  "/respondStaffInvitation/:invitationId",
+  CustomerIsAuthenticated,
+  controller.respondToStaffInvitation,
 );
 router.delete("/delete", AdminIsAuthenticated, controller.deleteCustomer);
 

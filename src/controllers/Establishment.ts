@@ -386,20 +386,20 @@ const extractPublicId = (url: string): string | null => {
 const updateEstablishment = async (req: Request, res: Response) => {
   try {
     const { establishmentId } = req.params;
-    const updates = req.body;
+    const updates: any = { ...(req.body || {}) };
 
     const establishment = await Establishment.findById(establishmentId);
     if (!establishment) {
       return res.status(404).json({ message: "Establishment not found" });
     }
 
-    // ✅ Parse automatique si `FormData` (stringifiés)
-    ["openingHours", "address"].forEach((key) => {
+    // ✅ Parse auto si FormData (stringifiés)
+    ["openingHours", "address", "staff"].forEach((key) => {
       if (typeof updates[key] === "string") {
         try {
           updates[key] = JSON.parse(updates[key]);
         } catch (err) {
-          console.warn(`Erreur de parsing du champ ${key}`, err);
+          console.warn(`[updateEstablishment] parsing error for ${key}`, err);
         }
       }
     });
@@ -407,7 +407,6 @@ const updateEstablishment = async (req: Request, res: Response) => {
     // 🔁 Gestion des fichiers photos
     const files = (req.files as { [fieldname: string]: Express.Multer.File[] })
       ?.photos;
-    const uploadedUrls: string[] = [];
 
     if (files && files.length > 0) {
       const folderName = slugify(establishment.name, {
@@ -416,16 +415,21 @@ const updateEstablishment = async (req: Request, res: Response) => {
       });
 
       // 🧹 Supprimer les anciennes images
-      if (establishment.photos?.length) {
+      if (Array.isArray(establishment.photos) && establishment.photos.length) {
         for (const url of establishment.photos) {
           const publicId = extractPublicId(url);
           if (publicId) {
-            await cloudinary.uploader.destroy(publicId);
+            try {
+              await cloudinary.uploader.destroy(publicId);
+            } catch (e) {
+              console.warn("[updateEstablishment] cloudinary destroy error", e);
+            }
           }
         }
       }
 
       // 📤 Upload des nouvelles images
+      const uploadedUrls: string[] = [];
       for (const file of files) {
         const result = await cloudinary.uploader.upload(file.path, {
           folder: `establishments/${folderName}`,
@@ -449,16 +453,19 @@ const updateEstablishment = async (req: Request, res: Response) => {
 
       try {
         const { data } = await axios.get(
-          `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(fullAddress)}&limit=1`,
+          `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(
+            fullAddress,
+          )}&limit=1`,
         );
 
         if (data?.features?.length > 0) {
           const [lng, lat] = data.features[0].geometry.coordinates;
           establishment.location = { lat, lng };
 
-          const context = data.features[0].properties.context;
-          const department = context.split(",")[1]?.trim() || "";
-          const region = context.split(",")[2]?.trim() || "";
+          const context = data.features[0].properties.context || "";
+          const parts = context.split(",").map((s: string) => s.trim());
+          const department = parts[1] || "";
+          const region = parts[2] || "";
 
           establishment.address = {
             ...(establishment.address || {}),
@@ -471,9 +478,13 @@ const updateEstablishment = async (req: Request, res: Response) => {
           };
         }
       } catch (err) {
-        console.warn("Erreur API adresse.gouv.fr :", err);
+        console.warn("[updateEstablishment] api-adresse error:", err);
       }
     }
+
+    // ✅ Staff payload isolé (évite overwrite via boucle générique)
+    const staffPayload = updates.staff;
+    delete updates.staff;
 
     // 🔄 Mise à jour sécurisée des autres champs
     for (const key in updates) {
@@ -494,21 +505,10 @@ const updateEstablishment = async (req: Request, res: Response) => {
       }
     }
 
-    // Si le client envoie staff en JSON string (form-data), on parse
-    if (typeof updates.staff === "string") {
-      try {
-        updates.staff = JSON.parse(updates.staff);
-      } catch {
-        /* ignore */
-      }
-    }
-
-    if (updates.staff !== undefined) {
-      // Empêche la boucle générique d'écraser le résultat
-      const staffPayload = updates.staff;
-      delete updates.staff;
-
-      // Helpers
+    // ===========================
+    // 👥 STAFF SYNC (Establishment.staff <-> Customer.establishmentStaffOf)
+    // ===========================
+    if (staffPayload !== undefined) {
       const toObjectIds = (input: any): mongoose.Types.ObjectId[] => {
         const arr = Array.isArray(input) ? input : [input];
         return arr
@@ -541,54 +541,100 @@ const updateEstablishment = async (req: Request, res: Response) => {
         return out;
       };
 
-      // État courant normalisé
       const current: mongoose.Types.ObjectId[] = Array.isArray(
         establishment.staff,
       )
-        ? establishment.staff.map((id: any) => new mongoose.Types.ObjectId(id))
+        ? (establishment.staff as any[]).map(
+            (id: any) => new mongoose.Types.ObjectId(id),
+          )
         : [];
 
-      // --- Traite les différents formats ---
-      if (Array.isArray(staffPayload)) {
-        // Remplacement complet
-        let setIds = await ensureExistingCustomers(toObjectIds(staffPayload));
-        establishment.staff = uniq(setIds);
-      } else if (staffPayload && typeof staffPayload === "object") {
-        // Remplacement explicite
-        if (Array.isArray(staffPayload.set)) {
-          let setIds = await ensureExistingCustomers(
-            toObjectIds(staffPayload.set),
+      const currentSet = new Set(current.map(String));
+
+      // --- set complet : payload = [...] OU { set: [...] }
+      if (Array.isArray(staffPayload) || Array.isArray(staffPayload?.set)) {
+        const targetRaw = Array.isArray(staffPayload)
+          ? staffPayload
+          : staffPayload.set;
+
+        const targetIds = uniq(
+          await ensureExistingCustomers(toObjectIds(targetRaw)),
+        );
+        const targetSet = new Set(targetIds.map(String));
+
+        const toRemove = current.filter((id) => !targetSet.has(String(id)));
+        const toAdd = targetIds.filter((id) => !currentSet.has(String(id)));
+
+        establishment.staff = targetIds as any;
+
+        if (toRemove.length) {
+          await Customer.updateMany(
+            { _id: { $in: toRemove } },
+            { $pull: { establishmentStaffOf: establishment._id } },
           );
-          establishment.staff = uniq(setIds);
-        } else {
-          // Ajouts incrémentaux
-          if (Array.isArray(staffPayload.add)) {
-            let addIds = await ensureExistingCustomers(
-              toObjectIds(staffPayload.add),
+        }
+        if (toAdd.length) {
+          await Customer.updateMany(
+            { _id: { $in: toAdd } },
+            { $addToSet: { establishmentStaffOf: establishment._id } },
+          );
+        }
+      }
+
+      // --- add/remove incrémental
+      else if (staffPayload && typeof staffPayload === "object") {
+        // add
+        if (Array.isArray(staffPayload.add)) {
+          const addIds = uniq(
+            await ensureExistingCustomers(toObjectIds(staffPayload.add)),
+          );
+          establishment.staff = uniq([...current, ...addIds]) as any;
+
+          if (addIds.length) {
+            await Customer.updateMany(
+              { _id: { $in: addIds } },
+              { $addToSet: { establishmentStaffOf: establishment._id } },
             );
-            establishment.staff = uniq([...current, ...addIds]);
           }
-          // Retraits incrémentaux
-          if (Array.isArray(staffPayload.remove)) {
-            const removeSet = new Set(
-              toObjectIds(staffPayload.remove).map(String),
-            );
-            establishment.staff = current.filter(
-              (id) => !removeSet.has(String(id)),
+        }
+
+        // remove
+        if (Array.isArray(staffPayload.remove)) {
+          const removeIds = uniq(
+            await ensureExistingCustomers(toObjectIds(staffPayload.remove)),
+          );
+          const removeSet = new Set(removeIds.map(String));
+
+          establishment.staff = current.filter(
+            (id) => !removeSet.has(String(id)),
+          ) as any;
+
+          if (removeIds.length) {
+            await Customer.updateMany(
+              { _id: { $in: removeIds } },
+              { $pull: { establishmentStaffOf: establishment._id } },
             );
           }
         }
       } else {
         console.warn(
-          "[updateEstablishment] 'staff' doit être un tableau d'IDs ou un objet { add/remove/set }.",
+          "[updateEstablishment] 'staff' doit être un tableau ou { add/remove/set }.",
         );
       }
     }
 
-    const updated = await establishment.save();
-    return res.status(200).json(updated);
-  } catch (error) {
-    console.error("Update error:", error);
+    // ✅ Save
+    const saved = await establishment.save();
+
+    // ✅ Retour avec staff peuplé (sinon ton front n’a pas account/picture)
+    const populated = await Establishment.findById(saved._id).populate(
+      "staff",
+      "email account picture",
+    );
+
+    return res.status(200).json(populated);
+  } catch (error: any) {
+    console.error("[updateEstablishment] error:", error);
     return res.status(500).json({ error: "Failed to update establishment" });
   }
 };
