@@ -19,14 +19,14 @@ router.post(
   "/createForAnEstablishment/:establishmentId",
   OwnerIsAuthenticated,
   cpUpload,
-  controller.createEventForAnEstablishment
+  controller.createEventForAnEstablishment,
 );
 
 router.post(
   "/createDraft/:establishmentId",
   OwnerIsAuthenticated,
   cpUpload,
-  controller.createDraftEvent
+  controller.createDraftEvent,
 );
 router.post("/get/:eventId", controller.readEvent);
 router.get("/get/", controller.readAll);
@@ -36,11 +36,12 @@ router.post("/getAllByDate/:month", controller.getEventByDate);
 router.put("/update/:eventId", OwnerIsAuthenticated, controller.updateEvent);
 router.put("/verifAllEvent", AdminIsAuthenticated, controller.verifAllEvent);
 router.put("/updateUrl", AdminIsAuthenticated, controller.updateImageUrls);
-router.post("scan", controller.scanATicketForAnEvent);
+router.post("/canScan", CustomerIsAuthenticated, controller.canScan);
+router.post("/scan", controller.scanATicketForAnEvent);
 router.post(
   "/registrationToAnEvent/:eventId",
   CustomerIsAuthenticated,
-  controller.registrationToAnEvent
+  controller.registrationToAnEvent,
 );
 // router.put(
 //   "/updateEventCoordinates",
@@ -50,37 +51,37 @@ router.post(
 router.put(
   "/getCoordinatesFromAPI",
   AdminIsAuthenticated,
-  controller.getCoordinatesFromAPI
+  controller.getCoordinatesFromAPI,
 );
 router.put(
   "/updateDescriptionsAndPrices",
   AdminIsAuthenticated,
-  controller.updateDescriptionsAndPrices
+  controller.updateDescriptionsAndPrices,
 );
 router.delete("/delete/:eventId", OwnerIsAuthenticated, controller.deleteEvent);
 router.delete(
   "/deleteDuplicateEvents",
   AdminIsAuthenticated,
-  controller.deleteDuplicateEvents
+  controller.deleteDuplicateEvents,
 );
 
 router.delete(
   "/removeMidnightDates",
   AdminIsAuthenticated,
-  controller.removeMidnightDates
+  controller.removeMidnightDates,
 );
 // router.put("/migrateData", AdminIsAuthenticated, controller.migrateData);
 
 router.delete(
   "/removeExpiredEvents",
   AdminIsAuthenticated,
-  controller.removeExpiredEvents
+  controller.removeExpiredEvents,
 );
 
 router.delete(
   "/deleteInvalidEvents",
   AdminIsAuthenticated,
-  controller.deleteInvalidEvents
+  controller.deleteInvalidEvents,
 );
 
 export default router;
