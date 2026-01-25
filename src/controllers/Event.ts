@@ -2440,8 +2440,9 @@ const canScan = async (req: Request, res: Response) => {
       const establishment = await Establishment.findById(establishmentId)
         .populate({
           path: "events",
-          select: "_id title startingDate endingDate", // limite ce que tu charges
-          options: { sort: { startingDate: 1 } }, // optionnel: tri
+          match: { startingDate: { $lte: now }, endingDate: { $gte: now } },
+          select: "_id title startingDate endingDate",
+          options: { sort: { startingDate: 1 } },
         })
         .select("_id name activated events")
         .lean();
