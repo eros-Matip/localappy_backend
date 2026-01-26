@@ -37,7 +37,7 @@ const verifyAppleToken = (accessToken: string) => {
           return reject(err);
         }
         resolve(decoded);
-      }
+      },
     );
   });
 };
@@ -56,13 +56,35 @@ router.post("/socialLogin", async (req: Request, res: Response) => {
     let userData: any;
 
     if (provider === "google") {
-      const googleResponse = await axios.get(
-        `https://www.googleapis.com/oauth2/v3/userinfo?access_token=${accessToken}`
-      );
-      userData = googleResponse.data;
+      try {
+        // 1) Cas access_token (ton cas actuel)
+        const googleResponse = await axios.get(
+          `https://www.googleapis.com/oauth2/v3/userinfo?access_token=${accessToken}`,
+        );
+        userData = googleResponse.data;
+      } catch (err) {
+        // 2) Si ça fail, on tente le cas id_token (JWT)
+        // tokeninfo accepte id_token ou access_token, mais ici on l’utilise pour id_token
+        const tokenInfo = await axios.get(
+          `https://oauth2.googleapis.com/tokeninfo?id_token=${accessToken}`,
+        );
+
+        // tokeninfo retourne des champs différents
+        userData = {
+          email: tokenInfo.data.email,
+          given_name: tokenInfo.data.given_name,
+          family_name: tokenInfo.data.family_name,
+          picture: tokenInfo.data.picture,
+          sub: tokenInfo.data.sub,
+        };
+      }
+
+      if (!userData?.email) {
+        return res.status(400).json({ message: "Google token missing email" });
+      }
     } else if (provider === "facebook") {
       const facebookResponse = await axios.get(
-        `https://graph.facebook.com/me?fields=id,name,email&access_token=${accessToken}`
+        `https://graph.facebook.com/me?fields=id,name,email&access_token=${accessToken}`,
       );
       userData = facebookResponse.data;
     } else if (provider === "apple") {
