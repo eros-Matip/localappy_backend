@@ -14,6 +14,7 @@ import Bill from "../models/Bill";
 import cloudinary from "cloudinary";
 import { sendEventConfirmationEmail } from "../utils/sendEventConfirmation";
 import mongoose, { Types } from "mongoose";
+import IEvent from "../interfaces/Event";
 import { sendExpoPushNotifications } from "../utils/push";
 import Owner from "../models/Owner";
 const CryptoJS = require("crypto-js");
@@ -190,7 +191,7 @@ const CryptoJS = require("crypto-js");
 const validateImageUrl = async (url: string): Promise<string> => {
   if (!url || url === "Image par défaut") {
     console.warn(
-      `URL non valide ou définie comme "Image par défaut" : ${url}.`,
+      `URL non valide ou définie comme "Image par défaut" : ${url}.`
     );
     return url; // Considérer "Image par défaut" comme valide
   }
@@ -217,13 +218,13 @@ const validateImageUrl = async (url: string): Promise<string> => {
     if (axios.isAxiosError(err)) {
       console.warn(
         `Erreur lors de la vérification de l'URL : ${url}.`,
-        `Status Code : ${err.response?.status || "Inconnu"}`,
+        `Status Code : ${err.response?.status || "Inconnu"}`
       );
       return "Image par défaut";
     } else {
       console.error(
         `Erreur inattendue lors de la vérification de l'URL : ${url}`,
-        err,
+        err
       );
     }
     return "Image par défaut";
@@ -265,7 +266,7 @@ function extractImages(fileData: any): string[] {
   imageUrls = imageUrls
     .filter((url: string) => typeof url === "string" && url.length > 0) // Vérification des chaînes valides
     .map((url: string) =>
-      url.startsWith("http://") ? url.replace("http://", "https://") : url,
+      url.startsWith("http://") ? url.replace("http://", "https://") : url
     );
 
   // Ajouter une valeur par défaut si aucune image n'est trouvée
@@ -314,12 +315,12 @@ function extractCoordinates(fileData: any): {
 }
 
 async function fetchCoordinates(
-  address: string,
+  address: string
 ): Promise<{ lat: number; lng: number } | null> {
   try {
     console.info(`Recherche des coordonnées pour : ${address}`);
     const response = await axios.get(
-      `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(address)}`,
+      `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(address)}`
     );
     const feature = response.data.features?.[0];
     if (feature?.geometry?.coordinates) {
@@ -369,6 +370,17 @@ function extractPriceSpecification(fileData: any) {
       const price = spec["schema:price"]; // Nouveau traitement
       const currency = spec["schema:priceCurrency"];
 
+      console.log(
+        "Max Prices:",
+        maxPrices,
+        "Min Prices:",
+        minPrices,
+        "Price:",
+        price,
+        "Currency:",
+        currency
+      );
+
       // Si maxPrice ou minPrice ne sont pas définis, utiliser le champ "price"
       if (!maxPrices && price) {
         maxPrice = Math.max(maxPrice, parseFloat(price));
@@ -410,43 +422,22 @@ function extractPriceSpecification(fileData: any) {
     });
   });
 
+  console.log(
+    "Final Values - Min Price:",
+    minPrice,
+    "Max Price:",
+    maxPrice,
+    "Currency:",
+    priceCurrency
+  );
+
   return {
     priceCurrency,
     minPrice,
     maxPrice,
-    price: minPrice,
+    price: maxPrice, // Utiliser le prix maximum comme prix principal
   };
 }
-
-const extractTranslations = (fileData: any) => {
-  const translations = [];
-
-  // Labels (title)
-  const labels = fileData["rdfs:label"] || {};
-
-  // Comment (short description)
-  const comments = fileData["rdfs:comment"] || {};
-
-  // Long description
-  const descObj = fileData.hasDescription?.[0]?.["dc:description"] || {};
-
-  const supportedLangs = new Set([
-    ...Object.keys(labels),
-    ...Object.keys(comments),
-    ...Object.keys(descObj),
-  ]);
-
-  for (const lang of supportedLangs) {
-    translations.push({
-      lang,
-      title: labels[lang]?.[0] || undefined,
-      shortDescription: comments[lang]?.[0] || undefined,
-      description: descObj[lang]?.[0] || undefined,
-    });
-  }
-
-  return translations;
-};
 
 // const updateOrCreateEventFromJSON = async (
 //   req: Request,
@@ -484,6 +475,7 @@ const extractTranslations = (fileData: any) => {
 
 //     for (const file of AllEvents) {
 //       try {
+//         console.info(`Traitement du fichier : ${file.file}`);
 //         const filePath = path.join(basePath, file.file);
 //         const fileData = JSON.parse(fs.readFileSync(filePath, "utf-8"));
 //         // Titre et description
@@ -602,7 +594,6 @@ const extractTranslations = (fileData: any) => {
 //           const newEvent = new Event({
 //             title,
 //             description,
-//             translations: extractTranslations(fileData),
 //             address: extractAddress(fileData),
 //             location: {
 //               lat: newLat,
@@ -620,9 +611,7 @@ const extractTranslations = (fileData: any) => {
 //           });
 //           await newEvent.save();
 //           createdEvents.push({ id: newEvent._id, title: newEvent.title });
-//           Retour.info(
-//             `<<n°:${createdEvents.length} Nouvel événement créé>>: ${newEvent.title}`
-//           );
+//           console.info(`Nouvel événement créé : ${newEvent.title}`);
 //         } else {
 //           dbEvent.description = description;
 //           Object(dbEvent).location = {
@@ -632,12 +621,11 @@ const extractTranslations = (fileData: any) => {
 //           };
 //           dbEvent.image = images;
 //           dbEvent.price = Object(priceSpecification).price;
-//           dbEvent.translations = extractTranslations(fileData);
 //           dbEvent.priceSpecification = priceSpecification;
 //           dbEvent.acceptedPaymentMethod = acceptedPaymentMethod;
 //           await dbEvent.save();
 //           updatedEvents.push({ id: dbEvent._id, title: dbEvent.title });
-//           Retour.info(`Événement mis à jour : ${dbEvent.title}`);
+//           console.info(`Événement mis à jour : ${dbEvent.title}`);
 //         }
 //       } catch (error) {
 //         unmatchedFiles.push(file.file);
@@ -874,7 +862,7 @@ const createEventForAnEstablishment = async (req: Request, res: Response) => {
 
     if (address) {
       const responseApiGouv = await axios.get(
-        `https://api-adresse.data.gouv.fr/search/?q=${address}`,
+        `https://api-adresse.data.gouv.fr/search/?q=${address}`
       );
 
       if (
@@ -923,7 +911,6 @@ const createEventForAnEstablishment = async (req: Request, res: Response) => {
         email: req.body.organizer?.email || draftEvent.organizer.email,
         phone: req.body.organizer?.phone || draftEvent.organizer.phone,
       },
-      translations: req.body.translations,
       registrationOpen:
         req.body.registrationOpen !== undefined
           ? req.body.registrationOpen
@@ -947,7 +934,7 @@ const createEventForAnEstablishment = async (req: Request, res: Response) => {
     // 1) IDs des events de cet établissement
     const eventIds = await Event.find(
       { "organizer.establishment": estObjId },
-      { _id: 1 },
+      { _id: 1 }
     ).distinct("_id");
 
     // 2) Clients ayant au moins un de ces events (attended / reserved / favorites)
@@ -968,14 +955,14 @@ const createEventForAnEstablishment = async (req: Request, res: Response) => {
       new Set(
         customersWithThisEstablishment
           .map((c: any) => c.expoPushToken)
-          .filter((t: any) => typeof t === "string" && t.trim().length > 0),
-      ),
+          .filter((t: any) => typeof t === "string" && t.trim().length > 0)
+      )
     );
 
     const deepLink = `localappy://event/${draftEvent?._id}`; // lien pour ouvrir dans l'app expo
 
     const webFallbackLink = `https://localappy.fr/open?link=${encodeURIComponent(
-      deepLink,
+      deepLink
     )}`;
 
     const { sent, invalidTokens } = await sendExpoPushNotifications(tokens, {
@@ -990,7 +977,7 @@ const createEventForAnEstablishment = async (req: Request, res: Response) => {
     });
 
     console.log(
-      `Push envoyés: ${sent} | Tokens invalides: ${invalidTokens.length}`,
+      `Push envoyés: ${sent} | Tokens invalides: ${invalidTokens.length}`
     );
     return res.status(201).json({
       message: "Event created successfully from draft",
@@ -1134,7 +1121,7 @@ const readAll = async (req: Request, res: Response, next: NextFunction) => {
 const getEventsByPostalCode = async (
   req: Request,
   res: Response,
-  next: NextFunction,
+  next: NextFunction
 ) => {
   try {
     const { postalCode } = req.params; // Extraire les deux premiers chiffres du code postal des paramètres d'URL
@@ -1164,15 +1151,15 @@ const getEventsByPostalCode = async (
 
     // Séparer les événements en trois catégories : passés, présents (aujourd'hui) et à venir
     const pastEvents = events.filter(
-      (event) => new Date(event.endingDate) < currentDate,
+      (event) => new Date(event.endingDate) < currentDate
     );
     const upcomingEvents = events.filter(
-      (event) => new Date(event.startingDate) > currentDate,
+      (event) => new Date(event.startingDate) > currentDate
     );
     const currentEvents = events.filter(
       (event) =>
         new Date(event.startingDate) <= currentDate &&
-        new Date(event.endingDate) >= currentDate,
+        new Date(event.endingDate) >= currentDate
     );
 
     return res.status(200).json({
@@ -1183,7 +1170,7 @@ const getEventsByPostalCode = async (
   } catch (error) {
     console.error(
       "Erreur lors de la récupération des événements par code postal:",
-      error,
+      error
     );
     return res
       .status(500)
@@ -1404,7 +1391,6 @@ const updateEvent = async (req: Request, res: Response, next: NextFunction) => {
 
     // Appliquer les mises à jour des champs basiques
     event.title = req.body.title || event.title;
-    event.price = req.body.price || event.price;
     event.description = req.body.description || event.description;
     event.startingDate = req.body.startingDate
       ? new Date(req.body.startingDate)
@@ -1458,9 +1444,6 @@ const updateEvent = async (req: Request, res: Response, next: NextFunction) => {
       event.isDraft = req.body.isDraft;
     }
 
-    if (typeof req.body.registrationOpen === "boolean") {
-      event.registrationOpen = req.body.registrationOpen;
-    }
     // Mise à jour de l'image, si fournie
     if (req.body.image) {
       event.image = req.body.image;
@@ -1489,12 +1472,12 @@ const getEventByDate = async (req: Request, res: Response) => {
     const startOfMonth = new Date(
       currentDate.getFullYear(),
       currentDate.getMonth(),
-      1,
+      1
     );
     const endOfMonth = new Date(
       currentDate.getFullYear(),
       currentDate.getMonth() + 1,
-      0,
+      0
     );
 
     // Vérifier que les coordonnées sont fournies si on souhaite filtrer par distance
@@ -1550,7 +1533,7 @@ const getEventByDate = async (req: Request, res: Response) => {
   } catch (error) {
     console.error(
       "Erreur lors de la récupération des événements par date et position:",
-      error,
+      error
     );
     return res
       .status(500)
@@ -1638,7 +1621,7 @@ const verifAllEvent = async (req: Request, res: Response) => {
   } catch (error) {
     console.error(
       "Erreur lors de la vérification des URL des événements :",
-      error,
+      error
     );
     return res.status(500).json({
       message: "Erreur lors de la vérification des URL des événements.",
@@ -1688,7 +1671,7 @@ const updateImageUrls = async (req: Request, res: Response) => {
 
     // Étape 3 : Retourner le résultat final
     console.log(
-      `Mise à jour terminée. Nombre total d'événements modifiés : ${modifiedCount}`,
+      `Mise à jour terminée. Nombre total d'événements modifiés : ${modifiedCount}`
     );
     return res.status(200).json({
       message: "Mise à jour des URLs des images réussie",
@@ -1883,13 +1866,12 @@ const loadProgress = (): number => {
   }
   return 0;
 };
-
 // Fonction pour comparer les coordonnées avec une tolérance
 const areCoordinatesEqual = (
   oldLat: number,
   oldLng: number,
   newLat: number,
-  newLng: number,
+  newLng: number
 ): boolean => {
   const precision = 1e-6; // Tolérance pour les différences mineures
   return (
@@ -1897,7 +1879,6 @@ const areCoordinatesEqual = (
     Math.abs(oldLng - newLng) < precision
   );
 };
-
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 // Fonction pour calculer la distance avec la formule de Haversine
 
@@ -1905,7 +1886,7 @@ const haversineDistance = (
   lat1: number,
   lng1: number,
   lat2: number,
-  lng2: number,
+  lng2: number
 ): number => {
   const toRad = (x: number) => (x * Math.PI) / 180;
   const R = 6371; // Rayon de la Terre en km
@@ -1948,7 +1929,7 @@ const cleanAddress = (address: string): string => {
     "(rue|avenue|boulevard|place|impasse|route|chemin|allée|cours|quai|voie|square|pont|faubourg|hameau)";
   const regex = new RegExp(
     `(?:.*?,\\s*)?(\\d{0,5}\\s*\\w+(\\s${voieTypes})?)?,?\\s*(\\d{5}),?\\s*([\\w\\s\\-]+)$`,
-    "i",
+    "i"
   );
 
   const match = cleanedAddress.match(regex);
@@ -1969,7 +1950,7 @@ const cleanAddress = (address: string): string => {
 const processBatch = async (
   events: any[],
   updatedEvents: any[],
-  unmatchedEvents: any[],
+  unmatchedEvents: any[]
 ) => {
   for (const event of events) {
     try {
@@ -1996,7 +1977,7 @@ const processBatch = async (
       // Appel à l'API Adresse
       const response = await axios.get(
         "https://api-adresse.data.gouv.fr/search/",
-        { params: { q: fullAddress, limit: 5 }, timeout: 10000 },
+        { params: { q: fullAddress, limit: 5 }, timeout: 10000 }
       );
 
       const features = response.data.features;
@@ -2021,7 +2002,7 @@ const processBatch = async (
 
       if (!exactMatch) {
         console.warn(
-          `[LOG] Pas de correspondance exacte pour : ${event.title} (${originalAddress})`,
+          `[LOG] Pas de correspondance exacte pour : ${event.title} (${originalAddress})`
         );
 
         // Si aucune correspondance exacte, nettoyer davantage l'adresse
@@ -2031,7 +2012,7 @@ const processBatch = async (
         // Refaire une tentative avec l'adresse nettoyée
         const retryResponse = await axios.get(
           "https://api-adresse.data.gouv.fr/search/",
-          { params: { q: fullAddress, limit: 5 }, timeout: 10000 },
+          { params: { q: fullAddress, limit: 5 }, timeout: 10000 }
         );
 
         const retryFeatures = retryResponse.data.features;
@@ -2044,7 +2025,7 @@ const processBatch = async (
             reason: "Aucune coordonnée trouvée après tentative",
           });
           console.warn(
-            `[LOG] Aucun résultat après tentative pour : ${event.title}`,
+            `[LOG] Aucun résultat après tentative pour : ${event.title}`
           );
           continue;
         }
@@ -2061,7 +2042,7 @@ const processBatch = async (
         oldLocation.lat,
         oldLocation.lng,
         lat,
-        lng,
+        lng
       );
 
       if (hasChanged) {
@@ -2072,8 +2053,8 @@ const processBatch = async (
 
         console.log(
           logColor(
-            `[LOG] Coordonnées modifiées pour : ${event.title} (${oldLocation.lat}, ${oldLocation.lng}) -> (${lat}, ${lng}) | Écart : ${distanceFromOld.toFixed(2)} km`,
-          ),
+            `[LOG] Coordonnées modifiées pour : ${event.title} (${oldLocation.lat}, ${oldLocation.lng}) -> (${lat}, ${lng}) | Écart : ${distanceFromOld.toFixed(2)} km`
+          )
         );
 
         updatedEvents.push({
@@ -2084,13 +2065,13 @@ const processBatch = async (
       } else {
         console.log(
           chalk.yellow(
-            `[LOG] Coordonnées identiques pour : ${event.title} (${oldLocation.lat}, ${oldLocation.lng}) -> (${lat}, ${lng})`,
-          ),
+            `[LOG] Coordonnées identiques pour : ${event.title} (${oldLocation.lat}, ${oldLocation.lng}) -> (${lat}, ${lng})`
+          )
         );
       }
     } catch (error) {
       console.error(
-        chalk.red(`[LOG] Erreur API pour : ${event.title} - ${error}`),
+        chalk.red(`[LOG] Erreur API pour : ${event.title} - ${error}`)
       );
       unmatchedEvents.push({
         id: event._id,
@@ -2151,7 +2132,6 @@ const normalizeDayRange = (input: Date) => {
   dayEnd.setHours(23, 59, 59, 999);
   return { dayStart, dayEnd };
 };
-
 const registrationToAnEvent = async (req: Request, res: Response) => {
   const session = await mongoose.startSession();
 
@@ -2255,7 +2235,7 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
 
       const reservedForDay = regsSameDay.reduce(
         (sum, r) => sum + (toInt(r.quantity) ?? 1),
-        0,
+        0
       );
       const remaining = capacityPerDay - reservedForDay;
 
@@ -2298,7 +2278,7 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
           items: [
             {
               description: `Inscription à l'événement ${eventFinded.title} (${selected.toLocaleDateString(
-                "fr-FR",
+                "fr-FR"
               )})`,
               quantity: newRegistration.quantity,
               price: unitPrice,
@@ -2317,10 +2297,7 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
 
         const eventDateFormatted = selected.toLocaleString("fr-FR");
         const invoiceUrl = `https://localappy.fr/api/invoice/${newRegistration._id}`;
-        const deepLink = `localappy://event/${eventFinded?._id}`; // lien pour ouvrir dans l'app expo
-        const eventLink = `https://localappy.fr/open?link=${encodeURIComponent(
-          deepLink,
-        )}`;
+        const eventLink = `https://localappy.fr/events/${eventFinded._id}`;
 
         // NB: si besoin, envoie l'email après commit (outbox pattern)
         await sendEventConfirmationEmail({
@@ -2381,118 +2358,6 @@ const isSameLocalDayParis = (a: Date, b: Date) => {
   return da === db;
 };
 
-const uniqObjectIds = (arr: any[]) => {
-  const seen = new Set<string>();
-  const out: Types.ObjectId[] = [];
-
-  for (const v of arr || []) {
-    const s = typeof v === "string" ? v : v?._id ? String(v._id) : String(v);
-    if (!mongoose.isValidObjectId(s)) continue;
-    if (seen.has(s)) continue;
-    seen.add(s);
-    out.push(new Types.ObjectId(s));
-  }
-  return out;
-};
-
-const canScan = async (req: Request, res: Response) => {
-  try {
-    const { admin } = req.body;
-
-    if (!admin || !admin._id) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
-
-    const adminId = String(admin._id);
-    if (!mongoose.isValidObjectId(adminId)) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
-
-    const staffOfIds = Array.isArray(admin.establishmentStaffOf)
-      ? admin.establishmentStaffOf
-      : [];
-
-    const ownerEstIds =
-      admin?.ownerAccount?.establishments &&
-      Array.isArray(admin.ownerAccount.establishments)
-        ? admin.ownerAccount.establishments
-        : [];
-
-    const accessibleEstIds = uniqObjectIds([...staffOfIds, ...ownerEstIds]);
-
-    if (!accessibleEstIds.length) {
-      return res.status(200).json({
-        canScan: false,
-        activeEventId: null,
-        establishmentsWithEvents: [],
-      });
-    }
-
-    const now = new Date();
-
-    const establishmentsWithEvents: Array<{
-      _id: any;
-      name: string;
-      activated?: boolean;
-      events: any[];
-    }> = [];
-
-    let firstEventId: any = null;
-
-    for (const establishmentId of accessibleEstIds) {
-      const establishment = await Establishment.findById(establishmentId)
-        .populate({
-          path: "events",
-          match: { startingDate: { $lte: now }, endingDate: { $gte: now } },
-          select: "_id title startingDate endingDate",
-          options: { sort: { startingDate: 1 } },
-        })
-        .select("_id name activated events")
-        .lean();
-
-      if (!establishment) continue;
-
-      const events = Array.isArray((establishment as any).events)
-        ? (establishment as any).events
-        : [];
-
-      // ✅ Tous les events pas terminés
-      const notFinished = events.filter((ev: any) => {
-        if (!ev?.endingDate) return false;
-        return new Date(ev.endingDate) >= now;
-      });
-
-      if (!notFinished.length) continue;
-
-      if (!firstEventId) firstEventId = notFinished[0]._id;
-
-      establishmentsWithEvents.push({
-        _id: establishment._id,
-        name: (establishment as any).name,
-        activated: (establishment as any).activated,
-        events: notFinished,
-      });
-    }
-
-    if (!establishmentsWithEvents.length) {
-      return res.status(200).json({
-        canScan: false,
-        activeEventId: null,
-        establishmentsWithEvents: [],
-      });
-    }
-
-    return res.status(200).json({
-      canScan: true,
-      activeEventId: firstEventId, // premier event trouvé (si tu en as besoin)
-      establishmentsWithEvents, // ✅ TOUS les events non terminés
-    });
-  } catch (e) {
-    console.error("[canScan] error", e);
-    return res.status(500).json({ message: "Internal server error" });
-  }
-};
-
 const scanATicketForAnEvent = async (req: Request, res: Response) => {
   try {
     const { url } = req.body;
@@ -2531,7 +2396,7 @@ const scanATicketForAnEvent = async (req: Request, res: Response) => {
 
     // 2) Charger registration (source de vérité pour l’event)
     const reg = await Registration.findById(registrationId).select(
-      "_id event status checkInStatus",
+      "_id event status checkInStatus"
     );
     if (!reg)
       return res
@@ -2566,7 +2431,7 @@ const scanATicketForAnEvent = async (req: Request, res: Response) => {
 
     // 3) Charger l'événement & établissement organisateur
     const event = await Event.findById(reg.event).select(
-      "_id registrations organizer.establishment",
+      "_id registrations organizer.establishment"
     );
     if (!event)
       return res.status(404).json({ message: "Événement introuvable." });
@@ -2586,7 +2451,7 @@ const scanATicketForAnEvent = async (req: Request, res: Response) => {
     const [ownerDoc, customerDoc] = await Promise.all([
       Owner.findById(requesterId).select("_id establishments establishment"),
       Customer.findById(requesterId).select(
-        "_id establishmentStaffOf establishment establishments",
+        "_id establishmentStaffOf establishment establishments"
       ),
     ]);
 
@@ -2640,7 +2505,7 @@ const scanATicketForAnEvent = async (req: Request, res: Response) => {
           },
         },
       },
-      { new: true },
+      { new: true }
     ).select("_id entries");
 
     if (!updated) {
@@ -2701,7 +2566,7 @@ const deleteEvent = async (req: Request, res: Response, next: NextFunction) => {
         const filter = establishment.events.filter(
           (event) =>
             JSON.stringify(Object(event)._id) !==
-            JSON.stringify(eventFinded._id),
+            JSON.stringify(eventFinded._id)
         );
         Object(establishment).events = filter;
         await establishment.save(); // Sauvegarder les modifications
@@ -2723,11 +2588,11 @@ const deleteEvent = async (req: Request, res: Response, next: NextFunction) => {
 const deleteDuplicateEvents = async (
   req: Request,
   res: Response,
-  next: NextFunction,
+  next: NextFunction
 ) => {
   try {
     console.info(
-      "Début de la suppression des événements en double avec fusion des images.",
+      "Début de la suppression des événements en double avec fusion des images."
     );
 
     // Étape 1 : Récupérer tous les événements
@@ -2760,11 +2625,11 @@ const deleteDuplicateEvents = async (
 
     // Étape 3 : Vérifier les groupes avec doublons
     const duplicates = Object.values(groupedEvents).filter(
-      (events) => events.length > 1,
+      (events) => events.length > 1
     );
 
     console.info(
-      `Nombre de groupes avec doublons trouvés : ${duplicates.length}`,
+      `Nombre de groupes avec doublons trouvés : ${duplicates.length}`
     );
 
     if (!duplicates.length) {
@@ -2783,11 +2648,11 @@ const deleteDuplicateEvents = async (
         // Ajouter les images de l'événement à supprimer si nécessaire
         if (keepEvent.image.length === 0 && event.image.length > 0) {
           console.info(
-            `Ajout des images de l'événement : Titre="${event.title}"`,
+            `Ajout des images de l'événement : Titre="${event.title}"`
           );
           await Event.updateOne(
             { _id: keepEvent.id },
-            { $set: { image: event.image } },
+            { $set: { image: event.image } }
           );
         }
 
@@ -2798,7 +2663,7 @@ const deleteDuplicateEvents = async (
           deletedCount++;
         } else {
           console.warn(
-            `Échec de la suppression pour l'événement : Titre="${event.title}"`,
+            `Échec de la suppression pour l'événement : Titre="${event.title}"`
           );
         }
       }
@@ -2823,11 +2688,11 @@ const deleteDuplicateEvents = async (
 const removeMidnightDates = async (
   req: Request,
   res: Response,
-  next: NextFunction,
+  next: NextFunction
 ) => {
   try {
     console.info(
-      "Début de la suppression des événements ayant des dates à minuit.",
+      "Début de la suppression des événements ayant des dates à minuit."
     );
 
     // Supprimer les événements où les heures de startingDate et endingDate sont à minuit
@@ -2868,7 +2733,7 @@ const removeMidnightDates = async (
 const removeExpiredEvents = async (
   req: Request,
   res: Response,
-  next: NextFunction,
+  next: NextFunction
 ) => {
   try {
     console.info("Début de la suppression des événements expirés.");
@@ -2904,7 +2769,7 @@ const deleteInvalidEvents = async (req: Request, res: Response) => {
     });
 
     console.log(
-      `Événements supprimés : ${nullDatesResult.deletedCount} avec startingDate ou endingDate null.`,
+      `Événements supprimés : ${nullDatesResult.deletedCount} avec startingDate ou endingDate null.`
     );
 
     // 2️⃣ Suppression des événements ayant les dates précises de la capture d'écran
@@ -2917,7 +2782,7 @@ const deleteInvalidEvents = async (req: Request, res: Response) => {
     });
 
     console.log(
-      `Événements supprimés : ${specificDeleteResult.deletedCount} avec startingDate et endingDate précises.`,
+      `Événements supprimés : ${specificDeleteResult.deletedCount} avec startingDate et endingDate précises.`
     );
 
     res.status(200).json({
@@ -2976,7 +2841,7 @@ const updateDescriptionsAndPrices = async (req: Request, res: Response) => {
     const updatedEvents = await Promise.all(
       events.map(async (event) => {
         console.log(
-          `Traitement de l'événement : ${event.title} (${event._id})`,
+          `Traitement de l'événement : ${event.title} (${event._id})`
         );
 
         // Nettoyer la description en supprimant les balises HTML
@@ -2990,7 +2855,7 @@ const updateDescriptionsAndPrices = async (req: Request, res: Response) => {
         // Remplacer le prix null par 0
         if (event.price === null) {
           console.log(
-            `Prix null détecté pour ${event.title}. Remplacement par 0.`,
+            `Prix null détecté pour ${event.title}. Remplacement par 0.`
           );
           Object(event).price = 0;
         }
@@ -2999,13 +2864,13 @@ const updateDescriptionsAndPrices = async (req: Request, res: Response) => {
         if (event.priceSpecification) {
           if (event.priceSpecification.minPrice === null) {
             console.log(
-              `minPrice null détecté pour ${event.title}. Remplacement par 0.`,
+              `minPrice null détecté pour ${event.title}. Remplacement par 0.`
             );
             event.priceSpecification.minPrice = 0;
           }
           if (event.priceSpecification.maxPrice === null) {
             console.log(
-              `maxPrice null détecté pour ${event.title}. Remplacement par 0.`,
+              `maxPrice null détecté pour ${event.title}. Remplacement par 0.`
             );
             event.priceSpecification.maxPrice = 0;
           }
@@ -3017,7 +2882,7 @@ const updateDescriptionsAndPrices = async (req: Request, res: Response) => {
           event.location.geo.coordinates.length !== 2
         ) {
           console.log(
-            `Coordonnées invalides détectées pour ${event.title}. Correction en cours...`,
+            `Coordonnées invalides détectées pour ${event.title}. Correction en cours...`
           );
           Object(event).location.geo.coordinates = [0, 0]; // Par défaut : longitude et latitude nulles
         }
@@ -3026,7 +2891,7 @@ const updateDescriptionsAndPrices = async (req: Request, res: Response) => {
         await event.save();
         console.log(`Événement mis à jour : ${event.title} (${event._id})`);
         return event;
-      }),
+      })
     );
 
     console.log("Mise à jour terminée pour tous les événements.");
@@ -3038,7 +2903,7 @@ const updateDescriptionsAndPrices = async (req: Request, res: Response) => {
   } catch (error) {
     console.error(
       "Erreur lors de la mise à jour des descriptions et des prix :",
-      error,
+      error
     );
     res
       .status(500)
@@ -3069,7 +2934,7 @@ export default {
   getEventsByPosition,
   getEventByDate,
   updateEvent,
-  // updateOrCreateEventFromJSON
+  // updateOrCreateEventFromJSON,
   // updateEventForParis,
   // migrateData,
   getCoordinatesFromAPI,
@@ -3078,7 +2943,6 @@ export default {
   // updateEventCoordinates,
   updateDescriptionsAndPrices,
   registrationToAnEvent,
-  canScan,
   scanATicketForAnEvent,
   deleteEvent,
   deleteDuplicateEvents,
