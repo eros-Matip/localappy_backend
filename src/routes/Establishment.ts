@@ -12,7 +12,7 @@ router.post(
   "/create",
   cpUpload,
   OwnerIsAuthenticated,
-  controller.createEstablishment
+  controller.createEstablishment,
 );
 // router.post(
 //   "/fetchEstablishmentsByJson",
@@ -23,18 +23,23 @@ router.post(
 router.get(
   "/getInformations/:establishmentId",
   OwnerIsAuthenticated,
-  controller.getAllInformation
-);
-router.get(
-  "/getPublicInformation/:establishmentId",
-  controller.getPublicInformation
+  controller.getAllInformation,
 );
 
+router.get(
+  "/getPublicInformation/:establishmentId",
+  controller.getPublicInformation,
+);
+router.get(
+  "/getTicketsStatsByEstablishment/:establishmentId",
+  OwnerIsAuthenticated,
+  controller.getTicketsStatsByEstablishment,
+);
 router.put(
   "/update/:establishmentId",
   cpUpload,
   OwnerIsAuthenticated,
-  controller.updateEstablishment
+  controller.updateEstablishment,
 );
 router.delete("/delete", OwnerIsAuthenticated, controller.deleteEstablishment);
 

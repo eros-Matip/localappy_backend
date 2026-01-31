@@ -36,7 +36,7 @@ const registrationSchema = new Schema<IRegistration>(
     extras: [{ item: String, price: Number }],
     invoiceNumber: { type: String, required: false },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 const Registration = model<IRegistration>("Registration", registrationSchema);

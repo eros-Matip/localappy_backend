@@ -84,18 +84,16 @@ interface IEstablishment extends Document {
   description?: string;
   openingHours: IOpeningHours[];
   acceptedPayments: IPaymentMethod[];
-
   legalForm: "company" | "association";
   legalInfo?: ILegalInfo;
-
   owner: Types.ObjectId;
-
-  // ✅ soit ObjectId (DB), soit objets (API populate)
   staff: Types.ObjectId[] | IStaffPublic[];
-
   events: Types.ObjectId[];
+  notifications: Types.ObjectId[];
+  refund: Types.ObjectId[];
   ads: Types.ObjectId[];
   activated: boolean;
+  amountAvailable: number;
 }
 
 export default IEstablishment;

@@ -34,7 +34,7 @@ router.post(
 
 // Customer répond à une invitation
 router.put(
-  "/respondStaffInvitation/:invitationId",
+  "/respondToStaffInvitation/:invitationId",
   CustomerIsAuthenticated,
   controller.respondToStaffInvitation,
 );

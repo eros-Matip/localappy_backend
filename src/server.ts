@@ -4,6 +4,7 @@ import http from "http";
 import mongoose from "mongoose";
 import config from "./config/config";
 import cors from "cors";
+import initSocket from "./utils/socket";
 
 const express = require("express");
 const router = express();
@@ -113,7 +114,7 @@ const startServer = () => {
   router.use((req: Request, res: Response, next: NextFunction) => {
     res.on("finish", () => {
       Logging.info(
-        `Server Started -> Methode: [${req.method}] - Url: [${req.originalUrl}] - Ip: [${req.socket.remoteAddress}] - Status: [${res.statusCode}]`
+        `Server Started -> Methode: [${req.method}] - Url: [${req.originalUrl}] - Ip: [${req.socket.remoteAddress}] - Status: [${res.statusCode}]`,
       );
     });
     next();
@@ -126,12 +127,12 @@ const startServer = () => {
     res.header("Access-Control-Allow-Origin", "*");
     res.header(
       "Access-Control-Allow-Headers",
-      "Origin, X-Requested-with, Content-Type, Accept,Authorization"
+      "Origin, X-Requested-with, Content-Type, Accept,Authorization",
     );
     if (req.method == "OPTIONS") {
       res.header(
         "Access-Control-Allow-Methods",
-        "PUT, POST, PATCH, DELETE, GET"
+        "PUT, POST, PATCH, DELETE, GET",
       );
       return res.status(200).json({});
     }
@@ -176,7 +177,7 @@ const startServer = () => {
         for (const reg of registrations) {
           const updated = await Event.updateOne(
             { _id: reg.event, registrations: { $ne: reg._id } },
-            { $push: { registrations: reg._id } }
+            { $push: { registrations: reg._id } },
           );
           if (updated.modifiedCount > 0) regsAdded++;
         }
@@ -191,7 +192,7 @@ const startServer = () => {
 
           const updated = await Event.updateOne(
             { _id: reg.event, bills: { $ne: bill._id } },
-            { $push: { bills: bill._id } }
+            { $push: { bills: bill._id } },
           );
           if (updated.modifiedCount > 0) billsAdded++;
         }
@@ -207,22 +208,22 @@ const startServer = () => {
           .status(500)
           .json({ message: "Erreur lors de la synchronisation", error });
       }
-    }
+    },
   );
 
   /**Error handling */
   router.use((req: Request, res: Response) => {
     const error = new Error(
-      `Route has been not found -> Methode: [${req.method}] - Url: [${req.originalUrl}] - Ip: [${req.socket.remoteAddress}]`
+      `Route has been not found -> Methode: [${req.method}] - Url: [${req.originalUrl}] - Ip: [${req.socket.remoteAddress}]`,
     );
 
     Logging.error(error.message);
     return res.status(404).json(error.message);
   });
 
-  http
-    .createServer(router)
-    .listen(config.port, () =>
-      Logging.info(`Server is started on new port ${config.port}`)
-    );
+  const server = initSocket(router);
+
+  server.listen(config.port, () => {
+    Logging.info(`Server + Socket started on port ${config.port}`);
+  });
 };

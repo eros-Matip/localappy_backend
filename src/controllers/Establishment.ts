@@ -367,6 +367,110 @@ const getPublicInformation = async (req: Request, res: Response) => {
   }
 };
 
+const getTicketsStatsByEstablishment = async (req: Request, res: Response) => {
+  try {
+    const { establishmentId } = req.params;
+
+    if (!mongoose.isValidObjectId(establishmentId)) {
+      return res.status(400).json({ message: "Invalid establishment id" });
+    }
+
+    const estId = new mongoose.Types.ObjectId(establishmentId);
+
+    const pipeline = [
+      { $match: { status: { $in: ["paid", "confirmed"] } } },
+      {
+        $lookup: {
+          from: "events",
+          localField: "event",
+          foreignField: "_id",
+          as: "event",
+        },
+      },
+      { $unwind: "$event" },
+      { $match: { "event.organizer.establishment": estId } },
+      {
+        $addFields: {
+          extrasTotal: {
+            $cond: [{ $isArray: "$extras" }, { $sum: "$extras.price" }, 0],
+          },
+        },
+      },
+      {
+        $addFields: {
+          ticketAmount: {
+            $add: [
+              { $multiply: ["$price", "$quantity"] },
+              { $ifNull: ["$extrasTotal", 0] },
+            ],
+          },
+        },
+      },
+      {
+        $group: {
+          _id: "$event._id",
+          title: { $first: "$event.title" },
+          date: { $first: "$event.startingDate" },
+          ticketsCount: { $sum: "$quantity" },
+          registrationsCount: { $sum: 1 },
+          totalAmount: { $sum: "$ticketAmount" },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          establishment: { $first: estId },
+          events: {
+            $push: {
+              eventId: "$_id",
+              title: "$title",
+              date: "$date",
+              ticketsCount: "$ticketsCount",
+              registrationsCount: "$registrationsCount",
+              totalAmount: "$totalAmount",
+            },
+          },
+          totalTickets: { $sum: "$ticketsCount" },
+          totalRegistrations: { $sum: "$registrationsCount" },
+          totalAmount: { $sum: "$totalAmount" },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          establishment: 1,
+          totalTickets: 1,
+          totalRegistrations: 1,
+          totalAmount: 1,
+          events: 1,
+        },
+      },
+    ];
+
+    const stats = await (Registration as any).aggregate(pipeline);
+    const establishment = await Establishment.findById(establishmentId).lean();
+
+    if (!stats || stats.length === 0) {
+      return res.json({
+        establishment: establishmentId,
+        totalTickets: 0,
+        totalRegistrations: 0,
+        totalAmount: 0,
+        amountAvailable: establishment?.amountAvailable ?? 0,
+        events: [],
+      });
+    }
+
+    return res.json({
+      ...stats[0],
+      amountAvailable: establishment?.amountAvailable ?? 0,
+    });
+  } catch (err) {
+    Retour.error(`getTicketsStatsByEstablishment error: ${err} `);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+
 // Fonction pour mettre à jour un établissement
 // 🔧 Supprime les clés undefined dans un objet
 const removeUndefined = (obj: Record<string, any>) =>
@@ -667,6 +771,7 @@ export default {
   createEstablishment,
   getAllInformation,
   getPublicInformation,
+  getTicketsStatsByEstablishment,
   // fetchEstablishmentsByJson,
   updateEstablishment,
   deleteEstablishment,
