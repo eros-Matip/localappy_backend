@@ -31,13 +31,17 @@ export const multerConfig = {
       "image/jpeg",
       "image/jpg",
       "image/png",
+      "image/heic",
+      "image/heif",
       "application/pdf",
       "audio/mpeg",
+      "video/quicktime",
     ];
+
     if (formats.includes(file.mimetype)) {
       callback(null, true);
     } else {
-      callback(new Error("Format not accepted"));
+      callback(new Error(`Format not accepted: ${file.mimetype}`));
     }
   },
 } as Options;
