@@ -4,30 +4,39 @@ import { Options, diskStorage } from "multer";
 export const multerConfig = {
   storage: diskStorage({
     filename: (req, file, callback) => {
-      const formatsImage = ["image/jpeg", "image/jpg", "image/png"];
+      const extensions: Record<string, string> = {
+        "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
+        "image/png": ".png",
+        "image/heic": ".heic",
+        "image/heif": ".heif",
+        "application/pdf": ".pdf",
+        "audio/mpeg": ".mp3",
+        "video/quicktime": ".mov",
+      };
+
       randomBytes(16, (error, hash) => {
-        if (error) {
-          callback(error, file.filename);
+        if (error) return callback(error, file.originalname);
+
+        const ext = extensions[file.mimetype];
+        if (!ext) {
+          return callback(
+            new Error(`Format not accepted: ${file.mimetype}`),
+            file.originalname,
+          );
         }
-        if (file.mimetype.includes("application/pdf")) {
-          const applicationFilename = `${hash.toString("hex")}${file.mimetype.replace("application/", ".")}`;
-          callback(null, applicationFilename);
-        } else if (formatsImage.includes(file.mimetype)) {
-          const imageFilename = `${hash.toString("hex")}${file.mimetype.replace("image/", ".")}`;
-          callback(null, imageFilename);
-        } else {
-          const audioFilename = `${hash.toString("hex")}${file.mimetype.replace("audio/", ".")}`;
-          callback(null, audioFilename);
-        }
+
+        callback(null, `${hash.toString("hex")}${ext}`);
       });
     },
   }),
+
   limits: {
-    fileSize: 10 * 1024 * 1024, //5MB
+    fileSize: 10 * 1024 * 1024,
   },
 
   fileFilter: (req, file, callback) => {
-    const formats = [
+    const allowed = [
       "image/jpeg",
       "image/jpg",
       "image/png",
@@ -38,7 +47,7 @@ export const multerConfig = {
       "video/quicktime",
     ];
 
-    if (formats.includes(file.mimetype)) {
+    if (allowed.includes(file.mimetype)) {
       callback(null, true);
     } else {
       callback(new Error(`Format not accepted: ${file.mimetype}`));
