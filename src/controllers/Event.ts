@@ -1883,6 +1883,7 @@ const loadProgress = (): number => {
   }
   return 0;
 };
+
 // Fonction pour comparer les coordonnées avec une tolérance
 const areCoordinatesEqual = (
   oldLat: number,
@@ -1896,6 +1897,7 @@ const areCoordinatesEqual = (
     Math.abs(oldLng - newLng) < precision
   );
 };
+
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 // Fonction pour calculer la distance avec la formule de Haversine
 
@@ -2149,6 +2151,7 @@ const normalizeDayRange = (input: Date) => {
   dayEnd.setHours(23, 59, 59, 999);
   return { dayStart, dayEnd };
 };
+
 const registrationToAnEvent = async (req: Request, res: Response) => {
   const session = await mongoose.startSession();
 

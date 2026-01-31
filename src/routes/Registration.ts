@@ -7,22 +7,29 @@ const router = express.Router();
 router.get(
   "/get/:registrationId",
   CustomerIsAuthenticated,
-  controller.readRegistration
+  controller.readRegistration,
 );
 router.get(
   "/getAllByCustomer/",
   CustomerIsAuthenticated,
-  controller.getUserReservationsGroupedByDate
+  controller.getUserReservationsGroupedByDate,
 );
+
+router.get(
+  "/getAllByEstablishment/",
+  CustomerIsAuthenticated,
+  controller.readRegistrationByEstablishment,
+);
+
 router.put(
   "/update/:registrationId",
   CustomerIsAuthenticated,
-  controller.updateRegistration
+  controller.updateRegistration,
 );
 router.delete(
   "/delete",
   CustomerIsAuthenticated,
-  controller.deleteRegistration
+  controller.deleteRegistration,
 );
 
 export default router;
