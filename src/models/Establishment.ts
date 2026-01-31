@@ -41,7 +41,7 @@ const EstablishmentSchema = new Schema<IEstablishment>(
             instagram: { type: String },
             twitter: { type: String },
           },
-          { _id: false }
+          { _id: false },
         ),
         default: undefined,
       },
@@ -89,14 +89,17 @@ const EstablishmentSchema = new Schema<IEstablishment>(
     owner: { type: Schema.Types.ObjectId, ref: "Owner" },
     staff: [{ type: Schema.Types.ObjectId, ref: "Customer" }],
     events: [{ type: Schema.Types.ObjectId, ref: "Event" }],
+    notifications: [{ type: Schema.Types.ObjectId, ref: "Notification" }],
     activated: { type: Boolean, default: false },
+    amountAvailable: { type: Number, default: 0 },
+    refund: [{ type: Schema.Types.ObjectId, ref: "Bill" }],
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 const Establishment = model<IEstablishment>(
   "Establishment",
-  EstablishmentSchema
+  EstablishmentSchema,
 );
 
 export default Establishment;
