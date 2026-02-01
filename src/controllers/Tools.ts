@@ -799,7 +799,7 @@ const BUCKET_PHRASES_I18N: Record<Lang, Record<Bucket, string[]>> = {
     ],
     other: [
       "les bons plans locaux",
-      "les événements près de chez moi",
+      "les événements locaux",
       "les sorties et animations du coin",
     ],
   },
