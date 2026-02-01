@@ -60,7 +60,7 @@ export default interface ICustomer extends Document {
 
   /** 👥 STAFF – établissements dont le customer fait partie */
   establishmentStaffOf: Types.ObjectId[];
-
+  language: string;
   passwordLosted: {
     status: boolean;
     code: string | null;

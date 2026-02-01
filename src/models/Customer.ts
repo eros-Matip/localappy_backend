@@ -76,7 +76,11 @@ const customerSchema = new Schema<ICustomer>(
         response: { type: Boolean, default: undefined }, // undefined = pas répondu
       },
     ],
-
+    language: {
+      type: String,
+      enum: ["fr", "en", "es", "de", "it", "eu"],
+      default: "fr",
+    },
     passwordLosted: {
       status: { type: Boolean, default: false },
       code: { type: String, default: null },

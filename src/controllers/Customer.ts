@@ -211,6 +211,10 @@ const updateCustomer = async (req: Request, res: Response) => {
       customer.picture = null;
     }
 
+    if (allInfos?.language) {
+      customer.language = allInfos.language;
+    }
+
     await customer.save();
 
     Retour.log(
