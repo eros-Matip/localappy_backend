@@ -3,6 +3,7 @@ import { Request, Response } from "express";
 import mongoose from "mongoose";
 import OpenAI from "openai";
 import Customer from "../models/Customer";
+import Establishment from "../models/Establishment";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -1042,6 +1043,85 @@ const BUCKET_PHRASES_I18N: Record<Lang, Record<Bucket, string[]>> = {
   },
 };
 
+const ORG_BUCKET_PHRASES_I18N: Record<Lang, Record<Bucket, string[]>> = {
+  fr: {
+    culture: [
+      "des sorties culturelles et des rendez-vous artistiques",
+      "des spectacles, concerts et expositions",
+      "la culture locale et les animations artistiques",
+    ],
+    sport: [
+      "des activités sportives et des événements",
+      "des défis, compétitions et moments sport & loisirs",
+      "le sport accessible et fédérateur",
+    ],
+    food: [
+      "des dégustations et expériences gourmandes",
+      "des découvertes culinaires et bons plans food",
+      "des moments conviviaux autour du goût",
+    ],
+    pro: [
+      "des rencontres professionnelles et du networking",
+      "des ateliers, conférences et échanges pro",
+      "des événements pour créer du lien et des opportunités",
+    ],
+    market: [
+      "des marchés, ventes et bonnes affaires",
+      "des trouvailles locales et événements shopping",
+      "des brocantes et temps forts commerçants",
+    ],
+    nature: [
+      "des balades, randonnées et sorties nature",
+      "la découverte du patrimoine naturel",
+      "des activités au grand air",
+    ],
+    family: [
+      "des sorties à faire en famille",
+      "des événements pensés pour les enfants",
+      "des activités intergénérationnelles",
+    ],
+    travel: [
+      "des visites et lieux à découvrir",
+      "des escapades et visites guidées",
+      "des idées de découverte du territoire",
+    ],
+    other: [
+      "des événements et animations locales",
+      "des bons plans et moments conviviaux",
+      "des initiatives proches de chez vous",
+    ],
+  },
+  // fallback (si tu veux remplir, tu peux, sinon ça bascule sur fr)
+  en: {} as any,
+  de: {} as any,
+  es: {} as any,
+  it: {} as any,
+  eu: {} as any,
+};
+
+const ORG_LONG_TEMPLATES_FR = {
+  intro: [
+    (name: string, city?: string) =>
+      `${name} est un lieu chaleureux et vivant${city ? ` situé à ${city}` : ""}, pensé comme un espace de rencontre, de partage et de découverte.`,
+    (name: string, city?: string) =>
+      `${name} s’impose comme un lieu de vie incontournable${city ? ` à ${city}` : ""}, mêlant convivialité, dynamisme et identité locale.`,
+  ],
+
+  activity: [
+    (items: string[]) =>
+      `On y propose ${joinNice(items, "fr")}, avec une programmation régulière qui valorise les initiatives locales et les temps forts du territoire.`,
+    (items: string[]) =>
+      `L’établissement accueille ${joinNice(items, "fr")}, offrant ainsi une expérience riche et variée tout au long de l’année.`,
+  ],
+
+  vibe: [
+    () =>
+      `Accessible et inspirant, le lieu s’adresse aussi bien aux habitués qu’aux curieux en quête de nouvelles expériences.`,
+    () =>
+      `Pensé pour rassembler, l’espace favorise les échanges, la découverte et les moments partagés.`,
+  ],
+};
+
 const TEMPLATES_I18N: Record<Lang, ((items: string[]) => string)[]> = {
   fr: [
     (items) => `J’aime ${joinNice(items, "fr")}.`,
@@ -1099,6 +1179,52 @@ const TEMPLATES_I18N: Record<Lang, ((items: string[]) => string)[]> = {
   ],
 };
 
+const ORG_TEMPLATES_I18N: Record<
+  Lang,
+  ((items: string[], name?: string) => string)[]
+> = {
+  fr: [
+    (items, name) =>
+      `${name ? `${name}, ` : ""}c’est ${joinNice(items, "fr")}.`,
+    (items, name) =>
+      `${name ? `${name} ` : "Ici,"} on vous propose ${joinNice(items, "fr")}.`,
+    (items) => `Au programme : ${joinNice(items, "fr")}.`,
+    (items) => `On met en avant ${joinNice(items, "fr")}.`,
+    (items) => `Des idées, du lien, et ${joinNice(items, "fr")}.`,
+  ],
+  en: [
+    (items, name) =>
+      `${name ? `${name} is` : "We are"} all about ${joinNice(items, "en")}.`,
+    (items) => `What’s on: ${joinNice(items, "en")}.`,
+    (items) => `We highlight ${joinNice(items, "en")}.`,
+    (items) => `Good vibes and ${joinNice(items, "en")}.`,
+  ],
+  de: [
+    (items, name) =>
+      `${name ? `${name} steht für` : "Wir stehen für"} ${joinNice(items, "de")}.`,
+    (items) => `Im Fokus: ${joinNice(items, "de")}.`,
+    (items) => `Programm: ${joinNice(items, "de")}.`,
+  ],
+  es: [
+    (items, name) =>
+      `${name ? `${name} es` : "Somos"} ${joinNice(items, "es")}.`,
+    (items) => `En el programa: ${joinNice(items, "es")}.`,
+    (items) => `Ponemos en valor ${joinNice(items, "es")}.`,
+  ],
+  it: [
+    (items, name) =>
+      `${name ? `${name} è` : "Siamo"} ${joinNice(items, "it")}.`,
+    (items) => `In programma: ${joinNice(items, "it")}.`,
+    (items) => `Mettiamo in evidenza ${joinNice(items, "it")}.`,
+  ],
+  eu: [
+    (items, name) =>
+      `${name ? `${name}: ` : ""}${joinNice(items, "eu")} gure ardatza da.`,
+    (items) => `Gaurko plana: ${joinNice(items, "eu")}.`,
+    (items) => `Tokiko giroa eta ${joinNice(items, "eu")}.`,
+  ],
+};
+
 /* -------------------------------------------------------------------------- */
 /*                              CORE GENERATION                               */
 /* -------------------------------------------------------------------------- */
@@ -1134,6 +1260,86 @@ function buildCustomerDescriptifUnique(
   return { tags, bio };
 }
 
+function buildEstablishmentDescriptionUnique(
+  seedId: string,
+  types: string[],
+  lang: Lang,
+  name?: string,
+  maxTags = 6,
+  maxPhraseItems = 3,
+) {
+  const themeMap = THEMES_LABELS[lang] ?? THEMES_LABELS.fr;
+
+  const phrasesByLang = ORG_BUCKET_PHRASES_I18N[lang];
+  const phrases =
+    phrasesByLang && Object.keys(phrasesByLang).length > 0
+      ? phrasesByLang
+      : ORG_BUCKET_PHRASES_I18N.fr;
+
+  const templates = ORG_TEMPLATES_I18N[lang] ?? ORG_TEMPLATES_I18N.fr;
+
+  const keys = Array.from(new Set(types)).filter(Boolean);
+
+  // tags : on prend le label i18n si connu, sinon on laisse brut
+  const labels = keys.map((k) => themeMap[k] ?? k);
+  const tags = labels.slice(0, maxTags).join(", ");
+
+  const buckets = keys.map((k) => BUCKET_BY_THEME[k] ?? "other");
+  const ranked = rankBuckets(buckets);
+
+  const rng = seededRng(seedId);
+
+  const phraseItems = ranked
+    .slice(0, Math.min(maxPhraseItems, ranked.length))
+    .map((b) => pick(rng, phrases[b] ?? phrases.other));
+
+  const template = pick(rng, templates);
+  const bio = template(phraseItems, name);
+
+  return { tags, bio };
+}
+
+function buildEstablishmentLongDescriptionFromRaw(
+  seedId: string,
+  name: string,
+  city: string | undefined,
+  raw: string,
+  types: string[],
+  lang: Lang,
+  maxPhraseItems = 3,
+) {
+  const rng = seededRng(seedId);
+
+  const phrasesByLang =
+    ORG_BUCKET_PHRASES_I18N[lang] ?? ORG_BUCKET_PHRASES_I18N.fr;
+
+  const buckets = types.map((t) => BUCKET_BY_THEME[t] ?? "other");
+  const ranked = rankBuckets(buckets);
+
+  const activityItems = ranked
+    .slice(0, maxPhraseItems)
+    .map((b) => pick(rng, phrasesByLang[b] ?? phrasesByLang.other));
+
+  // 🔥 intro/activity/vibe : pour l’instant FR only (tu peux étendre après)
+  const intro = pick(rng, ORG_LONG_TEMPLATES_FR.intro)(name, city);
+  const activity = pick(rng, ORG_LONG_TEMPLATES_FR.activity)(activityItems);
+  const vibe = pick(rng, ORG_LONG_TEMPLATES_FR.vibe)();
+
+  const cleanedRaw = raw.trim();
+  const rawSentence =
+    cleanedRaw.length > 0
+      ? cleanedRaw.endsWith(".") ||
+        cleanedRaw.endsWith("!") ||
+        cleanedRaw.endsWith("?")
+        ? cleanedRaw
+        : `${cleanedRaw}.`
+      : "";
+
+  // ✅ On met le RAW au milieu ou au début pour “respecter la voix” de l'entreprise
+  // tu peux changer l'ordre si tu préfères.
+  return `${intro}\n\n${rawSentence}\n\n${activity}\n\n${vibe}`.trim();
+}
+
 /* -------------------------------------------------------------------------- */
 /*                                CONTROLLER                                  */
 /* -------------------------------------------------------------------------- */
@@ -1144,7 +1350,6 @@ const generateCustomerDescriptifFromThemesController = async (
 ) => {
   try {
     const customerId = req.body.admin._id;
-    console.log("customerId", customerId);
 
     if (!customerId || !mongoose.isValidObjectId(customerId)) {
       return res.status(401).json({ message: "Utilisateur non authentifié." });
@@ -1203,17 +1408,6 @@ const generateCustomerDescriptifFromThemesController = async (
 
     const shouldWrite = force || !alreadyHasDescriptif;
 
-    // ✅ choix de stockage: tags dans descriptif
-    if (save && shouldWrite) {
-      (customer as any).descriptif = bio;
-      // Optionnel si tu veux stocker la bio:
-      // (customer as any).generatedBio = bio;
-      // Optionnel si tu veux stocker la langue:
-      // (customer as any).language = finalLang;
-
-      await customer.save();
-    }
-
     return res.status(200).json({
       message: save
         ? shouldWrite
@@ -1231,6 +1425,268 @@ const generateCustomerDescriptifFromThemesController = async (
     return res
       .status(500)
       .json({ message: "Erreur lors de la génération du descriptif." });
+  }
+};
+
+const generateEstablishmentDescriptionFromTypesController = async (
+  req: Request,
+  res: Response,
+) => {
+  try {
+    const requesterId = req.body?.owner;
+
+    if (!requesterId || !mongoose.isValidObjectId(requesterId)) {
+      return res.status(401).json({ message: "Utilisateur non authentifié." });
+    }
+
+    const {
+      establishmentId,
+      force = false,
+      save = true,
+      maxTags = 6,
+      maxPhraseItems = 3,
+      lang,
+      // ✅ texte fourni par l'entreprise (front) si tu n'as pas encore descriptionRaw en DB
+      partialDescription,
+    } = req.body ?? {};
+
+    if (!establishmentId || !mongoose.isValidObjectId(establishmentId)) {
+      return res.status(400).json({ message: "establishmentId invalide." });
+    }
+
+    const establishment = await Establishment.findById(establishmentId);
+    if (!establishment) {
+      return res.status(404).json({ message: "Établissement introuvable." });
+    }
+
+    // (optionnel) sécurité : seul owner peut générer
+    if (
+      establishment.owner &&
+      String(establishment.owner) !== String(requesterId._id)
+    ) {
+      return res.status(403).json({ message: "Accès refusé." });
+    }
+
+    const isSupportedLang = (x: any): x is Lang =>
+      typeof x === "string" && ["fr", "en", "de", "es", "it", "eu"].includes(x);
+
+    const detected = detectLangFromHeader(req.headers["accept-language"]);
+    const estLang = (establishment as any).language as Lang | undefined;
+
+    const finalLang: Lang = isSupportedLang(lang)
+      ? lang
+      : isSupportedLang(estLang)
+        ? estLang
+        : detected;
+
+    const types = Array.isArray((establishment as any).type)
+      ? ((establishment as any).type as any[]).filter(
+          (x) => typeof x === "string",
+        )
+      : [];
+
+    const name =
+      String((establishment as any).name ?? "").trim() || "Cet établissement";
+    const city = (establishment as any).address?.city as string | undefined;
+
+    // ✅ tags (utile si tu veux les afficher)
+    const { tags } = buildEstablishmentDescriptionUnique(
+      String(establishment._id),
+      types,
+      finalLang,
+      name,
+      clampInt(maxTags, 1, 12),
+      clampInt(maxPhraseItems, 1, 4),
+    );
+
+    // ✅ description brute : priorité DB -> body.partialDescription
+    const rawFromDb = String(
+      (establishment as any).descriptionRaw ?? "",
+    ).trim();
+    const rawFromBody = String(partialDescription ?? "").trim();
+    const raw = rawFromDb || rawFromBody;
+
+    const alreadyHasFinal = Boolean(
+      String((establishment as any).description ?? "").trim(),
+    );
+
+    const shouldWrite = force || !alreadyHasFinal;
+
+    // ✅ si l'entreprise n'a rien écrit, on génère quand même mais en mode "safe"
+    const safeRaw =
+      raw.length >= 20
+        ? raw
+        : `Bienvenue chez ${name}${city ? `, à ${city}` : ""}.`;
+
+    const description = buildEstablishmentLongDescriptionFromRaw(
+      String(establishment._id),
+      name,
+      city,
+      safeRaw,
+      types,
+      finalLang,
+      clampInt(maxPhraseItems, 1, 4),
+    );
+
+    if (save && shouldWrite) {
+      (establishment as any).description = description;
+
+      // optionnel : stocker le raw si tu as le champ en DB
+      if (rawFromBody && !(establishment as any).descriptionRaw) {
+        (establishment as any).descriptionRaw = rawFromBody;
+      }
+
+      await establishment.save();
+    }
+
+    return res.status(200).json({
+      message: save
+        ? shouldWrite
+          ? "Description entreprise générée et sauvegardée."
+          : "Description existante conservée."
+        : "Description générée (non sauvegardée).",
+      lang: finalLang,
+      tags,
+      description,
+      saved: Boolean(save && shouldWrite),
+      typesCount: types.length,
+      usedRaw: Boolean(raw),
+    });
+  } catch (error) {
+    console.error("Erreur génération description établissement :", error);
+    return res.status(500).json({
+      message: "Erreur lors de la génération de la description.",
+    });
+  }
+};
+
+const translateEstablishmentDescriptionController = async (
+  req: Request,
+  res: Response,
+) => {
+  try {
+    const requesterId = req.body?.owner._id;
+
+    const {
+      establishmentId,
+      baseLang = "fr",
+      targetLangs,
+    } = req.body as {
+      establishmentId: string;
+      baseLang?: string;
+      targetLangs: string[];
+    };
+
+    if (!establishmentId || !mongoose.isValidObjectId(establishmentId)) {
+      return res.status(400).json({ message: "establishmentId invalide." });
+    }
+
+    if (
+      !targetLangs ||
+      !Array.isArray(targetLangs) ||
+      targetLangs.length === 0
+    ) {
+      return res.status(400).json({ message: "targetLangs est requis." });
+    }
+
+    const establishment = await Establishment.findById(establishmentId);
+    if (!establishment) {
+      return res.status(404).json({ message: "Établissement introuvable." });
+    }
+
+    if (
+      establishment.owner &&
+      String(establishment.owner) !== String(requesterId)
+    ) {
+      return res.status(403).json({ message: "Accès refusé." });
+    }
+
+    const title = String((establishment as any).name ?? "");
+    const description = String((establishment as any).description ?? "").trim();
+
+    if (!description) {
+      return res.status(400).json({
+        message:
+          "Aucune description à traduire. Génère d’abord la description.",
+      });
+    }
+
+    // ✅ Reprend ta logique de prompt de traduction (en la recopiant ici)
+    const uniqueLangs = Array.from(new Set(targetLangs));
+
+    const prompt = `
+Tu es un traducteur professionnel.
+
+TEXTE SOURCE :
+- Langue source : ${baseLang}
+- Titre : ${title}
+- Description : ${description}
+
+TÂCHE :
+Traduire ce titre et cette description dans chacune des langues suivantes :
+${JSON.stringify(uniqueLangs)}
+
+CONTRAINTES :
+- Respecter le sens et le ton.
+- Adapter légèrement le style pour que ce soit naturel dans chaque langue cible.
+- Ne PAS résumer, ne PAS rallonger inutilement.
+
+FORMAT DE RÉPONSE :
+Tu DOIS renvoyer STRICTEMENT un JSON valide, sans texte avant ou après, de la forme :
+
+{
+  "en": { "title": "...", "description": "..." },
+  "es": { "title": "...", "description": "..." }
+}
+`.trim();
+
+    const response = await openai.responses.create({
+      model: "gpt-4.1-mini",
+      input: prompt,
+    });
+
+    const raw = (response as any).output_text?.trim() || "";
+
+    let parsed: any;
+    try {
+      const firstBrace = raw.indexOf("{");
+      const lastBrace = raw.lastIndexOf("}");
+      const jsonText =
+        firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace
+          ? raw.slice(firstBrace, lastBrace + 1)
+          : raw;
+
+      parsed = JSON.parse(jsonText);
+    } catch (e) {
+      console.error("Réponse traduction non JSON :", raw);
+      return res.status(500).json({
+        message: "Impossible de parser la traduction.",
+      });
+    }
+
+    // ✅ Sauvegarde dans descriptionI18n
+    const i18n: any = (establishment as any).descriptionI18n ?? {};
+
+    uniqueLangs.forEach((code) => {
+      const entry = parsed[code] || {};
+      i18n[code] = entry.description ?? "";
+    });
+
+    // On garde aussi la base
+    i18n[baseLang] = description;
+
+    (establishment as any).descriptionI18n = i18n;
+    await establishment.save();
+
+    return res.status(200).json({
+      message: "Traductions sauvegardées.",
+      descriptionI18n: i18n,
+    });
+  } catch (error) {
+    console.error("Erreur traduction établissement :", error);
+    return res.status(500).json({
+      message: "Erreur lors de la traduction.",
+    });
   }
 };
 
@@ -1300,8 +1756,12 @@ function clampInt(value: any, min: number, max: number) {
 /*                                   EXPORT                                   */
 /* -------------------------------------------------------------------------- */
 
+/* ------------------------------- HELPERS ---------------------------------- */
+
 export default {
   generateEventDescriptionController,
   translateController,
   generateCustomerDescriptifFromThemesController,
+  generateEstablishmentDescriptionFromTypesController,
+  translateEstablishmentDescriptionController,
 };

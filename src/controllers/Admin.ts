@@ -119,7 +119,6 @@ const dashboard = async (req: Request, res: Response) => {
     const sample = await Event.findOne({ isDraft: false })
       .select("isDraft")
       .lean();
-    console.log("SAMPLE EVENT:", sample);
 
     // ----------------------------
     // 1) KPIs globaux

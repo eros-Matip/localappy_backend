@@ -1,6 +1,7 @@
 import express from "express";
 import controller from "../controllers/Tools";
 import CustomerIsAuthenticated from "../middlewares/IsAuthenticated";
+import OwnerIsAuthenticated from "../middlewares/OwnerIsAuthenticated";
 
 const router = express.Router();
 
@@ -17,4 +18,15 @@ router.post(
   controller.generateCustomerDescriptifFromThemesController,
 );
 
+router.post(
+  "/establishment/generate-descriptif",
+  OwnerIsAuthenticated,
+  controller.generateEstablishmentDescriptionFromTypesController,
+);
+
+router.post(
+  "/establishment/translate-descriptif",
+  OwnerIsAuthenticated,
+  controller.translateEstablishmentDescriptionController,
+);
 export default router;

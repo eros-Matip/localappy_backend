@@ -82,6 +82,14 @@ interface IEstablishment extends Document {
   logo: string;
   photos: string[];
   description?: string;
+  descriptionI18n?: {
+    fr?: string;
+    en?: string;
+    es?: string;
+    de?: string;
+    it?: string;
+    eu?: string;
+  };
   openingHours: IOpeningHours[];
   acceptedPayments: IPaymentMethod[];
   legalForm: "company" | "association";

@@ -13,7 +13,7 @@ router.post(
     try {
       if (!process.env.MAILERSEND_KEY) {
         throw new Error(
-          "MAILERSEND_KEY est manquant dans les variables d'environnement."
+          "MAILERSEND_KEY est manquant dans les variables d'environnement.",
         );
       }
 
@@ -23,7 +23,7 @@ router.post(
 
       const sender = new Sender(
         "noreply@trial-65qngkd9dedlwr12.mlsender.net",
-        "LocalAppy Support"
+        "LocalAppy Support",
       );
 
       const email = req.body.email;
@@ -32,8 +32,6 @@ router.post(
       const customerFinded = await Customer.findOne({ email });
       const ownerFinded = await Owner.findOne({ email });
       const adminFinded = await Admin.findOne({ email });
-
-      console.log("adminFinded :", adminFinded);
 
       // Vérification si un utilisateur existe
       const utilisateurFinded = customerFinded || ownerFinded || adminFinded;
@@ -54,7 +52,7 @@ router.post(
 
       const newPassword = randomStr(
         9,
-        "1234567890abcdefghijklmnoqprstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "1234567890abcdefghijklmnoqprstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
       );
 
       // ✅ Mise à jour du mot de passe temporaire
@@ -65,7 +63,7 @@ router.post(
       // ✅ Envoi de l'email
       const recipient = new Recipient(
         utilisateurFinded.email,
-        utilisateurFinded.email
+        utilisateurFinded.email,
       );
       const personalization = [
         {
@@ -95,7 +93,7 @@ router.post(
         .status(500)
         .json({ message: "Une erreur est survenue.", error });
     }
-  }
+  },
 );
 
 export default router;

@@ -4,11 +4,11 @@ import csv from "csv-parser";
 
 const INPUT_CSV = path.resolve(
   process.cwd(),
-  "data/rna_waldec_20250401_dpt_64.csv"
+  "data/rna_waldec_20250401_dpt_64.csv",
 );
 const OUTPUT_JSON = path.resolve(
   process.cwd(),
-  "data/associations_dpt_64.json"
+  "data/associations_dpt_64.json",
 );
 
 const normalize = (v: string) =>
@@ -100,7 +100,6 @@ async function run() {
   }
 
   const separator = detectSeparator(INPUT_CSV);
-  console.log("Separator detected:", separator);
 
   const associations: any[] = [];
   let rowCount = 0;

@@ -48,6 +48,14 @@ const EstablishmentSchema = new Schema<IEstablishment>(
     },
 
     description: { type: String }, // Description du commerce
+    descriptionI18n: {
+      fr: String,
+      en: String,
+      es: String,
+      de: String,
+      it: String,
+      eu: String,
+    },
     logo: { type: String }, // Image principale ou logo
     photos: { type: [String] },
 

@@ -19,7 +19,7 @@ const createAd = async (req: Request, res: Response) => {
     let imageUrls: string[] = [];
 
     const establishmentFinded = await Establishment.findById(
-      req.params.establishmentId
+      req.params.establishmentId,
     );
     if (!establishmentFinded) {
       Retour.error("Establishment was not found");
@@ -54,17 +54,14 @@ const createAd = async (req: Request, res: Response) => {
       }
     }
 
-    console.log("🔍 req.files =", req.files);
-    console.log("🔍 req.file =", (req as any).file);
-
     // 📸 Si des fichiers sont envoyés, ils remplacent les images de l’event
     if (files && files.length > 0) {
       const uploadResults = await Promise.all(
         files.map((file) =>
           cloudinary.v2.uploader.upload(file.path, {
             folder: "localappy/ads",
-          })
-        )
+          }),
+        ),
       );
 
       imageUrls = uploadResults.map((res) => res.secure_url);
@@ -128,7 +125,7 @@ const getAdById = async (req: Request, res: Response) => {
           },
         },
       },
-      { new: true }
+      { new: true },
     );
 
     if (!ad) {
