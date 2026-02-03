@@ -334,7 +334,7 @@ const getPublicInformation = async (req: Request, res: Response) => {
       req.params.establishmentId,
     )
       .select(
-        "name description address location photos openingHours logo events contact acceptedPayments",
+        "name description address location photos openingHours logo events contact acceptedPayments legalForm descriptionI18n",
       )
       .populate({
         path: "events",
