@@ -33,9 +33,7 @@ const verifyAppleToken = (accessToken: string) => {
         issuer: "https://appleid.apple.com",
       },
       (err, decoded) => {
-        if (err) {
-          return reject(err);
-        }
+        if (err) return reject(err);
         resolve(decoded);
       },
     );
@@ -43,7 +41,7 @@ const verifyAppleToken = (accessToken: string) => {
 };
 
 router.post("/socialLogin", async (req: Request, res: Response) => {
-  const { provider, accessToken, expoPushToken } = req.body; // Ajout de expoPushToken
+  const { provider, accessToken, expoPushToken } = req.body;
 
   if (!provider || !accessToken) {
     Retour.error("Provider and accessToken are required");
@@ -55,21 +53,15 @@ router.post("/socialLogin", async (req: Request, res: Response) => {
   try {
     let userData: any;
 
+    // =========================
+    // ✅ GOOGLE (stabilisé)
+    // =========================
     if (provider === "google") {
       try {
-        // 1) Cas access_token (ton cas actuel)
-        const googleResponse = await axios.get(
-          `https://www.googleapis.com/oauth2/v3/userinfo?access_token=${accessToken}`,
-        );
-        userData = googleResponse.data;
-      } catch (err) {
-        // 2) Si ça fail, on tente le cas id_token (JWT)
-        // tokeninfo accepte id_token ou access_token, mais ici on l’utilise pour id_token
         const tokenInfo = await axios.get(
           `https://oauth2.googleapis.com/tokeninfo?id_token=${accessToken}`,
         );
 
-        // tokeninfo retourne des champs différents
         userData = {
           email: tokenInfo.data.email,
           given_name: tokenInfo.data.given_name,
@@ -77,17 +69,65 @@ router.post("/socialLogin", async (req: Request, res: Response) => {
           picture: tokenInfo.data.picture,
           sub: tokenInfo.data.sub,
         };
+
+        // (optionnel mais recommandé) Vérif audience
+        if (
+          process.env.GOOGLE_WEB_CLIENT_ID &&
+          tokenInfo.data.aud !== process.env.GOOGLE_WEB_CLIENT_ID
+        ) {
+          return res
+            .status(401)
+            .json({ message: "Invalid Google token audience" });
+        }
+      } catch (err) {
+        // Fallback : access_token (si jamais tu en envoies encore)
+        const googleResponse = await axios.get(
+          `https://www.googleapis.com/oauth2/v3/userinfo?access_token=${accessToken}`,
+        );
+        userData = googleResponse.data;
       }
 
       if (!userData?.email) {
         return res.status(400).json({ message: "Google token missing email" });
       }
-    } else if (provider === "facebook") {
+    }
+
+    // =========================
+    // ✅ FACEBOOK (email requis)
+    // =========================
+    else if (provider === "facebook") {
       const facebookResponse = await axios.get(
         `https://graph.facebook.com/me?fields=id,name,email&access_token=${accessToken}`,
       );
-      userData = facebookResponse.data;
-    } else if (provider === "apple") {
+
+      const fb = facebookResponse.data;
+
+      if (!fb?.email) {
+        return res.status(400).json({
+          message:
+            "Facebook account has no email OR permission 'email' not granted",
+        });
+      }
+
+      const fullName = (fb?.name ?? "").trim();
+      const parts = fullName ? fullName.split(" ") : [];
+      const given = parts.length ? parts[0] : "Utilisateur";
+      const family = parts.length > 1 ? parts.slice(1).join(" ") : "";
+
+      userData = {
+        email: fb.email,
+        given_name: given,
+        family_name: family,
+        // (facultatif) tu peux récupérer une photo plus tard via /me/picture si tu veux
+        picture: "https://example.com/default-avatar.png",
+        sub: fb.id,
+      };
+    }
+
+    // =========================
+    // 🚫 APPLE (inchangé)
+    // =========================
+    else if (provider === "apple") {
       try {
         const decodedToken: any = await verifyAppleToken(accessToken);
         const { email, sub: appleUserId } = decodedToken;
@@ -114,6 +154,9 @@ router.post("/socialLogin", async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Invalid provider" });
     }
 
+    // =========================
+    // CUSTOMER UPSERT
+    // =========================
     let customer = await Customer.findOne({ email: userData.email }).populate([
       { path: "themesFavorites", model: "Theme" },
       { path: "eventsReserved", model: "Event" },
@@ -125,7 +168,7 @@ router.post("/socialLogin", async (req: Request, res: Response) => {
     if (!customer) {
       customer = new Customer({
         account: {
-          firstname: userData.given_name || userData.name,
+          firstname: userData.given_name || userData.name || "Utilisateur",
           name: userData.family_name || "",
         },
         picture: {
@@ -135,15 +178,13 @@ router.post("/socialLogin", async (req: Request, res: Response) => {
         },
         email: userData.email,
         token: uid2(29),
-        expoPushToken: expoPushToken || null, // Ajout de expoPushToken
+        expoPushToken: expoPushToken || null,
       });
 
       await customer.save();
     } else {
       customer.token = uid2(29);
-      if (expoPushToken) {
-        customer.expoPushToken = expoPushToken; // Mise à jour si fourni
-      }
+      if (expoPushToken) customer.expoPushToken = expoPushToken;
       await customer.save();
     }
 
