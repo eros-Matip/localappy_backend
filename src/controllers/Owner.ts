@@ -9,6 +9,9 @@ const uid2 = require("uid2");
 import twilio from "twilio";
 import { Job, Agenda } from "agenda";
 import config from "../config/config";
+import Admin from "../models/Admin";
+import { notifyAdminsNewOwner } from "../services/notifyAdmins"; // adapte chemin
+
 const cloudinary = require("cloudinary");
 
 // Twilio configuration
@@ -22,44 +25,63 @@ const agenda = new Agenda({ db: { address: `${config.mongooseUrl}` } });
 // Définir la tâche de suppression
 agenda.define("delete unverified owner", async (job: Job) => {
   try {
-    const { ownerId } = job.attrs.data;
+    const { ownerId } = job.attrs.data as { ownerId: string };
+
     const owner = await Owner.findById(ownerId);
+    if (!owner) {
+      Retour.log(`Owner with ID ${ownerId} not found. No action taken.`);
+      return;
+    }
 
-    if (owner && !owner.isVerified) {
-      Retour.log(`Unverified owner ${owner.email} deleted after 1 hour.`);
+    if (owner.isVerified) {
+      Retour.log(`Owner with ID ${ownerId} is verified. No action taken.`);
+      return;
+    }
 
-      if (owner.cni?.public_id) {
-        // Supprimer le fichier associé à la pièce d'identité
-        await cloudinary.uploader.destroy(owner.cni.public_id);
-        Retour.log(`Deleted CNI file: ${owner.cni.public_id}`);
-      }
+    Retour.log(`Unverified owner ${owner.email} deleted after 1 hour.`);
 
-      // Supprimer le dossier s'il existe
-      const folderName = `${owner.account.firstname}_${owner.account.name}_folder`;
+    // 1) Supprimer le fichier CNI (si présent)
+    if (owner.cni?.public_id) {
+      await cloudinary.uploader.destroy(owner.cni.public_id);
+      Retour.log(`Deleted CNI file: ${owner.cni.public_id}`);
+    }
+
+    // 2) Supprimer le contenu du dossier puis le dossier
+    const folderName = `${owner.account.firstname}_${owner.account.name}_folder`;
+
+    // cloudinary.api.resources peut throw si folder vide/inexistant -> on protège
+    try {
       const { resources } = await cloudinary.api.resources({
         type: "upload",
         prefix: folderName,
+        max_results: 500,
       });
 
       for (const file of resources) {
         await cloudinary.uploader.destroy(file.public_id);
       }
+
+      // delete_folder peut throw si déjà supprimé / inexistant
       await cloudinary.api.delete_folder(folderName);
       Retour.log(`Deleted Cloudinary folder: ${folderName}`);
-
-      // Supprimer le propriétaire de la base de données
-      await owner.deleteOne();
-    } else if (owner && owner.isVerified) {
-      Retour.log(`Owner with ID ${ownerId} is verified. No action taken.`);
-    } else {
-      Retour.log(`Owner with ID ${ownerId} not found. No action taken.`);
+    } catch (e) {
+      console.warn(`Cloudinary cleanup warning for folder ${folderName}:`, e);
     }
+
+    // 3) Détacher le customer (sans crash si pas trouvé)
+    const customerFinded = await Customer.findOne({ ownerAccount: owner._id });
+    if (customerFinded) {
+      customerFinded.ownerAccount = null;
+      await customerFinded.save();
+    }
+
+    // 4) Supprimer l’owner
+    await owner.deleteOne();
   } catch (error) {
-    Retour.error(
-      `Failed to delete unverified owner with ID ${job.attrs.data.ownerId}`,
-    );
+    const ownerId = (job.attrs.data as any)?.ownerId;
+    Retour.error(`Failed to delete unverified owner with ID ${ownerId}`);
     console.error(
-      `Failed to delete unverified owner with ID ${job.attrs.data.ownerId}:`,
+      `Failed to delete unverified owner with ID ${ownerId}:`,
       error,
     );
   }
@@ -176,6 +198,13 @@ const createOwner = async (req: Request, res: Response) => {
     await agenda.start();
     await agenda.schedule("in 1 hour", "delete unverified owner", {
       ownerId: owner._id,
+    });
+
+    await notifyAdminsNewOwner({
+      ownerId: String(owner._id),
+      ownerFirstname: owner.account.firstname,
+      ownerName: owner.account.name,
+      customerId: String(customerFinded._id),
     });
 
     Retour.info("Owner created. Verification code sent via SMS.");

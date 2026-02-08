@@ -11,6 +11,10 @@ import slugify from "slugify";
 import mongoose, { Types } from "mongoose";
 import Registration from "../models/Registration";
 import Customer from "../models/Customer";
+import {
+  notifyAdminsNewEstablishment,
+  notifyAdminsNewOwner,
+} from "../services/notifyAdmins";
 
 const cloudinary = require("cloudinary");
 
@@ -212,6 +216,15 @@ const createEstablishment = async (req: Request, res: Response) => {
 
     owner.establishments.push((establishment as any)._id);
     await owner.save();
+
+    notifyAdminsNewEstablishment({
+      establishmentId: String(establishment._id),
+      establishmentName: society,
+      legalForm: isAssociation ? "association" : "company",
+      ownerId: String(owner._id),
+      ownerFirstname: owner.account.firstname,
+      ownerName: owner.account.name,
+    }).catch((e) => console.error("Admin notification failed:", e));
 
     Retour.info("Establishment created successfully");
     return res.status(201).json({

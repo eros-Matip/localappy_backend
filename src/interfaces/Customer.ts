@@ -53,7 +53,7 @@ export default interface ICustomer extends Document {
   customersFavorites: Types.ObjectId[];
 
   /** 🏢 OWNER */
-  ownerAccount?: Types.ObjectId;
+  ownerAccount?: Types.ObjectId | null;
 
   /** 👥 STAFF – invitations reçues */
   establishmentStaffAsking: IEstablishmentStaffInvitation[];
