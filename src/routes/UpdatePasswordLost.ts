@@ -21,10 +21,7 @@ router.post(
         apiKey: process.env.MAILERSEND_KEY,
       });
 
-      const sender = new Sender(
-        "noreply@trial-65qngkd9dedlwr12.mlsender.net",
-        "LocalAppy Support",
-      );
+      const sender = new Sender("noreply@localappy.fr", "Localappy Support");
 
       const email = req.body.email;
 
@@ -60,6 +57,8 @@ router.post(
       utilisateurFinded.passwordLosted.status = true;
       utilisateurFinded.passwordLosted.code = newPassword;
 
+      await utilisateurFinded.save();
+
       // ✅ Envoi de l'email
       const recipient = new Recipient(
         utilisateurFinded.email,
@@ -82,7 +81,6 @@ router.post(
         .setPersonalization(personalization);
 
       await mailerSend.email.send(emailParams);
-      await utilisateurFinded.save();
 
       return res
         .status(200)
