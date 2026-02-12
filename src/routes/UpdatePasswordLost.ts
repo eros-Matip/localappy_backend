@@ -73,6 +73,13 @@ router.post(
         },
       ];
 
+      Retour.info({
+        from: "noreply@localappy.fr",
+        to: utilisateurFinded.email,
+        templateId: "neqvygm5v3z40p7w",
+        keyPresent: !!process.env.MAILERSEND_KEY,
+      });
+
       const emailParams = new EmailParams()
         .setFrom(sender)
         .setTo([recipient])
