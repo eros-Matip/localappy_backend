@@ -1,6 +1,5 @@
 // MODULES
 import { Request, Response, NextFunction } from "express";
-import http from "http";
 import mongoose from "mongoose";
 import config from "./config/config";
 import cors from "cors";
@@ -10,30 +9,9 @@ const express = require("express");
 const router = express();
 const cloudinary = require("cloudinary");
 const cron = require("node-cron");
-const CryptoJS = require("crypto-js");
-
-mongoose
-  .set("strictQuery", false)
-  .connect(`${config.mongooseUrl}`, { retryWrites: true, w: "majority" })
-  .then(() => {
-    Logging.info("mongoDB is cennected");
-    startServer();
-  })
-  .catch((error) => {
-    Logging.error("Unable to connect");
-    Logging.error(error);
-  });
-
-// Stockage de photos avec Cloudinary
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_NAME,
-  api_key: process.env.API_KEY_CLOUDINARY,
-  api_secret: process.env.API_SECRET_CLOUDINARY,
-});
 
 // Library
-
-// MODELS
+import Logging from "./library/Logging";
 
 // ROUTES
 import EventRoutes from "./routes/Event";
@@ -54,20 +32,39 @@ import UpdatedPasswordLostRoute from "./routes/UpdatePasswordLost";
 import AdsRoutes from "./routes/Ads";
 import RegistrationRoutes from "./routes/Registration";
 import invoiceRoutes from "./routes/invoice.routes";
-// FUNCTIONS
-import Logging from "./library/Logging";
-import AdminIsAuthenticated from "./middlewares/IsAuthenticated";
-import Event from "./models/Event";
 import OrganisateurRoute from "./routes/Organisateur";
-import Stripe from "stripe";
+
+// Middlewares
+import AdminIsAuthenticated from "./middlewares/IsAuthenticated";
+import CustomerIsAuthenticated from "./middlewares/IsAuthenticated";
+
+// MODELS
+import Event from "./models/Event";
 import Registration from "./models/Registration";
 import Bill from "./models/Bill";
-import CustomerIsAuthenticated from "./middlewares/IsAuthenticated";
+
+mongoose
+  .set("strictQuery", false)
+  .connect(`${config.mongooseUrl}`, { retryWrites: true, w: "majority" })
+  .then(() => {
+    Logging.info("mongoDB is cennected");
+    startServer();
+  })
+  .catch((error) => {
+    Logging.error("Unable to connect");
+    Logging.error(error);
+  });
+
+// Stockage de photos avec Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_NAME,
+  api_key: process.env.API_KEY_CLOUDINARY,
+  api_secret: process.env.API_SECRET_CLOUDINARY,
+});
 
 // The server start only if mongo is already connected
 const startServer = () => {
   // Check tous les Jours à 00:00 si nous avons changé de mois.
-
   cron.schedule("0 0 0 * * *", async () => {
     console.log("🔄 [CRON] Nettoyage des registrations pending...");
 
@@ -80,8 +77,6 @@ const startServer = () => {
       });
 
       for (const reg of pendingRegistrations) {
-        // Vérifie si un paiement Stripe est en cours (optionnel)
-
         const bill = await Bill.findOne({
           registration: reg._id,
           status: "pending",
@@ -102,15 +97,39 @@ const startServer = () => {
     }
   });
 
-  const allowedOrigins = ["http://localhost:3000"];
+  // =========================
+  // ✅ CORS (PROPRE)
+  // =========================
+  const allowedOrigins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "https://localappy.fr",
+  ];
 
-  const options: cors.CorsOptions = {
-    origin: allowedOrigins,
-  };
+  router.use(
+    cors({
+      origin: (origin, cb) => {
+        // origin undefined = Postman / server-to-server
+        if (!origin) return cb(null, true);
+        if (allowedOrigins.includes(origin)) return cb(null, true);
+        return cb(new Error(`CORS blocked for origin: ${origin}`));
+      },
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization", "token"],
+      credentials: true,
+    }),
+  );
 
-  router.use(cors(options));
+  // ✅ répond aux preflight (indispensable si Authorization)
+  router.options("*", cors());
+
+  // ✅ parsers (une seule fois)
   router.use(express.json({}));
+  router.use(express.urlencoded({ extended: true }));
 
+  // =========================
+  // ✅ LOGGING
+  // =========================
   router.use((req: Request, res: Response, next: NextFunction) => {
     res.on("finish", () => {
       Logging.info(
@@ -120,29 +139,12 @@ const startServer = () => {
     next();
   });
 
-  router.use(express.urlencoded({ extended: true }));
-
-  // The rules of the API
-  router.use((req: Request, res: Response, next: NextFunction) => {
-    res.header("Access-Control-Allow-Origin", "*");
-    res.header(
-      "Access-Control-Allow-Headers",
-      "Origin, X-Requested-with, Content-Type, Accept,Authorization",
-    );
-    if (req.method == "OPTIONS") {
-      res.header(
-        "Access-Control-Allow-Methods",
-        "PUT, POST, PATCH, DELETE, GET",
-      );
-      return res.status(200).json({});
-    }
-    next();
-  });
-
+  // =========================
+  // ✅ ROUTES
+  // =========================
   router.use("/event/", EventRoutes);
   router.use("/owner/", OwnerRoutes);
   router.use("/establishment/", EstablishmentRoutes);
-  router.use("/customer/", CustomerRoutes);
   router.use("/customer/", CustomerRoutes);
   router.use("/contact/", ContactRoutes);
   router.use("/admin/", AdminRoutes);
@@ -158,10 +160,11 @@ const startServer = () => {
   router.use(NotificationRoute);
   router.use(UpdatedPasswordLostRoute);
   router.use(OrganisateurRoute);
+
+  // Factures (protégé)
   router.use("/api", CustomerIsAuthenticated, invoiceRoutes);
 
   /** Healthcheck */
-
   router.all(
     "/test",
     AdminIsAuthenticated,
@@ -174,6 +177,7 @@ const startServer = () => {
         const registrations = await Registration.find({
           event: { $exists: true, $ne: null },
         });
+
         for (const reg of registrations) {
           const updated = await Event.updateOne(
             { _id: reg.event, registrations: { $ne: reg._id } },
@@ -186,9 +190,10 @@ const startServer = () => {
         const bills = await Bill.find({
           registration: { $exists: true, $ne: null },
         });
+
         for (const bill of bills) {
           const reg = await Registration.findById(bill.registration);
-          if (!reg?.event) continue; // pas d'event lié => on saute
+          if (!reg?.event) continue;
 
           const updated = await Event.updateOne(
             { _id: reg.event, bills: { $ne: bill._id } },
@@ -211,7 +216,7 @@ const startServer = () => {
     },
   );
 
-  /**Error handling */
+  /** Error handling */
   router.use((req: Request, res: Response) => {
     const error = new Error(
       `Route has been not found -> Methode: [${req.method}] - Url: [${req.originalUrl}] - Ip: [${req.socket.remoteAddress}]`,
@@ -221,6 +226,9 @@ const startServer = () => {
     return res.status(404).json(error.message);
   });
 
+  // =========================
+  // ✅ SERVER + SOCKET
+  // =========================
   const server = initSocket(router);
 
   server.listen(config.port, () => {
