@@ -43,11 +43,18 @@ import Event from "./models/Event";
 import Registration from "./models/Registration";
 import Bill from "./models/Bill";
 
+const isProd = process.env.NODE_ENV === "production";
+
 mongoose
   .set("strictQuery", false)
-  .connect(`${config.mongooseUrl}`, { retryWrites: true, w: "majority" })
+  .set("autoIndex", !isProd)
+  .connect(`${config.mongooseUrl}`, {
+    retryWrites: true,
+    w: "majority",
+    autoIndex: !isProd,
+  })
   .then(() => {
-    Logging.info("mongoDB is cennected");
+    Logging.info("mongoDB is connected");
     startServer();
   })
   .catch((error) => {

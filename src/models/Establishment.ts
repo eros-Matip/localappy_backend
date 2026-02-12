@@ -3,12 +3,11 @@ import IEstablishment from "../interfaces/Establishment";
 
 const EstablishmentSchema = new Schema<IEstablishment>(
   {
-    name: { type: String }, // Nom de l’établissement
+    name: { type: String },
     email: String,
     phone: String,
-    type: { type: [String] }, // Types d'activité (café, restaurant, boutique...)
+    type: { type: [String] },
 
-    // ✅ NOUVEAU (safe) : différencier entreprise / association
     legalForm: {
       type: String,
       enum: ["company", "association"],
@@ -19,8 +18,8 @@ const EstablishmentSchema = new Schema<IEstablishment>(
       street: { type: String },
       city: { type: String },
       postalCode: { type: String },
-      department: { type: String }, // Département
-      region: { type: String }, // Région
+      department: { type: String },
+      region: { type: String },
       country: { type: String },
     },
 
@@ -47,7 +46,7 @@ const EstablishmentSchema = new Schema<IEstablishment>(
       },
     },
 
-    description: { type: String }, // Description du commerce
+    description: { type: String },
     descriptionI18n: {
       fr: String,
       en: String,
@@ -56,7 +55,7 @@ const EstablishmentSchema = new Schema<IEstablishment>(
       it: String,
       eu: String,
     },
-    logo: { type: String }, // Image principale ou logo
+    logo: { type: String },
     photos: { type: [String] },
 
     openingHours: [
@@ -76,20 +75,15 @@ const EstablishmentSchema = new Schema<IEstablishment>(
     ],
 
     legalInfo: {
-      // ✅ EXISTANT : on garde
-      siret: { type: String }, // entreprise OU association si elle en a un
+      siret: { type: String },
       insuranceCertificate: { type: String },
-      KBis: { public_id: String, secure_url: String }, // entreprise
+      KBis: { public_id: String, secure_url: String },
       activityCodeNAF: { type: String },
-
-      // ✅ NOUVEAU (safe) : RNA association
       rna: { type: String },
-
-      // ✅ NOUVEAU (safe) : document légal association (statuts, récépissé, JO, etc.)
       legalDocument: {
         public_id: { type: String },
         secure_url: { type: String },
-        label: { type: String }, // ex: "Statuts", "Récépissé"
+        label: { type: String },
       },
     },
 
@@ -104,6 +98,15 @@ const EstablishmentSchema = new Schema<IEstablishment>(
   },
   { timestamps: true },
 );
+
+// --- INDEXES (perf) ---
+EstablishmentSchema.index({ activated: 1 });
+EstablishmentSchema.index({ "address.department": 1, activated: 1 });
+EstablishmentSchema.index({ "address.city": 1 });
+EstablishmentSchema.index({ email: 1 });
+EstablishmentSchema.index({ owner: 1 });
+// Optionnel
+EstablishmentSchema.index({ events: 1 });
 
 const Establishment = model<IEstablishment>(
   "Establishment",

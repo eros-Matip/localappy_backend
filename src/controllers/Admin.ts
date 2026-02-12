@@ -85,26 +85,6 @@ const createAdmin = async (req: Request, res: Response) => {
   }
 };
 
-type DateRange = { from: Date; to: Date };
-
-const parseRange = (req: Request): DateRange => {
-  // par défaut : 30 derniers jours
-  const now = new Date();
-  const fromStr = String(req.query.from || "");
-  const toStr = String(req.query.to || "");
-
-  const from = fromStr
-    ? new Date(fromStr)
-    : new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  const to = toStr ? new Date(toStr) : now;
-
-  // sécurité
-  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
-    throw new Error("Invalid date range. Use ?from=YYYY-MM-DD&to=YYYY-MM-DD");
-  }
-  return { from, to };
-};
-
 const startOfDay = (d: Date) =>
   new Date(d.getFullYear(), d.getMonth(), d.getDate());
 const endOfDay = (d: Date) =>
@@ -465,11 +445,38 @@ const dashboard = async (req: Request, res: Response) => {
 
 const nonDraftMatch = { isDraft: { $ne: true } };
 
+type DateRange = { from: Date; to: Date };
+
+const parseRange = (req: Request): DateRange => {
+  const now = new Date();
+  const fromStr = String(req.query.from || "");
+  const toStr = String(req.query.to || "");
+
+  const from = fromStr
+    ? new Date(fromStr)
+    : new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const to = toStr ? new Date(toStr) : now;
+
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+    throw new Error("Invalid date range. Use ?from=YYYY-MM-DD&to=YYYY-MM-DD");
+  }
+  return { from, to };
+};
+
+/**
+ * Normalise en UTC sur minuit et construit une borne exclusive (+1 jour).
+ * On évite les soucis timezone + on aide Mongo à utiliser les index range.
+ */
+const startUTC = (d: Date) =>
+  new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+
+const addDaysUTC = (d: Date, days: number) =>
+  new Date(d.getTime() + days * 24 * 60 * 60 * 1000);
+
 /**
  * 1) SUMMARY
  * GET /admin/dashboard/summary?from&to
  */
-
 const fillMonths = (
   from: Date,
   to: Date,
@@ -477,19 +484,19 @@ const fillMonths = (
 ) => {
   const map = new Map(
     data.map((d) => {
-      const key = `${d.month.getFullYear()}-${String(d.month.getMonth() + 1).padStart(2, "0")}`;
+      const key = `${d.month.getUTCFullYear()}-${String(d.month.getUTCMonth() + 1).padStart(2, "0")}`;
       return [key, d.value];
     }),
   );
 
   const out: { month: Date; value: number }[] = [];
-  const cur = new Date(from.getFullYear(), from.getMonth(), 1);
-  const end = new Date(to.getFullYear(), to.getMonth(), 1);
+  const cur = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), 1));
+  const end = new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), 1));
 
   while (cur <= end) {
-    const key = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}`;
+    const key = `${cur.getUTCFullYear()}-${String(cur.getUTCMonth() + 1).padStart(2, "0")}`;
     out.push({ month: new Date(cur), value: map.get(key) ?? 0 });
-    cur.setMonth(cur.getMonth() + 1);
+    cur.setUTCMonth(cur.getUTCMonth() + 1);
   }
 
   return out;
@@ -500,36 +507,48 @@ const summary = async (req: Request, res: Response) => {
     const { from, to } = parseRange(req);
     const now = new Date();
 
+    // Bornes UTC propres
+    const fromUTC = startUTC(from);
+    const toUTCExclusive = addDaysUTC(startUTC(to), 1);
+
+    // Requêtes “range” (index-friendly)
+    const dateRangeMatch = { $gte: fromUTC, $lt: toUTCExclusive };
+
+    // ----------------------------
+    // 1) KPIs
+    // ----------------------------
     const totalEstablishmentsPromise = Establishment.countDocuments({});
 
-    const activeEstablishmentsPromise = Event.aggregate([
+    /**
+     * Active establishments:
+     * - on récupère la liste des establishmentIds qui ont au moins 1 event non-draft
+     * - puis on compte ceux activés
+     *
+     * -> évite un $lookup sur potentiellement des milliers d'events
+     */
+    const activeEstablishmentsPromise = Event.distinct(
+      "organizer.establishment",
       {
-        $match: {
-          isDraft: { $ne: true },
-          "organizer.establishment": { $exists: true, $ne: null },
-        },
+        ...nonDraftMatch,
+        "organizer.establishment": { $ne: null },
       },
-      {
-        $lookup: {
-          from: "establishments",
-          localField: "organizer.establishment",
-          foreignField: "_id",
-          as: "est",
-        },
-      },
-      { $unwind: "$est" },
-      { $match: { "est.activated": true } },
-      {
-        $group: {
-          _id: "$organizer.establishment",
-        },
-      },
-      { $count: "count" },
-    ]).then((r) => r[0]?.count ?? 0);
+    ).then(async (ids: any[]) => {
+      const validIds = ids
+        .map((id) => String(id))
+        .filter((id) => mongoose.isValidObjectId(id))
+        .map((id) => new mongoose.Types.ObjectId(id));
+
+      if (validIds.length === 0) return 0;
+
+      return Establishment.countDocuments({
+        _id: { $in: validIds },
+        activated: true,
+      });
+    });
 
     const totalEventsPromise = Event.countDocuments({
       ...nonDraftMatch,
-      startingDate: { $gte: from, $lte: to },
+      startingDate: dateRangeMatch,
     });
 
     const upcomingEventsPromise = Event.countDocuments({
@@ -538,15 +557,16 @@ const summary = async (req: Request, res: Response) => {
     });
 
     const totalRegistrationsPromise = Registration.aggregate([
+      { $match: { createdAt: dateRangeMatch } },
       {
-        $match: {
-          createdAt: { $gte: startOfDay(from), $lte: endOfDay(to) },
+        $group: {
+          _id: null,
+          total: { $sum: { $ifNull: ["$quantity", 0] } },
         },
       },
-      {
-        $group: { _id: null, total: { $sum: { $ifNull: ["$quantity", 0] } } },
-      },
-    ]).then((r) => r[0]?.total ?? 0);
+    ])
+      .option({ maxTimeMS: 25000 })
+      .then((r) => r[0]?.total ?? 0);
 
     const [
       totalEstablishments,
@@ -562,12 +582,13 @@ const summary = async (req: Request, res: Response) => {
       totalRegistrationsPromise,
     ]);
 
+    // ----------------------------
+    // 2) Charts
+    // ----------------------------
+
+    // 2.a) registrationsByDay
     const registrationsByDay = await Registration.aggregate([
-      {
-        $match: {
-          createdAt: { $gte: startOfDay(from), $lte: endOfDay(to) },
-        },
-      },
+      { $match: { createdAt: dateRangeMatch } },
       {
         $group: {
           _id: {
@@ -582,23 +603,20 @@ const summary = async (req: Request, res: Response) => {
         $project: {
           _id: 0,
           date: {
-            $dateFromParts: {
-              year: "$_id.y",
-              month: "$_id.m",
-              day: "$_id.d",
-            },
+            $dateFromParts: { year: "$_id.y", month: "$_id.m", day: "$_id.d" },
           },
           value: 1,
         },
       },
       { $sort: { date: 1 } },
-    ]);
+    ]).option({ maxTimeMS: 25000 });
 
+    // 2.b) eventsByMonth
     const eventsByMonthRaw = await Event.aggregate([
       {
         $match: {
           ...nonDraftMatch,
-          startingDate: { $gte: from, $lte: to },
+          startingDate: dateRangeMatch,
         },
       },
       {
@@ -614,22 +632,25 @@ const summary = async (req: Request, res: Response) => {
         $project: {
           _id: 0,
           month: {
-            $dateFromParts: {
-              year: "$_id.y",
-              month: "$_id.m",
-              day: 1,
-            },
+            $dateFromParts: { year: "$_id.y", month: "$_id.m", day: 1 },
           },
           value: 1,
         },
       },
       { $sort: { month: 1 } },
-    ]);
+    ]).option({ maxTimeMS: 25000 });
 
-    const eventsByMonth = fillMonths(from, to, eventsByMonthRaw);
+    const eventsByMonth = fillMonths(
+      fromUTC,
+      addDaysUTC(toUTCExclusive, -1),
+      eventsByMonthRaw,
+    );
 
+    // ----------------------------
+    // 3) Réponse
+    // ----------------------------
     return res.status(200).json({
-      range: { from, to },
+      range: { from: fromUTC, to: addDaysUTC(toUTCExclusive, -1) },
       kpis: {
         totalEstablishments,
         activeEstablishments,
