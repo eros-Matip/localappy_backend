@@ -62,7 +62,11 @@ const parseDepartments = (req: Request): string[] => {
     .filter(Boolean);
 };
 
-const zipMatchForDepartments = (departments: string[]) => {
+/**
+ * Match sur le début du code postal (postalCode) : 64xxxx, 40xxxx...
+ * IMPORTANT: dans ta DB c'est Establishment.address.postalCode (pas address.zip)
+ */
+const postalCodeMatchForDepartments = (departments: string[]) => {
   if (!departments.length) return null;
   const escaped = departments.map((d) =>
     d.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
@@ -73,16 +77,16 @@ const zipMatchForDepartments = (departments: string[]) => {
 
 /**
  * IMPORTANT:
- * - On scope par département via Establishment.address.zip
+ * - On scope par département via Establishment.address.postalCode
  * - On remonte ensuite les ids pour filtrer Event.organizer.establishment
  */
 const getEstablishmentIdsByDepartments = async (departments: string[]) => {
   if (!departments.length) return null;
 
-  const zipMatch = zipMatchForDepartments(departments);
-  if (!zipMatch) return null;
+  const pcMatch = postalCodeMatchForDepartments(departments);
+  if (!pcMatch) return null;
 
-  const ids = await Establishment.find({ "address.zip": zipMatch })
+  const ids = await Establishment.find({ "address.postalCode": pcMatch })
     .select("_id")
     .lean();
 
@@ -204,7 +208,7 @@ const dashboard = async (req: Request, res: Response) => {
 
     /**
      * Active establishments = établissements qui ont au moins 1 event non-draft
-     * (ici on scope d'abord sur establishments via zip)
+     * (ici on scope d'abord sur establishments via postalCode)
      */
     const activeEstablishmentsPromise = Establishment.aggregate([
       {
@@ -566,7 +570,7 @@ const dashboard = async (req: Request, res: Response) => {
       ...recentRegs
         .map((r: any) => {
           const evt = regEventMap.get(String(r.event));
-          if (!evt) return null; // si filtré par dept, on ignore
+          if (!evt) return null;
           return {
             type: "registration",
             date: r.createdAt,
@@ -613,7 +617,9 @@ const fillMonths = (
 ) => {
   const map = new Map(
     data.map((d) => {
-      const key = `${d.month.getUTCFullYear()}-${String(d.month.getUTCMonth() + 1).padStart(2, "0")}`;
+      const key = `${d.month.getUTCFullYear()}-${String(
+        d.month.getUTCMonth() + 1,
+      ).padStart(2, "0")}`;
       return [key, d.value];
     }),
   );
@@ -623,7 +629,9 @@ const fillMonths = (
   const end = new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), 1));
 
   while (cur <= end) {
-    const key = `${cur.getUTCFullYear()}-${String(cur.getUTCMonth() + 1).padStart(2, "0")}`;
+    const key = `${cur.getUTCFullYear()}-${String(
+      cur.getUTCMonth() + 1,
+    ).padStart(2, "0")}`;
     out.push({ month: new Date(cur), value: map.get(key) ?? 0 });
     cur.setUTCMonth(cur.getUTCMonth() + 1);
   }
@@ -654,11 +662,6 @@ const summary = async (req: Request, res: Response) => {
       ...scopeEstablishmentsMatch,
     });
 
-    /**
-     * Active establishments:
-     * - distinct des establishment ayant au moins 1 event non-draft
-     * - puis count côté Establishment (activated)
-     */
     const activeEstablishmentsPromise = Event.distinct(
       "organizer.establishment",
       {
@@ -836,38 +839,30 @@ const distribution = async (req: Request, res: Response) => {
   try {
     const { from, to } = parseRange(req);
 
-    // ✅ accepte departments=64,40,33
-    const departmentsRaw = String(req.query.departments || "").trim();
-    const departments = departmentsRaw
-      ? departmentsRaw
-          .split(",")
-          .map((x) => x.trim())
-          .filter(Boolean)
-      : [];
+    const departments = parseDepartments(req);
 
-    const hasDeptFilter = departments.length > 0;
-
-    // helper (département via zip)
-    const deptMatchStage = hasDeptFilter
-      ? [
-          {
-            $match: {
-              $expr: {
-                $in: [
-                  {
-                    $substrCP: [{ $ifNull: ["$est.address.zip", ""] }, 0, 2],
-                  },
-                  departments,
-                ],
+    const deptMatchStage =
+      departments.length > 0
+        ? [
+            {
+              $addFields: {
+                dept: {
+                  $substrCP: [
+                    { $ifNull: ["$est.address.postalCode", ""] },
+                    0,
+                    2,
+                  ],
+                },
               },
             },
-          },
-        ]
-      : [];
+            {
+              $match: {
+                dept: { $in: departments },
+              },
+            },
+          ]
+        : [];
 
-    // ----------------------------
-    // eventsByCity : Event -> Establishment via organizer.establishment
-    // ----------------------------
     const eventsByCity = await Event.aggregate([
       {
         $match: {
@@ -885,10 +880,7 @@ const distribution = async (req: Request, res: Response) => {
         },
       },
       { $unwind: { path: "$est", preserveNullAndEmptyArrays: false } },
-
-      // ✅ filtre département APRES lookup (car zip est dans est)
       ...deptMatchStage,
-
       {
         $group: {
           _id: { $ifNull: ["$est.address.city", "Inconnu"] },
@@ -898,11 +890,8 @@ const distribution = async (req: Request, res: Response) => {
       { $project: { _id: 0, city: "$_id", value: 1 } },
       { $sort: { value: -1 } },
       { $limit: 12 },
-    ]);
+    ]).option({ maxTimeMS: 25000 });
 
-    // ----------------------------
-    // eventsByCategory : pareil -> on doit aussi lookup establishment pour filtrer
-    // ----------------------------
     const eventsByCategory = await Event.aggregate([
       {
         $match: {
@@ -920,10 +909,7 @@ const distribution = async (req: Request, res: Response) => {
         },
       },
       { $unwind: { path: "$est", preserveNullAndEmptyArrays: false } },
-
-      // ✅ filtre département
       ...deptMatchStage,
-
       {
         $project: {
           category: {
@@ -944,11 +930,11 @@ const distribution = async (req: Request, res: Response) => {
       { $project: { _id: 0, category: "$_id", value: 1 } },
       { $sort: { value: -1 } },
       { $limit: 10 },
-    ]);
+    ]).option({ maxTimeMS: 25000 });
 
     return res.status(200).json({
       range: { from, to },
-      filters: { departments },
+      scope: { departments },
       charts: { eventsByCity, eventsByCategory },
     });
   } catch (error: any) {
@@ -1132,17 +1118,21 @@ const recentActivity = async (req: Request, res: Response) => {
 /* =========================
    CUSTOMERS DASHBOARD
    GET /admin/dashboard/customers?from&to&departments=64,40
-   NOTE: filtrage dept possible seulement si Customer.account.zip existe
+   NOTE: scope dept possible seulement si Customer.account.postalCode (ou account.zip) existe
 ========================= */
 const customersDashboard = async (req: Request, res: Response) => {
   try {
     const { from, to } = parseRange(req);
 
     const departments = parseDepartments(req);
-    const zipMatch = zipMatchForDepartments(departments);
+    const pcMatch = postalCodeMatchForDepartments(departments);
 
-    // Si ton modèle Customer n'a pas account.zip => laisse vide (pas de scope)
-    const scopeCustomersMatch = zipMatch ? { "account.zip": zipMatch } : {};
+    // ✅ on tente account.postalCode, et on garde compat account.zip si tu en as
+    const scopeCustomersMatch = pcMatch
+      ? {
+          $or: [{ "account.postalCode": pcMatch }, { "account.zip": pcMatch }],
+        }
+      : {};
 
     const totalCustomersPromise = Customer.countDocuments({
       ...scopeCustomersMatch,
@@ -1233,7 +1223,7 @@ const customersDashboard = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       range: { from, to },
-      scope: { departments, scopedByZip: Boolean(zipMatch) },
+      scope: { departments, scopedByPostalCode: Boolean(pcMatch) },
       kpis: {
         totalCustomers,
         newCustomers,
@@ -1261,7 +1251,7 @@ const customersDashboard = async (req: Request, res: Response) => {
 /* =========================
    ADS DASHBOARD
    GET /admin/dashboard/ads?from&to&departments=64,40
-   - Si departments fournis: on scope uniquement les ads liées à un event
+   - Si departments fournis: scope uniquement les ads liées à un event
      dont l'organizer.establishment est dans le scope.
 ========================= */
 const adsDashboard = async (req: Request, res: Response) => {
@@ -1293,9 +1283,6 @@ const adsDashboard = async (req: Request, res: Response) => {
         ] as any[])
       : ([] as any[]);
 
-    // --------------------------------------------------
-    // 1) KPIs
-    // --------------------------------------------------
     const totalAdsPromise = scoped
       ? AdModel.aggregate([...adScopeLookupStages, { $count: "total" }]).then(
           (r) => r[0]?.total ?? 0,
@@ -1310,7 +1297,6 @@ const adsDashboard = async (req: Request, res: Response) => {
         ]).then((r) => r[0]?.total ?? 0)
       : AdModel.countDocuments({ event: { $exists: true, $ne: null } });
 
-    // ✅ TOTAL clics (peu importe la date)
     const totalClicksPromise = scoped
       ? AdModel.aggregate([
           ...adScopeLookupStages,
@@ -1321,7 +1307,6 @@ const adsDashboard = async (req: Request, res: Response) => {
           (r) => r[0]?.total ?? 0,
         );
 
-    // ✅ Clics sur la période
     const periodClicksPromise = scoped
       ? AdModel.aggregate([
           ...adScopeLookupStages,
@@ -1372,9 +1357,6 @@ const adsDashboard = async (req: Request, res: Response) => {
     const avgClicksPerAd =
       totalAds > 0 ? Number((totalClicks / totalAds).toFixed(2)) : 0;
 
-    // --------------------------------------------------
-    // 2) Clics par jour (uniquement ceux avec date valide)
-    // --------------------------------------------------
     const clicksByDay = await AdModel.aggregate([
       ...(adScopeLookupStages as any[]),
       { $unwind: "$clics" },
@@ -1405,9 +1387,6 @@ const adsDashboard = async (req: Request, res: Response) => {
       { $sort: { date: 1 } },
     ]).option({ maxTimeMS: 25000 });
 
-    // --------------------------------------------------
-    // 3) Clics par source
-    // --------------------------------------------------
     const clicksBySource = await AdModel.aggregate([
       ...(adScopeLookupStages as any[]),
       { $unwind: "$clics" },
@@ -1421,9 +1400,6 @@ const adsDashboard = async (req: Request, res: Response) => {
       { $sort: { value: -1 } },
     ]).option({ maxTimeMS: 25000 });
 
-    // --------------------------------------------------
-    // 4) Top publicités
-    // --------------------------------------------------
     const topAds = await AdModel.aggregate([
       ...(adScopeLookupStages as any[]),
       {
