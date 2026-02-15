@@ -1,4 +1,4 @@
-import { NextFunction, Request, Response } from "express";
+import { Request, Response } from "express";
 const SHA256 = require("crypto-js/sha256");
 const encBase64 = require("crypto-js/enc-base64");
 const uid2 = require("uid2");
@@ -9,441 +9,18 @@ import Admin from "../models/Admin";
 import Establishment from "../models/Establishment";
 import Event from "../models/Event";
 import Registration from "../models/Registration";
-import Customer from "../models/Customer"; // optionnel si tu veux activeUsers
+import Customer from "../models/Customer";
 
 import Retour from "../library/Retour";
 import { AdModel } from "../models/Ads";
 
-const createAdmin = async (req: Request, res: Response) => {
-  try {
-    const { email, name, firstname, phoneNumber, password, passwordConfirmed } =
-      req.body;
-
-    // 1. Valider les champs requis
-    if (!email || !name || !firstname || !phoneNumber || !password) {
-      return res
-        .status(400)
-        .json({ error: "Tous les champs requis doivent être remplis." });
-    }
-
-    // 2. Vérifier si les mots de passe correspondent
-    if (password !== passwordConfirmed) {
-      return res
-        .status(400)
-        .json({ error: "Les mots de passe ne correspondent pas." });
-    }
-
-    // 3. Vérifier si l'email est valide
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({ error: "Email invalide." });
-    }
-
-    // 4. Vérifier si l'email est déjà utilisé
-    const existingAdmin = await Admin.findOne({ email });
-    if (existingAdmin) {
-      return res
-        .status(409)
-        .json({ error: "Un administrateur avec cet email existe déjà." });
-    }
-
-    // 5. Générer le token, le salt et le hash
-    const token: string = uid2(26);
-    const salt: string = uid2(26);
-    const hash: string = SHA256(password + salt).toString(encBase64);
-
-    // 6. Créer un nouvel administrateur
-    const admin = new Admin({
-      email,
-      account: {
-        name,
-        firstname,
-        phoneNumber,
-      },
-      token,
-      salt,
-      hash,
-    });
-
-    // 7. Sauvegarder dans la base de données
-    await admin.save();
-
-    // 8. Répondre avec un message de succès (sans inclure le hash/salt)
-    return res.status(201).json({
-      message: "Administrateur créé avec succès.",
-      admin: {
-        id: admin._id,
-        email: admin.email,
-        account: admin.account,
-      },
-    });
-  } catch (error) {
-    console.error("Erreur lors de la création de l'administrateur :", error);
-    return res.status(500).json({
-      error: "Une erreur est survenue, veuillez réessayer plus tard.",
-    });
-  }
-};
-
+/* =========================
+   HELPERS (dates)
+========================= */
 const startOfDay = (d: Date) =>
   new Date(d.getFullYear(), d.getMonth(), d.getDate());
 const endOfDay = (d: Date) =>
   new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
-
-const dashboard = async (req: Request, res: Response) => {
-  try {
-    const { from, to } = parseRange(req);
-    const now = new Date();
-
-    // option : supprime ce sample une fois debug terminé
-    const sample = await Event.findOne({ isDraft: false })
-      .select("isDraft")
-      .lean();
-
-    // ----------------------------
-    // 1) KPIs globaux
-    // ----------------------------
-
-    const nonDraftMatch = { isDraft: { $ne: true } };
-
-    const totalEstablishmentsPromise = Establishment.countDocuments({});
-
-    // ✅ Actifs = établissements avec au moins 1 event non-draft (peu importe la date)
-    const activeEstablishmentsPromise = Establishment.aggregate([
-      { $match: { events: { $exists: true, $not: { $size: 0 } } } },
-      {
-        $lookup: {
-          from: "events",
-          localField: "events",
-          foreignField: "_id",
-          as: "evts",
-        },
-      },
-      {
-        $project: {
-          hasNonDraft: {
-            $gt: [
-              {
-                $size: {
-                  $filter: {
-                    input: "$evts",
-                    as: "e",
-                    cond: { $ne: ["$$e.isDraft", true] },
-                  },
-                },
-              },
-              0,
-            ],
-          },
-        },
-      },
-      { $match: { hasNonDraft: true } },
-      { $count: "count" },
-    ]).then((r) => r[0]?.count ?? 0);
-
-    // Events non-draft dans la période (par startingDate)
-    const totalEventsPromise = Event.countDocuments({
-      ...nonDraftMatch,
-      startingDate: { $gte: from, $lte: to },
-    });
-
-    // Upcoming = non-draft & endingDate > now
-    const upcomingEventsPromise = Event.countDocuments({
-      ...nonDraftMatch,
-      endingDate: { $gt: now },
-    });
-
-    // Inscriptions (places) sur la période (createdAt)
-    const totalRegistrationsPromise = Registration.aggregate([
-      {
-        $match: {
-          createdAt: { $gte: startOfDay(from), $lte: endOfDay(to) },
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          total: { $sum: { $ifNull: ["$quantity", 0] } },
-        },
-      },
-    ]).then((r) => r[0]?.total ?? 0);
-
-    const [
-      totalEstablishments,
-      activeEstablishments,
-      totalEvents,
-      upcomingEvents,
-      totalRegistrations,
-    ] = await Promise.all([
-      totalEstablishmentsPromise,
-      activeEstablishmentsPromise,
-      totalEventsPromise,
-      upcomingEventsPromise,
-      totalRegistrationsPromise,
-    ]);
-
-    const kpis = {
-      totalEstablishments,
-      activeEstablishments,
-      totalEvents,
-      upcomingEvents,
-      totalRegistrations,
-    };
-
-    // ----------------------------
-    // 2) Charts
-    // ----------------------------
-
-    // 2.a) registrationsByDay (date -> total places)
-    const registrationsByDay = await Registration.aggregate([
-      {
-        $match: {
-          createdAt: { $gte: startOfDay(from), $lte: endOfDay(to) },
-        },
-      },
-      {
-        $group: {
-          _id: {
-            y: { $year: "$createdAt" },
-            m: { $month: "$createdAt" },
-            d: { $dayOfMonth: "$createdAt" },
-          },
-          value: { $sum: { $ifNull: ["$quantity", 0] } },
-        },
-      },
-      {
-        $project: {
-          _id: 0,
-          date: {
-            $dateFromParts: { year: "$_id.y", month: "$_id.m", day: "$_id.d" },
-          },
-          value: 1,
-        },
-      },
-      { $sort: { date: 1 } },
-    ]);
-
-    // 2.b) eventsByMonth (mois -> nb events)
-    const eventsByMonth = await Event.aggregate([
-      {
-        $match: {
-          ...nonDraftMatch,
-          startingDate: { $gte: from, $lte: to },
-        },
-      },
-      {
-        $group: {
-          _id: {
-            y: { $year: "$startingDate" },
-            m: { $month: "$startingDate" },
-          },
-          value: { $sum: 1 },
-        },
-      },
-      {
-        $project: {
-          _id: 0,
-          month: {
-            $dateFromParts: { year: "$_id.y", month: "$_id.m", day: 1 },
-          },
-          value: 1,
-        },
-      },
-      { $sort: { month: 1 } },
-    ]);
-
-    // ✅ 2.c) eventsByCity (corrigé via Establishment.events -> Event)
-    const eventsByCity = await Establishment.aggregate([
-      { $match: { events: { $exists: true, $not: { $size: 0 } } } },
-      { $unwind: "$events" },
-      {
-        $lookup: {
-          from: "events",
-          localField: "events",
-          foreignField: "_id",
-          as: "evt",
-        },
-      },
-      { $unwind: "$evt" },
-      {
-        $match: {
-          "evt.isDraft": { $ne: true },
-          "evt.startingDate": { $gte: from, $lte: to },
-        },
-      },
-      {
-        $group: {
-          _id: { $ifNull: ["$address.city", "Inconnu"] },
-          value: { $sum: 1 },
-        },
-      },
-      { $project: { _id: 0, city: "$_id", value: 1 } },
-      { $sort: { value: -1 } },
-      { $limit: 12 },
-    ]);
-
-    // 2.d) eventsByCategory (inchangé, mais filtre nonDraft robuste)
-    const eventsByCategory = await Event.aggregate([
-      {
-        $match: { ...nonDraftMatch, startingDate: { $gte: from, $lte: to } },
-      },
-      {
-        $project: {
-          category: {
-            $cond: [
-              { $isArray: "$theme" },
-              { $arrayElemAt: ["$theme", 0] },
-              "$theme",
-            ],
-          },
-        },
-      },
-      {
-        $group: {
-          _id: { $ifNull: ["$category", "Sans catégorie"] },
-          value: { $sum: 1 },
-        },
-      },
-      { $project: { _id: 0, category: "$_id", value: 1 } },
-      { $sort: { value: -1 } },
-      { $limit: 10 },
-    ]);
-
-    const charts = {
-      registrationsByDay,
-      eventsByMonth,
-      eventsByCity,
-      eventsByCategory,
-    };
-
-    // ----------------------------
-    // 3) Top établissements (par inscriptions) ✅ corrigé
-    // ----------------------------
-    // Registration -> Event -> Establishment (via $in dans Establishment.events)
-    const topEstablishments = await Registration.aggregate([
-      { $match: { createdAt: { $gte: startOfDay(from), $lte: endOfDay(to) } } },
-
-      {
-        $lookup: {
-          from: "events",
-          localField: "event", // ⚠️ adapte si ton champ s'appelle "eventId"
-          foreignField: "_id",
-          as: "evt",
-        },
-      },
-      { $unwind: "$evt" },
-      { $match: { "evt.isDraft": { $ne: true } } },
-
-      {
-        $lookup: {
-          from: "establishments",
-          let: { eventId: "$evt._id" },
-          pipeline: [
-            { $match: { $expr: { $in: ["$$eventId", "$events"] } } },
-            { $project: { name: 1, "address.city": 1 } },
-          ],
-          as: "est",
-        },
-      },
-      { $unwind: "$est" },
-
-      {
-        $group: {
-          _id: "$est._id",
-          registrations: { $sum: { $ifNull: ["$quantity", 0] } },
-          eventsSet: { $addToSet: "$evt._id" },
-          name: { $first: "$est.name" },
-          city: { $first: "$est.address.city" },
-        },
-      },
-      {
-        $project: {
-          _id: 0,
-          establishmentId: "$_id",
-          registrations: 1,
-          events: { $size: "$eventsSet" },
-          name: 1,
-          city: 1,
-        },
-      },
-      { $sort: { registrations: -1 } },
-      { $limit: 8 },
-    ]);
-
-    // ----------------------------
-    // 4) Activité récente (feed) ✅ corrigé (on retire establishment des selects)
-    // ----------------------------
-    const [recentRegs, recentEvents] = await Promise.all([
-      Registration.find({})
-        .sort({ createdAt: -1 })
-        .limit(8)
-        .select("quantity createdAt event")
-        .lean(),
-      Event.find({ ...nonDraftMatch })
-        .sort({ createdAt: -1 })
-        .limit(8)
-        .select("title createdAt startingDate")
-        .lean(),
-    ]);
-
-    const recentRegEventIds = recentRegs
-      .map((r: any) => r.event)
-      .filter((id: any) => mongoose.isValidObjectId(id));
-
-    const regEvents = await Event.find({ _id: { $in: recentRegEventIds } })
-      .select("title")
-      .lean();
-
-    const regEventMap = new Map<string, any>(
-      regEvents.map((e: any) => [String(e._id), e]),
-    );
-
-    const recentActivity = [
-      ...recentEvents.map((e: any) => ({
-        type: "event_published",
-        date: e.createdAt,
-        label: e.title,
-        refId: e._id,
-      })),
-      ...recentRegs.map((r: any) => {
-        const evt = regEventMap.get(String(r.event));
-        return {
-          type: "registration",
-          date: r.createdAt,
-          label: evt?.title ? `Inscription: ${evt.title}` : "Inscription",
-          refId: r._id,
-          meta: { quantity: r.quantity ?? 0 },
-        };
-      }),
-    ]
-      .sort(
-        (a: any, b: any) =>
-          new Date(b.date).getTime() - new Date(a.date).getTime(),
-      )
-      .slice(0, 12);
-
-    // ----------------------------
-    // 5) Réponse
-    // ----------------------------
-    return res.status(200).json({
-      range: { from, to },
-      kpis,
-      charts,
-      tables: {
-        topEstablishments,
-        recentActivity,
-      },
-    });
-  } catch (error: any) {
-    Retour.error(`Admin dashboard error: ${error?.message || error}`);
-    return res.status(500).json({
-      error: "Failed to load admin dashboard",
-      details: error?.message || error,
-    });
-  }
-};
-
-const nonDraftMatch = { isDraft: { $ne: true } };
 
 type DateRange = { from: Date; to: Date };
 
@@ -473,10 +50,562 @@ const startUTC = (d: Date) =>
 const addDaysUTC = (d: Date, days: number) =>
   new Date(d.getTime() + days * 24 * 60 * 60 * 1000);
 
+/* =========================
+   HELPERS (departments scope)
+========================= */
+const parseDepartments = (req: Request): string[] => {
+  const raw = String(req.query.departments || "").trim(); // ex "64,40"
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((d) => d.trim())
+    .filter(Boolean);
+};
+
+const zipMatchForDepartments = (departments: string[]) => {
+  if (!departments.length) return null;
+  const escaped = departments.map((d) =>
+    d.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+  );
+  const re = new RegExp(`^(${escaped.join("|")})`);
+  return { $regex: re };
+};
+
 /**
- * 1) SUMMARY
- * GET /admin/dashboard/summary?from&to
+ * IMPORTANT:
+ * - On scope par département via Establishment.address.zip
+ * - On remonte ensuite les ids pour filtrer Event.organizer.establishment
  */
+const getEstablishmentIdsByDepartments = async (departments: string[]) => {
+  if (!departments.length) return null;
+
+  const zipMatch = zipMatchForDepartments(departments);
+  if (!zipMatch) return null;
+
+  const ids = await Establishment.find({ "address.zip": zipMatch })
+    .select("_id")
+    .lean();
+
+  return ids.map((x: any) => x._id);
+};
+
+/**
+ * Construit les matchs scope (vide si pas de filtre)
+ */
+const buildScope = (establishmentIds: any[] | null) => {
+  const scopeEstablishmentsMatch = establishmentIds
+    ? { _id: { $in: establishmentIds } }
+    : {};
+
+  const scopeEventsMatch = establishmentIds
+    ? { "organizer.establishment": { $in: establishmentIds } }
+    : {};
+
+  // Pour pipelines où on a déjà $lookup Event as "evt"
+  const scopeEvtLookupMatch = establishmentIds
+    ? { "evt.organizer.establishment": { $in: establishmentIds } }
+    : {};
+
+  return { scopeEstablishmentsMatch, scopeEventsMatch, scopeEvtLookupMatch };
+};
+
+/* =========================
+   COMMON
+========================= */
+const nonDraftMatch = { isDraft: { $ne: true } };
+
+/* =========================
+   ADMIN CRUD
+========================= */
+const createAdmin = async (req: Request, res: Response) => {
+  try {
+    const { email, name, firstname, phoneNumber, password, passwordConfirmed } =
+      req.body;
+
+    if (!email || !name || !firstname || !phoneNumber || !password) {
+      return res
+        .status(400)
+        .json({ error: "Tous les champs requis doivent être remplis." });
+    }
+
+    if (password !== passwordConfirmed) {
+      return res
+        .status(400)
+        .json({ error: "Les mots de passe ne correspondent pas." });
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: "Email invalide." });
+    }
+
+    const existingAdmin = await Admin.findOne({ email });
+    if (existingAdmin) {
+      return res
+        .status(409)
+        .json({ error: "Un administrateur avec cet email existe déjà." });
+    }
+
+    const token: string = uid2(26);
+    const salt: string = uid2(26);
+    const hash: string = SHA256(password + salt).toString(encBase64);
+
+    const admin = new Admin({
+      email,
+      account: {
+        name,
+        firstname,
+        phoneNumber,
+      },
+      token,
+      salt,
+      hash,
+    });
+
+    await admin.save();
+
+    return res.status(201).json({
+      message: "Administrateur créé avec succès.",
+      admin: {
+        id: admin._id,
+        email: admin.email,
+        account: admin.account,
+      },
+    });
+  } catch (error) {
+    console.error("Erreur lors de la création de l'administrateur :", error);
+    return res.status(500).json({
+      error: "Une erreur est survenue, veuillez réessayer plus tard.",
+    });
+  }
+};
+
+/* =========================
+   0) DASHBOARD (full)
+   GET /admin/dashboard?from&to&departments=64,40
+========================= */
+const dashboard = async (req: Request, res: Response) => {
+  try {
+    const { from, to } = parseRange(req);
+    const now = new Date();
+
+    const departments = parseDepartments(req);
+    const establishmentIds =
+      await getEstablishmentIdsByDepartments(departments);
+    const { scopeEstablishmentsMatch, scopeEventsMatch, scopeEvtLookupMatch } =
+      buildScope(establishmentIds);
+
+    // ----------------------------
+    // 1) KPIs
+    // ----------------------------
+    const totalEstablishmentsPromise = Establishment.countDocuments({
+      ...scopeEstablishmentsMatch,
+    });
+
+    /**
+     * Active establishments = établissements qui ont au moins 1 event non-draft
+     * (ici on scope d'abord sur establishments via zip)
+     */
+    const activeEstablishmentsPromise = Establishment.aggregate([
+      {
+        $match: {
+          ...scopeEstablishmentsMatch,
+          events: { $exists: true, $not: { $size: 0 } },
+        },
+      },
+      {
+        $lookup: {
+          from: "events",
+          localField: "events",
+          foreignField: "_id",
+          as: "evts",
+        },
+      },
+      {
+        $project: {
+          hasNonDraft: {
+            $gt: [
+              {
+                $size: {
+                  $filter: {
+                    input: "$evts",
+                    as: "e",
+                    cond: { $ne: ["$$e.isDraft", true] },
+                  },
+                },
+              },
+              0,
+            ],
+          },
+        },
+      },
+      { $match: { hasNonDraft: true } },
+      { $count: "count" },
+    ])
+      .option({ maxTimeMS: 25000 })
+      .then((r) => r[0]?.count ?? 0);
+
+    const totalEventsPromise = Event.countDocuments({
+      ...nonDraftMatch,
+      ...scopeEventsMatch,
+      startingDate: { $gte: from, $lte: to },
+    });
+
+    const upcomingEventsPromise = Event.countDocuments({
+      ...nonDraftMatch,
+      ...scopeEventsMatch,
+      endingDate: { $gt: now },
+    });
+
+    /**
+     * Registrations total (places) sur période
+     * => Registration n'a pas le département, donc lookup Event + filtre dept
+     */
+    const totalRegistrationsPromise = Registration.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startOfDay(from), $lte: endOfDay(to) },
+        },
+      },
+      {
+        $lookup: {
+          from: "events",
+          localField: "event",
+          foreignField: "_id",
+          as: "evt",
+        },
+      },
+      { $unwind: "$evt" },
+      {
+        $match: {
+          "evt.isDraft": { $ne: true },
+          ...(scopeEvtLookupMatch || {}),
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: { $ifNull: ["$quantity", 0] } },
+        },
+      },
+    ])
+      .option({ maxTimeMS: 25000 })
+      .then((r) => r[0]?.total ?? 0);
+
+    const [
+      totalEstablishments,
+      activeEstablishments,
+      totalEvents,
+      upcomingEvents,
+      totalRegistrations,
+    ] = await Promise.all([
+      totalEstablishmentsPromise,
+      activeEstablishmentsPromise,
+      totalEventsPromise,
+      upcomingEventsPromise,
+      totalRegistrationsPromise,
+    ]);
+
+    const kpis = {
+      totalEstablishments,
+      activeEstablishments,
+      totalEvents,
+      upcomingEvents,
+      totalRegistrations,
+    };
+
+    // ----------------------------
+    // 2) Charts
+    // ----------------------------
+
+    // 2.a) registrationsByDay
+    const registrationsByDay = await Registration.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startOfDay(from), $lte: endOfDay(to) },
+        },
+      },
+      {
+        $lookup: {
+          from: "events",
+          localField: "event",
+          foreignField: "_id",
+          as: "evt",
+        },
+      },
+      { $unwind: "$evt" },
+      {
+        $match: {
+          "evt.isDraft": { $ne: true },
+          ...(scopeEvtLookupMatch || {}),
+        },
+      },
+      {
+        $group: {
+          _id: {
+            y: { $year: "$createdAt" },
+            m: { $month: "$createdAt" },
+            d: { $dayOfMonth: "$createdAt" },
+          },
+          value: { $sum: { $ifNull: ["$quantity", 0] } },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          date: {
+            $dateFromParts: { year: "$_id.y", month: "$_id.m", day: "$_id.d" },
+          },
+          value: 1,
+        },
+      },
+      { $sort: { date: 1 } },
+    ]).option({ maxTimeMS: 25000 });
+
+    // 2.b) eventsByMonth
+    const eventsByMonth = await Event.aggregate([
+      {
+        $match: {
+          ...nonDraftMatch,
+          ...scopeEventsMatch,
+          startingDate: { $gte: from, $lte: to },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            y: { $year: "$startingDate" },
+            m: { $month: "$startingDate" },
+          },
+          value: { $sum: 1 },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          month: {
+            $dateFromParts: { year: "$_id.y", month: "$_id.m", day: 1 },
+          },
+          value: 1,
+        },
+      },
+      { $sort: { month: 1 } },
+    ]).option({ maxTimeMS: 25000 });
+
+    // 2.c) eventsByCity (Establishment -> Events)
+    const eventsByCity = await Establishment.aggregate([
+      {
+        $match: {
+          ...scopeEstablishmentsMatch,
+          events: { $exists: true, $not: { $size: 0 } },
+        },
+      },
+      { $unwind: "$events" },
+      {
+        $lookup: {
+          from: "events",
+          localField: "events",
+          foreignField: "_id",
+          as: "evt",
+        },
+      },
+      { $unwind: "$evt" },
+      {
+        $match: {
+          "evt.isDraft": { $ne: true },
+          "evt.startingDate": { $gte: from, $lte: to },
+        },
+      },
+      {
+        $group: {
+          _id: { $ifNull: ["$address.city", "Inconnu"] },
+          value: { $sum: 1 },
+        },
+      },
+      { $project: { _id: 0, city: "$_id", value: 1 } },
+      { $sort: { value: -1 } },
+      { $limit: 12 },
+    ]).option({ maxTimeMS: 25000 });
+
+    // 2.d) eventsByCategory
+    const eventsByCategory = await Event.aggregate([
+      {
+        $match: {
+          ...nonDraftMatch,
+          ...scopeEventsMatch,
+          startingDate: { $gte: from, $lte: to },
+        },
+      },
+      {
+        $project: {
+          category: {
+            $cond: [
+              { $isArray: "$theme" },
+              { $arrayElemAt: ["$theme", 0] },
+              "$theme",
+            ],
+          },
+        },
+      },
+      {
+        $group: {
+          _id: { $ifNull: ["$category", "Sans catégorie"] },
+          value: { $sum: 1 },
+        },
+      },
+      { $project: { _id: 0, category: "$_id", value: 1 } },
+      { $sort: { value: -1 } },
+      { $limit: 10 },
+    ]).option({ maxTimeMS: 25000 });
+
+    const charts = {
+      registrationsByDay,
+      eventsByMonth,
+      eventsByCity,
+      eventsByCategory,
+    };
+
+    // ----------------------------
+    // 3) Top établissements (par inscriptions)
+    // ----------------------------
+    const topEstablishments = await Registration.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startOfDay(from), $lte: endOfDay(to) },
+        },
+      },
+      {
+        $lookup: {
+          from: "events",
+          localField: "event",
+          foreignField: "_id",
+          as: "evt",
+        },
+      },
+      { $unwind: "$evt" },
+      {
+        $match: {
+          "evt.isDraft": { $ne: true },
+          ...(scopeEvtLookupMatch || {}),
+        },
+      },
+      {
+        $lookup: {
+          from: "establishments",
+          let: { eventId: "$evt._id" },
+          pipeline: [
+            { $match: { $expr: { $in: ["$$eventId", "$events"] } } },
+            { $project: { name: 1, "address.city": 1 } },
+          ],
+          as: "est",
+        },
+      },
+      { $unwind: "$est" },
+      {
+        $group: {
+          _id: "$est._id",
+          registrations: { $sum: { $ifNull: ["$quantity", 0] } },
+          eventsSet: { $addToSet: "$evt._id" },
+          name: { $first: "$est.name" },
+          city: { $first: "$est.address.city" },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          establishmentId: "$_id",
+          registrations: 1,
+          events: { $size: "$eventsSet" },
+          name: 1,
+          city: 1,
+        },
+      },
+      { $sort: { registrations: -1 } },
+      { $limit: 8 },
+    ]).option({ maxTimeMS: 25000 });
+
+    // ----------------------------
+    // 4) Activité récente (feed)
+    // ----------------------------
+    const [recentRegs, recentEvents] = await Promise.all([
+      Registration.find({})
+        .sort({ createdAt: -1 })
+        .limit(8)
+        .select("quantity createdAt event")
+        .lean(),
+      Event.find({ ...nonDraftMatch, ...scopeEventsMatch })
+        .sort({ createdAt: -1 })
+        .limit(8)
+        .select("title createdAt startingDate")
+        .lean(),
+    ]);
+
+    const recentRegEventIds = recentRegs
+      .map((r: any) => r.event)
+      .filter((id: any) => mongoose.isValidObjectId(id));
+
+    // On scope aussi les Events des regs, sinon feed "cross-dept"
+    const regEvents = await Event.find({
+      _id: { $in: recentRegEventIds },
+      ...(scopeEventsMatch || {}),
+    })
+      .select("title organizer.establishment")
+      .lean();
+
+    const regEventMap = new Map<string, any>(
+      regEvents.map((e: any) => [String(e._id), e]),
+    );
+
+    const recentActivity = [
+      ...recentEvents.map((e: any) => ({
+        type: "event_published",
+        date: e.createdAt,
+        label: e.title,
+        refId: e._id,
+      })),
+      ...recentRegs
+        .map((r: any) => {
+          const evt = regEventMap.get(String(r.event));
+          if (!evt) return null; // si filtré par dept, on ignore
+          return {
+            type: "registration",
+            date: r.createdAt,
+            label: evt?.title ? `Inscription: ${evt.title}` : "Inscription",
+            refId: r._id,
+            meta: { quantity: r.quantity ?? 0 },
+          };
+        })
+        .filter(Boolean),
+    ]
+      .sort(
+        (a: any, b: any) =>
+          new Date(b.date).getTime() - new Date(a.date).getTime(),
+      )
+      .slice(0, 12);
+
+    return res.status(200).json({
+      range: { from, to },
+      scope: { departments },
+      kpis,
+      charts,
+      tables: {
+        topEstablishments,
+        recentActivity,
+      },
+    });
+  } catch (error: any) {
+    Retour.error(`Admin dashboard error: ${error?.message || error}`);
+    return res.status(500).json({
+      error: "Failed to load admin dashboard",
+      details: error?.message || error,
+    });
+  }
+};
+
+/* =========================
+   1) SUMMARY
+   GET /admin/dashboard/summary?from&to&departments=64,40
+========================= */
 const fillMonths = (
   from: Date,
   to: Date,
@@ -507,29 +636,34 @@ const summary = async (req: Request, res: Response) => {
     const { from, to } = parseRange(req);
     const now = new Date();
 
+    const departments = parseDepartments(req);
+    const establishmentIds =
+      await getEstablishmentIdsByDepartments(departments);
+    const { scopeEstablishmentsMatch, scopeEventsMatch, scopeEvtLookupMatch } =
+      buildScope(establishmentIds);
+
     // Bornes UTC propres
     const fromUTC = startUTC(from);
     const toUTCExclusive = addDaysUTC(startUTC(to), 1);
-
-    // Requêtes “range” (index-friendly)
     const dateRangeMatch = { $gte: fromUTC, $lt: toUTCExclusive };
 
     // ----------------------------
     // 1) KPIs
     // ----------------------------
-    const totalEstablishmentsPromise = Establishment.countDocuments({});
+    const totalEstablishmentsPromise = Establishment.countDocuments({
+      ...scopeEstablishmentsMatch,
+    });
 
     /**
      * Active establishments:
-     * - on récupère la liste des establishmentIds qui ont au moins 1 event non-draft
-     * - puis on compte ceux activés
-     *
-     * -> évite un $lookup sur potentiellement des milliers d'events
+     * - distinct des establishment ayant au moins 1 event non-draft
+     * - puis count côté Establishment (activated)
      */
     const activeEstablishmentsPromise = Event.distinct(
       "organizer.establishment",
       {
         ...nonDraftMatch,
+        ...(scopeEventsMatch || {}),
         "organizer.establishment": { $ne: null },
       },
     ).then(async (ids: any[]) => {
@@ -548,21 +682,35 @@ const summary = async (req: Request, res: Response) => {
 
     const totalEventsPromise = Event.countDocuments({
       ...nonDraftMatch,
+      ...scopeEventsMatch,
       startingDate: dateRangeMatch,
     });
 
     const upcomingEventsPromise = Event.countDocuments({
       ...nonDraftMatch,
+      ...scopeEventsMatch,
       endingDate: { $gt: now },
     });
 
     const totalRegistrationsPromise = Registration.aggregate([
       { $match: { createdAt: dateRangeMatch } },
       {
-        $group: {
-          _id: null,
-          total: { $sum: { $ifNull: ["$quantity", 0] } },
+        $lookup: {
+          from: "events",
+          localField: "event",
+          foreignField: "_id",
+          as: "evt",
         },
+      },
+      { $unwind: "$evt" },
+      {
+        $match: {
+          "evt.isDraft": { $ne: true },
+          ...(scopeEvtLookupMatch || {}),
+        },
+      },
+      {
+        $group: { _id: null, total: { $sum: { $ifNull: ["$quantity", 0] } } },
       },
     ])
       .option({ maxTimeMS: 25000 })
@@ -585,10 +733,23 @@ const summary = async (req: Request, res: Response) => {
     // ----------------------------
     // 2) Charts
     // ----------------------------
-
-    // 2.a) registrationsByDay
     const registrationsByDay = await Registration.aggregate([
       { $match: { createdAt: dateRangeMatch } },
+      {
+        $lookup: {
+          from: "events",
+          localField: "event",
+          foreignField: "_id",
+          as: "evt",
+        },
+      },
+      { $unwind: "$evt" },
+      {
+        $match: {
+          "evt.isDraft": { $ne: true },
+          ...(scopeEvtLookupMatch || {}),
+        },
+      },
       {
         $group: {
           _id: {
@@ -611,11 +772,11 @@ const summary = async (req: Request, res: Response) => {
       { $sort: { date: 1 } },
     ]).option({ maxTimeMS: 25000 });
 
-    // 2.b) eventsByMonth
     const eventsByMonthRaw = await Event.aggregate([
       {
         $match: {
           ...nonDraftMatch,
+          ...scopeEventsMatch,
           startingDate: dateRangeMatch,
         },
       },
@@ -646,11 +807,9 @@ const summary = async (req: Request, res: Response) => {
       eventsByMonthRaw,
     );
 
-    // ----------------------------
-    // 3) Réponse
-    // ----------------------------
     return res.status(200).json({
       range: { from: fromUTC, to: addDaysUTC(toUTCExclusive, -1) },
+      scope: { departments },
       kpis: {
         totalEstablishments,
         activeEstablishments,
@@ -669,19 +828,24 @@ const summary = async (req: Request, res: Response) => {
   }
 };
 
-/**
- * 2) DISTRIBUTION
- * GET /admin/dashboard/distribution?from&to
- */
+/* =========================
+   2) DISTRIBUTION
+   GET /admin/dashboard/distribution?from&to&departments=64,40
+========================= */
 const distribution = async (req: Request, res: Response) => {
   try {
     const { from, to } = parseRange(req);
 
-    // eventsByCity : Event -> Establishment via organizer.establishment
+    const departments = parseDepartments(req);
+    const establishmentIds =
+      await getEstablishmentIdsByDepartments(departments);
+    const { scopeEventsMatch } = buildScope(establishmentIds);
+
     const eventsByCity = await Event.aggregate([
       {
         $match: {
           ...nonDraftMatch,
+          ...scopeEventsMatch,
           startingDate: { $gte: from, $lte: to },
           "organizer.establishment": { $ne: null },
         },
@@ -704,11 +868,16 @@ const distribution = async (req: Request, res: Response) => {
       { $project: { _id: 0, city: "$_id", value: 1 } },
       { $sort: { value: -1 } },
       { $limit: 12 },
-    ]);
+    ]).option({ maxTimeMS: 25000 });
 
-    // eventsByCategory (theme est [string])
     const eventsByCategory = await Event.aggregate([
-      { $match: { ...nonDraftMatch, startingDate: { $gte: from, $lte: to } } },
+      {
+        $match: {
+          ...nonDraftMatch,
+          ...scopeEventsMatch,
+          startingDate: { $gte: from, $lte: to },
+        },
+      },
       {
         $project: {
           category: {
@@ -729,10 +898,11 @@ const distribution = async (req: Request, res: Response) => {
       { $project: { _id: 0, category: "$_id", value: 1 } },
       { $sort: { value: -1 } },
       { $limit: 10 },
-    ]);
+    ]).option({ maxTimeMS: 25000 });
 
     return res.status(200).json({
       range: { from, to },
+      scope: { departments },
       charts: { eventsByCity, eventsByCategory },
     });
   } catch (error: any) {
@@ -746,22 +916,25 @@ const distribution = async (req: Request, res: Response) => {
   }
 };
 
-/**
- * 3) TOP ESTABLISHMENTS
- * GET /admin/dashboard/top-establishments?from&to
- */
+/* =========================
+   3) TOP ESTABLISHMENTS
+   GET /admin/dashboard/top-establishments?from&to&departments=64,40
+========================= */
 const topEstablishments = async (req: Request, res: Response) => {
   try {
     const { from, to } = parseRange(req);
 
+    const departments = parseDepartments(req);
+    const establishmentIds =
+      await getEstablishmentIdsByDepartments(departments);
+    const { scopeEvtLookupMatch } = buildScope(establishmentIds);
+
     const top = await Registration.aggregate([
       { $match: { createdAt: { $gte: startOfDay(from), $lte: endOfDay(to) } } },
-
-      // join event
       {
         $lookup: {
           from: "events",
-          localField: "event", // ⚠️ adapte si "eventId"
+          localField: "event",
           foreignField: "_id",
           as: "evt",
         },
@@ -771,10 +944,9 @@ const topEstablishments = async (req: Request, res: Response) => {
         $match: {
           "evt.isDraft": { $ne: true },
           "evt.organizer.establishment": { $ne: null },
+          ...(scopeEvtLookupMatch || {}),
         },
       },
-
-      // group by establishment id
       {
         $group: {
           _id: "$evt.organizer.establishment",
@@ -792,8 +964,6 @@ const topEstablishments = async (req: Request, res: Response) => {
       },
       { $sort: { registrations: -1 } },
       { $limit: 8 },
-
-      // join establishment details
       {
         $lookup: {
           from: "establishments",
@@ -812,10 +982,11 @@ const topEstablishments = async (req: Request, res: Response) => {
           city: "$est.address.city",
         },
       },
-    ]);
+    ]).option({ maxTimeMS: 25000 });
 
     return res.status(200).json({
       range: { from, to },
+      scope: { departments },
       tables: { topEstablishments: top },
     });
   } catch (error: any) {
@@ -829,13 +1000,18 @@ const topEstablishments = async (req: Request, res: Response) => {
   }
 };
 
-/**
- * 4) RECENT ACTIVITY
- * GET /admin/dashboard/recent-activity?limit=12
- */
+/* =========================
+   4) RECENT ACTIVITY
+   GET /admin/dashboard/recent-activity?limit=12&departments=64,40
+========================= */
 const recentActivity = async (req: Request, res: Response) => {
   try {
     const limit = Math.min(Number(req.query.limit || 12), 50);
+
+    const departments = parseDepartments(req);
+    const establishmentIds =
+      await getEstablishmentIdsByDepartments(departments);
+    const { scopeEventsMatch } = buildScope(establishmentIds);
 
     const [recentRegs, recentEvents] = await Promise.all([
       Registration.find({})
@@ -843,7 +1019,7 @@ const recentActivity = async (req: Request, res: Response) => {
         .limit(limit)
         .select("quantity createdAt event")
         .lean(),
-      Event.find({ ...nonDraftMatch })
+      Event.find({ ...nonDraftMatch, ...scopeEventsMatch })
         .sort({ createdAt: -1 })
         .limit(limit)
         .select("title createdAt startingDate")
@@ -854,9 +1030,13 @@ const recentActivity = async (req: Request, res: Response) => {
       .map((r: any) => r.event)
       .filter((id: any) => mongoose.isValidObjectId(id));
 
-    const regEvents = await Event.find({ _id: { $in: recentRegEventIds } })
+    const regEvents = await Event.find({
+      _id: { $in: recentRegEventIds },
+      ...(scopeEventsMatch || {}),
+    })
       .select("title")
       .lean();
+
     const regEventMap = new Map<string, any>(
       regEvents.map((e: any) => [String(e._id), e]),
     );
@@ -868,15 +1048,19 @@ const recentActivity = async (req: Request, res: Response) => {
         label: e.title,
         refId: e._id,
       })),
-      ...recentRegs.map((r: any) => ({
-        type: "registration",
-        date: r.createdAt,
-        label: regEventMap.get(String(r.event))?.title
-          ? `Inscription: ${regEventMap.get(String(r.event)).title}`
-          : "Inscription",
-        refId: r._id,
-        meta: { quantity: r.quantity ?? 0 },
-      })),
+      ...recentRegs
+        .map((r: any) => {
+          const evt = regEventMap.get(String(r.event));
+          if (!evt) return null;
+          return {
+            type: "registration",
+            date: r.createdAt,
+            label: evt?.title ? `Inscription: ${evt.title}` : "Inscription",
+            refId: r._id,
+            meta: { quantity: r.quantity ?? 0 },
+          };
+        })
+        .filter(Boolean),
     ]
       .sort(
         (a: any, b: any) =>
@@ -884,7 +1068,10 @@ const recentActivity = async (req: Request, res: Response) => {
       )
       .slice(0, limit);
 
-    return res.status(200).json({ tables: { recentActivity: feed } });
+    return res.status(200).json({
+      scope: { departments },
+      tables: { recentActivity: feed },
+    });
   } catch (error: any) {
     Retour.error(
       `Admin dashboard recentActivity error: ${error?.message || error}`,
@@ -896,26 +1083,37 @@ const recentActivity = async (req: Request, res: Response) => {
   }
 };
 
+/* =========================
+   CUSTOMERS DASHBOARD
+   GET /admin/dashboard/customers?from&to&departments=64,40
+   NOTE: filtrage dept possible seulement si Customer.account.zip existe
+========================= */
 const customersDashboard = async (req: Request, res: Response) => {
   try {
     const { from, to } = parseRange(req);
 
-    // ----------------------------
-    // 1) KPIs clients
-    // ----------------------------
+    const departments = parseDepartments(req);
+    const zipMatch = zipMatchForDepartments(departments);
 
-    const totalCustomersPromise = Customer.countDocuments({});
+    // Si ton modèle Customer n'a pas account.zip => laisse vide (pas de scope)
+    const scopeCustomersMatch = zipMatch ? { "account.zip": zipMatch } : {};
+
+    const totalCustomersPromise = Customer.countDocuments({
+      ...scopeCustomersMatch,
+    });
 
     const newCustomersPromise = Customer.countDocuments({
+      ...scopeCustomersMatch,
       createdAt: { $gte: from, $lte: to },
     });
 
     const premiumCustomersPromise = Customer.countDocuments({
+      ...scopeCustomersMatch,
       premiumStatus: true,
     });
 
-    // Client actif = a réservé ou participé à ≥ 1 event
     const activeCustomersPromise = Customer.countDocuments({
+      ...scopeCustomersMatch,
       $or: [
         { eventsReserved: { $exists: true, $not: { $size: 0 } } },
         { eventsAttended: { $exists: true, $not: { $size: 0 } } },
@@ -932,11 +1130,8 @@ const customersDashboard = async (req: Request, res: Response) => {
 
     const inactiveCustomers = totalCustomers - activeCustomers;
 
-    // ----------------------------
-    // 2) Répartition par ville
-    // ----------------------------
-
     const customersByCity = await Customer.aggregate([
+      { $match: { ...scopeCustomersMatch } },
       {
         $group: {
           _id: { $ifNull: ["$account.city", "Inconnue"] },
@@ -946,13 +1141,10 @@ const customersDashboard = async (req: Request, res: Response) => {
       { $project: { _id: 0, city: "$_id", value: 1 } },
       { $sort: { value: -1 } },
       { $limit: 12 },
-    ]);
-
-    // ----------------------------
-    // 3) Engagement moyen
-    // ----------------------------
+    ]).option({ maxTimeMS: 25000 });
 
     const engagement = await Customer.aggregate([
+      { $match: { ...scopeCustomersMatch } },
       {
         $project: {
           reservedCount: { $size: { $ifNull: ["$eventsReserved", []] } },
@@ -976,13 +1168,10 @@ const customersDashboard = async (req: Request, res: Response) => {
           avgFavorites: { $round: ["$avgFavorites", 2] },
         },
       },
-    ]);
-
-    // ----------------------------
-    // 4) Top clients (par réservations)
-    // ----------------------------
+    ]).option({ maxTimeMS: 25000 });
 
     const topCustomers = await Customer.aggregate([
+      { $match: { ...scopeCustomersMatch } },
       {
         $project: {
           firstname: "$account.firstname",
@@ -994,14 +1183,11 @@ const customersDashboard = async (req: Request, res: Response) => {
       { $match: { reservedCount: { $gt: 0 } } },
       { $sort: { reservedCount: -1 } },
       { $limit: 10 },
-    ]);
-
-    // ----------------------------
-    // 5) Réponse
-    // ----------------------------
+    ]).option({ maxTimeMS: 25000 });
 
     return res.status(200).json({
       range: { from, to },
+      scope: { departments, scopedByZip: Boolean(zipMatch) },
       kpis: {
         totalCustomers,
         newCustomers,
@@ -1009,17 +1195,13 @@ const customersDashboard = async (req: Request, res: Response) => {
         activeCustomers,
         inactiveCustomers,
       },
-      charts: {
-        customersByCity,
-      },
+      charts: { customersByCity },
       engagement: engagement[0] || {
         avgReserved: 0,
         avgAttended: 0,
         avgFavorites: 0,
       },
-      tables: {
-        topCustomers,
-      },
+      tables: { topCustomers },
     });
   } catch (error: any) {
     Retour.error(`Admin customers dashboard error: ${error?.message || error}`);
@@ -1030,45 +1212,108 @@ const customersDashboard = async (req: Request, res: Response) => {
   }
 };
 
+/* =========================
+   ADS DASHBOARD
+   GET /admin/dashboard/ads?from&to&departments=64,40
+   - Si departments fournis: on scope uniquement les ads liées à un event
+     dont l'organizer.establishment est dans le scope.
+========================= */
 const adsDashboard = async (req: Request, res: Response) => {
   try {
     const { from, to } = parseRange(req);
 
+    const departments = parseDepartments(req);
+    const establishmentIds =
+      await getEstablishmentIdsByDepartments(departments);
+    const scoped = Boolean(establishmentIds && establishmentIds.length);
+
+    // Helper pipeline: Ad -> Event -> filtre dept
+    const adScopeLookupStages = scoped
+      ? ([
+          {
+            $lookup: {
+              from: "events",
+              localField: "event",
+              foreignField: "_id",
+              as: "evt",
+            },
+          },
+          { $unwind: { path: "$evt", preserveNullAndEmptyArrays: false } },
+          {
+            $match: {
+              "evt.organizer.establishment": { $in: establishmentIds as any[] },
+            },
+          },
+        ] as any[])
+      : ([] as any[]);
+
     // --------------------------------------------------
     // 1) KPIs
     // --------------------------------------------------
+    const totalAdsPromise = scoped
+      ? AdModel.aggregate([...adScopeLookupStages, { $count: "total" }]).then(
+          (r) => r[0]?.total ?? 0,
+        )
+      : AdModel.countDocuments({});
 
-    const totalAdsPromise = AdModel.countDocuments({});
-
-    const adsWithEventPromise = AdModel.countDocuments({
-      event: { $exists: true, $ne: null },
-    });
+    const adsWithEventPromise = scoped
+      ? AdModel.aggregate([
+          { $match: { event: { $exists: true, $ne: null } } },
+          ...adScopeLookupStages,
+          { $count: "total" },
+        ]).then((r) => r[0]?.total ?? 0)
+      : AdModel.countDocuments({ event: { $exists: true, $ne: null } });
 
     // ✅ TOTAL clics (peu importe la date)
-    const totalClicksPromise = AdModel.aggregate([
-      { $unwind: "$clics" },
-      { $count: "total" },
-    ]).then((r) => r[0]?.total ?? 0);
+    const totalClicksPromise = scoped
+      ? AdModel.aggregate([
+          ...adScopeLookupStages,
+          { $unwind: "$clics" },
+          { $count: "total" },
+        ]).then((r) => r[0]?.total ?? 0)
+      : AdModel.aggregate([{ $unwind: "$clics" }, { $count: "total" }]).then(
+          (r) => r[0]?.total ?? 0,
+        );
 
-    // ✅ Clics sur la période (robuste : accepte date null / absente)
-    const periodClicksPromise = AdModel.aggregate([
-      { $unwind: "$clics" },
-      {
-        $match: {
-          $or: [
-            {
-              "clics.date": {
-                $gte: startOfDay(from),
-                $lte: endOfDay(to),
-              },
+    // ✅ Clics sur la période
+    const periodClicksPromise = scoped
+      ? AdModel.aggregate([
+          ...adScopeLookupStages,
+          { $unwind: "$clics" },
+          {
+            $match: {
+              $or: [
+                {
+                  "clics.date": {
+                    $gte: startOfDay(from),
+                    $lte: endOfDay(to),
+                  },
+                },
+                { "clics.date": { $exists: false } },
+                { "clics.date": null },
+              ],
             },
-            { "clics.date": { $exists: false } },
-            { "clics.date": null },
-          ],
-        },
-      },
-      { $count: "total" },
-    ]).then((r) => r[0]?.total ?? 0);
+          },
+          { $count: "total" },
+        ]).then((r) => r[0]?.total ?? 0)
+      : AdModel.aggregate([
+          { $unwind: "$clics" },
+          {
+            $match: {
+              $or: [
+                {
+                  "clics.date": {
+                    $gte: startOfDay(from),
+                    $lte: endOfDay(to),
+                  },
+                },
+                { "clics.date": { $exists: false } },
+                { "clics.date": null },
+              ],
+            },
+          },
+          { $count: "total" },
+        ]).then((r) => r[0]?.total ?? 0);
 
     const [totalAds, adsWithEvent, totalClicks, periodClicks] =
       await Promise.all([
@@ -1084,8 +1329,8 @@ const adsDashboard = async (req: Request, res: Response) => {
     // --------------------------------------------------
     // 2) Clics par jour (uniquement ceux avec date valide)
     // --------------------------------------------------
-
     const clicksByDay = await AdModel.aggregate([
+      ...(adScopeLookupStages as any[]),
       { $unwind: "$clics" },
       { $match: { "clics.date": { $type: "date" } } },
       {
@@ -1112,13 +1357,13 @@ const adsDashboard = async (req: Request, res: Response) => {
         },
       },
       { $sort: { date: 1 } },
-    ]);
+    ]).option({ maxTimeMS: 25000 });
 
     // --------------------------------------------------
     // 3) Clics par source
     // --------------------------------------------------
-
     const clicksBySource = await AdModel.aggregate([
+      ...(adScopeLookupStages as any[]),
       { $unwind: "$clics" },
       {
         $group: {
@@ -1128,13 +1373,13 @@ const adsDashboard = async (req: Request, res: Response) => {
       },
       { $project: { _id: 0, source: "$_id", value: 1 } },
       { $sort: { value: -1 } },
-    ]);
+    ]).option({ maxTimeMS: 25000 });
 
     // --------------------------------------------------
     // 4) Top publicités
     // --------------------------------------------------
-
     const topAds = await AdModel.aggregate([
+      ...(adScopeLookupStages as any[]),
       {
         $project: {
           title: 1,
@@ -1145,14 +1390,11 @@ const adsDashboard = async (req: Request, res: Response) => {
       { $match: { clicks: { $gt: 0 } } },
       { $sort: { clicks: -1 } },
       { $limit: 10 },
-    ]);
-
-    // --------------------------------------------------
-    // 5) Réponse finale
-    // --------------------------------------------------
+    ]).option({ maxTimeMS: 25000 });
 
     return res.status(200).json({
       range: { from, to },
+      scope: { departments, scopedAdsByEventDept: scoped },
       kpis: {
         totalAds,
         adsWithEvent,
@@ -1177,6 +1419,9 @@ const adsDashboard = async (req: Request, res: Response) => {
   }
 };
 
+/* =========================
+   UPDATE / DELETE ADMIN
+========================= */
 const updateAdmin = async (req: Request, res: Response) => {
   const adminId = req.params.adminId;
   return Admin.findById(adminId).then(async (admin) => {
@@ -1204,6 +1449,9 @@ const deleteAdmin = async (req: Request, res: Response) => {
     .catch((error) => res.status(500).json({ error: error.message }));
 };
 
+/* =========================
+   EXPORT
+========================= */
 export default {
   createAdmin,
   dashboard,
