@@ -836,16 +836,42 @@ const distribution = async (req: Request, res: Response) => {
   try {
     const { from, to } = parseRange(req);
 
-    const departments = parseDepartments(req);
-    const establishmentIds =
-      await getEstablishmentIdsByDepartments(departments);
-    const { scopeEventsMatch } = buildScope(establishmentIds);
+    // ✅ accepte departments=64,40,33
+    const departmentsRaw = String(req.query.departments || "").trim();
+    const departments = departmentsRaw
+      ? departmentsRaw
+          .split(",")
+          .map((x) => x.trim())
+          .filter(Boolean)
+      : [];
 
+    const hasDeptFilter = departments.length > 0;
+
+    // helper (département via zip)
+    const deptMatchStage = hasDeptFilter
+      ? [
+          {
+            $match: {
+              $expr: {
+                $in: [
+                  {
+                    $substrCP: [{ $ifNull: ["$est.address.zip", ""] }, 0, 2],
+                  },
+                  departments,
+                ],
+              },
+            },
+          },
+        ]
+      : [];
+
+    // ----------------------------
+    // eventsByCity : Event -> Establishment via organizer.establishment
+    // ----------------------------
     const eventsByCity = await Event.aggregate([
       {
         $match: {
           ...nonDraftMatch,
-          ...scopeEventsMatch,
           startingDate: { $gte: from, $lte: to },
           "organizer.establishment": { $ne: null },
         },
@@ -858,7 +884,11 @@ const distribution = async (req: Request, res: Response) => {
           as: "est",
         },
       },
-      { $unwind: { path: "$est", preserveNullAndEmptyArrays: true } },
+      { $unwind: { path: "$est", preserveNullAndEmptyArrays: false } },
+
+      // ✅ filtre département APRES lookup (car zip est dans est)
+      ...deptMatchStage,
+
       {
         $group: {
           _id: { $ifNull: ["$est.address.city", "Inconnu"] },
@@ -868,16 +898,32 @@ const distribution = async (req: Request, res: Response) => {
       { $project: { _id: 0, city: "$_id", value: 1 } },
       { $sort: { value: -1 } },
       { $limit: 12 },
-    ]).option({ maxTimeMS: 25000 });
+    ]);
 
+    // ----------------------------
+    // eventsByCategory : pareil -> on doit aussi lookup establishment pour filtrer
+    // ----------------------------
     const eventsByCategory = await Event.aggregate([
       {
         $match: {
           ...nonDraftMatch,
-          ...scopeEventsMatch,
           startingDate: { $gte: from, $lte: to },
+          "organizer.establishment": { $ne: null },
         },
       },
+      {
+        $lookup: {
+          from: "establishments",
+          localField: "organizer.establishment",
+          foreignField: "_id",
+          as: "est",
+        },
+      },
+      { $unwind: { path: "$est", preserveNullAndEmptyArrays: false } },
+
+      // ✅ filtre département
+      ...deptMatchStage,
+
       {
         $project: {
           category: {
@@ -898,11 +944,11 @@ const distribution = async (req: Request, res: Response) => {
       { $project: { _id: 0, category: "$_id", value: 1 } },
       { $sort: { value: -1 } },
       { $limit: 10 },
-    ]).option({ maxTimeMS: 25000 });
+    ]);
 
     return res.status(200).json({
       range: { from, to },
-      scope: { departments },
+      filters: { departments },
       charts: { eventsByCity, eventsByCategory },
     });
   } catch (error: any) {
