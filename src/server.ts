@@ -33,6 +33,7 @@ import AdsRoutes from "./routes/Ads";
 import RegistrationRoutes from "./routes/Registration";
 import invoiceRoutes from "./routes/invoice.routes";
 import OrganisateurRoute from "./routes/Organisateur";
+import AdminCompaniesControlRoutes from "./routes/AdminCompaniesControl";
 
 // Middlewares
 import AdminIsAuthenticated from "./middlewares/IsAuthenticated";
@@ -157,6 +158,7 @@ const startServer = () => {
   router.use("/admin/", AdminRoutes);
   router.use("/ads/", AdsRoutes);
   router.use("/registration/", RegistrationRoutes);
+  router.use("/companiesControl/", AdminCompaniesControlRoutes);
   router.use(LoginRoute);
   router.use(ToolsRoutes);
   router.use(PaymentRoute);

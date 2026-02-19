@@ -102,6 +102,8 @@ interface IEstablishment extends Document {
   ads: Types.ObjectId[];
   activated: boolean;
   amountAvailable: number;
+  banned: boolean;
+  deletedAt: Date;
 }
 
 export default IEstablishment;

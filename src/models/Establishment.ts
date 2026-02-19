@@ -95,6 +95,8 @@ const EstablishmentSchema = new Schema<IEstablishment>(
     activated: { type: Boolean, default: false },
     amountAvailable: { type: Number, default: 0 },
     refund: [{ type: Schema.Types.ObjectId, ref: "Bill" }],
+    banned: { type: Boolean, default: false },
+    deletedAt: { type: Date, default: null },
   },
   { timestamps: true },
 );
@@ -107,6 +109,9 @@ EstablishmentSchema.index({ email: 1 });
 EstablishmentSchema.index({ owner: 1 });
 // Optionnel
 EstablishmentSchema.index({ events: 1 });
+EstablishmentSchema.index({ deletedAt: 1, createdAt: -1 });
+EstablishmentSchema.index({ banned: 1, activated: 1 });
+EstablishmentSchema.index({ "address.postalCode": 1 });
 
 const Establishment = model<IEstablishment>(
   "Establishment",
