@@ -1098,28 +1098,33 @@ const createDraftEvent = async (req: Request, res: Response) => {
 const readEvent = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const eventId = req.params.eventId;
-    const { source } = req.body;
+    let { source } = req.body;
 
     const event = await Event.findById(eventId).populate({
       path: "registrations",
       model: "Registration",
       populate: "customer",
     });
+
     if (!event) {
       return res.status(404).json({ message: "Not found" });
     }
 
-    // Ajouter un clic
+    if (source === "deeplink") {
+      source = "scannés";
+    }
+
     const clic = {
-      source: source,
+      source,
       date: new Date(),
     };
+
     event.clics.push(clic);
-    await event.save(); // Sauvegarde de l'événement mis à jour
+    await event.save();
 
     return res.status(200).json({ message: event });
   } catch (error) {
-    return res.status(500).json({ error: error });
+    return res.status(500).json({ error });
   }
 };
 
