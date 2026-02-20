@@ -10,7 +10,7 @@ import twilio from "twilio";
 import { Job, Agenda } from "agenda";
 import config from "../config/config";
 import Admin from "../models/Admin";
-import { notifyAdminsNewOwner } from "../services/notifyAdmins"; // adapte chemin
+import { notifyAdminsNewOwner } from "../services/notifyAdmins";
 
 const cloudinary = require("cloudinary");
 

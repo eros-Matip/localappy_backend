@@ -1124,10 +1124,70 @@ const readEvent = async (req: Request, res: Response, next: NextFunction) => {
 };
 
 // Fonction pour lire tous les événements
-const readAll = async (req: Request, res: Response, next: NextFunction) => {
-  return Event.find()
-    .then((events: any) => res.status(200).json({ message: events }))
-    .catch((error) => res.status(500).json({ error: error.message }));
+const readAll = async (req: Request, res: Response) => {
+  try {
+    const page = Math.max(parseInt(req.query.page as string) || 1, 1);
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+    const skip = (page - 1) * limit;
+
+    const department = String(req.query.department || "all").trim();
+    const now = new Date();
+
+    const match: any = {};
+
+    // ✅ département via code postal dans address string
+    if (department !== "all") {
+      // cherche un code postal FR "64xxx" dans la string
+      match.address = { $regex: `\\b${department}\\d{3}\\b`, $options: "i" };
+    }
+
+    const itemsPromise = Event.find(match)
+      .select(
+        "_id title startingDate endingDate address isDraft registrationOpen organizer.legalName organizer.email",
+      )
+      .sort({ startingDate: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    const statsPromise = Event.aggregate([
+      { $match: match },
+      {
+        $facet: {
+          total: [{ $count: "count" }],
+          drafts: [{ $match: { isDraft: true } }, { $count: "count" }],
+          upcoming: [
+            { $match: { startingDate: { $gte: now }, isDraft: false } },
+            { $count: "count" },
+          ],
+          past: [
+            { $match: { startingDate: { $lt: now }, isDraft: false } },
+            { $count: "count" },
+          ],
+        },
+      },
+      {
+        $project: {
+          total: { $ifNull: [{ $arrayElemAt: ["$total.count", 0] }, 0] },
+          drafts: { $ifNull: [{ $arrayElemAt: ["$drafts.count", 0] }, 0] },
+          upcoming: { $ifNull: [{ $arrayElemAt: ["$upcoming.count", 0] }, 0] },
+          past: { $ifNull: [{ $arrayElemAt: ["$past.count", 0] }, 0] },
+        },
+      },
+    ]);
+
+    const [items, statsArr] = await Promise.all([itemsPromise, statsPromise]);
+    const stats = statsArr?.[0] || {
+      total: 0,
+      drafts: 0,
+      upcoming: 0,
+      past: 0,
+    };
+
+    return res.status(200).json({ items, stats, page, limit });
+  } catch (e: any) {
+    return res.status(500).json({ message: e?.message || "Erreur serveur" });
+  }
 };
 
 // Contrôleur pour récupérer les événements par code postal

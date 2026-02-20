@@ -43,6 +43,7 @@ import CustomerIsAuthenticated from "./middlewares/IsAuthenticated";
 import Event from "./models/Event";
 import Registration from "./models/Registration";
 import Bill from "./models/Bill";
+import Retour from "./library/Retour";
 
 const isProd = process.env.NODE_ENV === "production";
 
@@ -178,49 +179,74 @@ const startServer = () => {
     "/test",
     AdminIsAuthenticated,
     async (req: Request, res: Response) => {
-      try {
-        let regsAdded = 0;
-        let billsAdded = 0;
+      if (req.body.test === "registrations") {
+        try {
+          let regsAdded = 0;
+          let billsAdded = 0;
 
-        // --- Synchronisation des registrations ---
-        const registrations = await Registration.find({
-          event: { $exists: true, $ne: null },
-        });
+          // --- Synchronisation des registrations ---
+          const registrations = await Registration.find({
+            event: { $exists: true, $ne: null },
+          });
 
-        for (const reg of registrations) {
-          const updated = await Event.updateOne(
-            { _id: reg.event, registrations: { $ne: reg._id } },
-            { $push: { registrations: reg._id } },
-          );
-          if (updated.modifiedCount > 0) regsAdded++;
+          for (const reg of registrations) {
+            const updated = await Event.updateOne(
+              { _id: reg.event, registrations: { $ne: reg._id } },
+              { $push: { registrations: reg._id } },
+            );
+            if (updated.modifiedCount > 0) regsAdded++;
+          }
+
+          // --- Synchronisation des bills via leur registration ---
+          const bills = await Bill.find({
+            registration: { $exists: true, $ne: null },
+          });
+
+          for (const bill of bills) {
+            const reg = await Registration.findById(bill.registration);
+            if (!reg?.event) continue;
+
+            const updated = await Event.updateOne(
+              { _id: reg.event, bills: { $ne: bill._id } },
+              { $push: { bills: bill._id } },
+            );
+            if (updated.modifiedCount > 0) billsAdded++;
+          }
+
+          res.status(200).json({
+            message: "Synchronisation terminée",
+            registrationsAjoutees: regsAdded,
+            billsAjoutees: billsAdded,
+          });
+        } catch (error) {
+          console.error(error);
+          res
+            .status(500)
+            .json({ message: "Erreur lors de la synchronisation", error });
         }
-
-        // --- Synchronisation des bills via leur registration ---
-        const bills = await Bill.find({
-          registration: { $exists: true, $ne: null },
-        });
-
-        for (const bill of bills) {
-          const reg = await Registration.findById(bill.registration);
-          if (!reg?.event) continue;
-
-          const updated = await Event.updateOne(
-            { _id: reg.event, bills: { $ne: bill._id } },
-            { $push: { bills: bill._id } },
+      } else if (req.body.test === "history to Scannés") {
+        try {
+          const result = await Event.updateMany(
+            { "clics.source": "deeplink" },
+            {
+              $set: { "clics.$[elem].source": "scannés" },
+            },
+            {
+              arrayFilters: [{ "elem.source": "deeplink" }],
+            },
           );
-          if (updated.modifiedCount > 0) billsAdded++;
-        }
 
-        res.status(200).json({
-          message: "Synchronisation terminée",
-          registrationsAjoutees: regsAdded,
-          billsAjoutees: billsAdded,
-        });
-      } catch (error) {
-        console.error(error);
-        res
-          .status(500)
-          .json({ message: "Erreur lors de la synchronisation", error });
+          return res.status(200).json({
+            message: "Migration terminée",
+            modifiedCount: result.modifiedCount,
+          });
+        } catch (error) {
+          Retour.info("error catched");
+          return res.status(500).json({ message: "error catched", error });
+        }
+      } else {
+        Retour.info("test passed without function");
+        return res.send("test passed without function");
       }
     },
   );

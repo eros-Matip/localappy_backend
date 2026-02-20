@@ -29,7 +29,7 @@ router.post(
   controller.createDraftEvent,
 );
 router.post("/get/:eventId", controller.readEvent);
-router.get("/get/", controller.readAll);
+router.get("/getAll/", controller.readAll);
 router.get("/getAllByZip/:postalCode", controller.getEventsByPostalCode);
 router.post("/getAllByLocalisation", controller.getEventsByPosition);
 router.post("/getAllByDate/:month", controller.getEventByDate);
