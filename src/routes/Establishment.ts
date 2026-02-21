@@ -11,8 +11,8 @@ const cpUpload = upload.fields([{ name: "photos", maxCount: 10 }]);
 
 router.post(
   "/create",
-  cpUpload,
   OwnerIsAuthenticated,
+  cpUpload,
   controller.createEstablishment,
 );
 // router.post(
@@ -38,15 +38,15 @@ router.get(
 );
 router.put(
   "/update/:establishmentId",
-  cpUpload,
   OwnerIsAuthenticated,
+  cpUpload,
   controller.updateEstablishment,
 );
 /** ✅ AJOUT : upload doc légal */
 router.post(
   "/upload-legal-doc/:establishmentId",
-  cpUpload,
   OwnerIsAuthenticated,
+  cpUpload,
   controller.uploadLegalDoc,
 );
 

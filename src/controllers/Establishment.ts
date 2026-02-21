@@ -891,8 +891,14 @@ const uploadLegalDoc = async (req: Request, res: Response) => {
     }
 
     // owner auth depuis middleware
-    const requesterOwnerId = (req as any)?.ownerId || (req as any)?.user?._id;
+    const requesterOwnerId =
+      (req as any)?.ownerId ||
+      (req as any)?.user?._id ||
+      (req as any)?.body?.owner?._id; // ✅ ton cas
 
+    if (!requesterOwnerId) {
+      return res.status(401).json({ message: "Unauthorized: missing owner" });
+    }
     const establishment = await Establishment.findById(establishmentId);
     if (!establishment) {
       return res.status(404).json({ message: "Establishment not found" });
