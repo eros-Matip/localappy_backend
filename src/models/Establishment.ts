@@ -97,6 +97,19 @@ const EstablishmentSchema = new Schema<IEstablishment>(
     refund: [{ type: Schema.Types.ObjectId, ref: "Bill" }],
     banned: { type: Boolean, default: false },
     deletedAt: { type: Date, default: null },
+    activationRequested: { type: Boolean, default: false },
+    activationRequestedAt: { type: Date, default: null },
+    activationStatus: {
+      type: String,
+      enum: ["pending", "approved", "rejected"],
+      default: "pending",
+    },
+    activationReviewedAt: { type: Date, default: null },
+    activationReviewedBy: {
+      type: Schema.Types.ObjectId,
+      ref: "Admin",
+      default: null,
+    },
   },
   { timestamps: true },
 );

@@ -882,6 +882,71 @@ const requestActivation = async (req: Request, res: Response) => {
   }
 };
 
+const approveActivation = async (req: Request, res: Response) => {
+  try {
+    const { establishmentId } = req.params;
+
+    if (!mongoose.isValidObjectId(establishmentId)) {
+      return res.status(400).json({ message: "Invalid establishment id" });
+    }
+
+    const establishment = await Establishment.findById(establishmentId);
+    if (!establishment) {
+      return res.status(404).json({ message: "Establishment not found" });
+    }
+
+    establishment.activated = true;
+    establishment.activationStatus = "approved";
+    establishment.activationReviewedAt = new Date();
+    establishment.activationReviewedBy = (req as any)?.admin?._id || null;
+
+    await establishment.save();
+
+    return res.status(200).json({
+      message: "Activation approved",
+      establishment,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      message: "Failed to approve activation",
+      details: error?.message,
+    });
+  }
+};
+
+const rejectActivation = async (req: Request, res: Response) => {
+  try {
+    const { establishmentId } = req.params;
+    const { reason } = req.body;
+
+    if (!mongoose.isValidObjectId(establishmentId)) {
+      return res.status(400).json({ message: "Invalid establishment id" });
+    }
+
+    const establishment = await Establishment.findById(establishmentId);
+    if (!establishment) {
+      return res.status(404).json({ message: "Establishment not found" });
+    }
+
+    establishment.activated = false;
+    establishment.activationStatus = "rejected";
+    establishment.activationReviewedAt = new Date();
+    establishment.activationReviewedBy = (req as any)?.admin?._id || null;
+
+    await establishment.save();
+
+    return res.status(200).json({
+      message: "Activation rejected",
+      reason,
+      establishment,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      message: "Failed to reject activation",
+      details: error?.message,
+    });
+  }
+};
 // Fonction pour supprimer un établissement
 const deleteEstablishment = async (req: Request, res: Response) => {
   try {
@@ -914,5 +979,7 @@ export default {
   // fetchEstablishmentsByJson,
   updateEstablishment,
   requestActivation,
+  approveActivation,
+  rejectActivation,
   deleteEstablishment,
 };

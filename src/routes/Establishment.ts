@@ -3,6 +3,7 @@ import controller from "../controllers/Establishment";
 import OwnerIsAuthenticated from "../middlewares/OwnerIsAuthenticated";
 import multer from "multer";
 import { multerConfig } from "../middlewares/Multer";
+import AdminIsAuthenticated from "../middlewares/AdminIsAuthenticated";
 
 const router = express.Router();
 const upload = multer(multerConfig);
@@ -44,6 +45,17 @@ router.put(
 router.post(
   "/request-activation/:establishmentId",
   controller.requestActivation,
+);
+router.post(
+  "/establishment/approve-activation/:establishmentId",
+  AdminIsAuthenticated,
+  controller.approveActivation,
+);
+
+router.post(
+  "/establishment/reject-activation/:establishmentId",
+  AdminIsAuthenticated,
+  controller.rejectActivation,
 );
 router.delete("/delete", OwnerIsAuthenticated, controller.deleteEstablishment);
 

@@ -104,6 +104,12 @@ interface IEstablishment extends Document {
   amountAvailable: number;
   banned: boolean;
   deletedAt: Date;
+  // 🔔 Workflow activation
+  activationRequested: boolean;
+  activationRequestedAt?: Date | null;
+  activationStatus: "pending" | "approved" | "rejected";
+  activationReviewedAt?: Date | null;
+  activationReviewedBy?: Types.ObjectId | null;
 }
 
 export default IEstablishment;
