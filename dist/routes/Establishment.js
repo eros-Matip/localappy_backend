@@ -18,7 +18,7 @@ router.get("/getPublicInformation/:establishmentId", Establishment_1.default.get
 router.get("/getTicketsStatsByEstablishment/:establishmentId", OwnerIsAuthenticated_1.default, Establishment_1.default.getTicketsStatsByEstablishment);
 router.put("/update/:establishmentId", OwnerIsAuthenticated_1.default, cpUpload, Establishment_1.default.updateEstablishment);
 router.post("/upload-legal-doc/:establishmentId", cpUpload, OwnerIsAuthenticated_1.default, Establishment_1.default.uploadLegalDoc);
-router.post("/request-activation/:establishmentId", AdminIsAuthenticated_1.default, Establishment_1.default.requestActivation);
+router.post("/request-activation/:establishmentId", OwnerIsAuthenticated_1.default, Establishment_1.default.requestActivation);
 router.post("/establishment/approve-activation/:establishmentId", AdminIsAuthenticated_1.default, Establishment_1.default.approveActivation);
 router.post("/establishment/reject-activation/:establishmentId", AdminIsAuthenticated_1.default, Establishment_1.default.rejectActivation);
 router.delete("/delete", OwnerIsAuthenticated_1.default, Establishment_1.default.deleteEstablishment);

@@ -52,7 +52,7 @@ router.post(
 
 router.post(
   "/request-activation/:establishmentId",
-  AdminIsAuthenticated,
+  OwnerIsAuthenticated,
   controller.requestActivation,
 );
 router.post(
