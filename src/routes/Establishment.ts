@@ -45,8 +45,8 @@ router.put(
 /** ✅ AJOUT : upload doc légal */
 router.post(
   "/upload-legal-doc/:establishmentId",
-  OwnerIsAuthenticated,
   cpUpload,
+  OwnerIsAuthenticated,
   controller.uploadLegalDoc,
 );
 
