@@ -892,12 +892,6 @@ const uploadLegalDoc = async (req: Request, res: Response) => {
 
     // owner auth depuis middleware
     const requesterOwnerId = (req as any)?.ownerId || (req as any)?.user?._id;
-    if (
-      !requesterOwnerId ||
-      !mongoose.isValidObjectId(String(requesterOwnerId))
-    ) {
-      return res.status(401).json({ message: "Owner auth required" });
-    }
 
     const establishment = await Establishment.findById(establishmentId);
     if (!establishment) {
