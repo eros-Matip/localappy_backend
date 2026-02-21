@@ -882,6 +882,94 @@ const requestActivation = async (req: Request, res: Response) => {
   }
 };
 
+const uploadLegalDoc = async (req: Request, res: Response) => {
+  try {
+    const { establishmentId } = req.params;
+
+    if (!mongoose.isValidObjectId(establishmentId)) {
+      return res.status(400).json({ message: "Invalid establishment id" });
+    }
+
+    // owner auth depuis middleware
+    const requesterOwnerId = (req as any)?.ownerId || (req as any)?.user?._id;
+    if (
+      !requesterOwnerId ||
+      !mongoose.isValidObjectId(String(requesterOwnerId))
+    ) {
+      return res.status(401).json({ message: "Owner auth required" });
+    }
+
+    const establishment = await Establishment.findById(establishmentId);
+    if (!establishment) {
+      return res.status(404).json({ message: "Establishment not found" });
+    }
+
+    // seul le owner peut upload
+    if (String((establishment as any).owner) !== String(requesterOwnerId)) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    const fileArr = req.files ? (Object(req.files) as any).photos : [];
+    const hasFile = Array.isArray(fileArr) && fileArr.length > 0;
+
+    if (!hasFile) {
+      return res.status(400).json({ message: "No file provided" });
+    }
+
+    // legalForm peut venir du body, sinon de l’establishment
+    const legalForm = String(
+      req.body?.legalForm || (establishment as any).legalForm || "company",
+    );
+    const isAssociation = legalForm === "association";
+
+    const owner = await Owner.findById(requesterOwnerId);
+    const cloudinaryFolder = owner
+      ? `${owner.account.firstname}_${owner.account.name}_folder`
+      : `owners/${String(requesterOwnerId)}`;
+
+    const result = await cloudinary.v2.uploader.upload(fileArr[0].path, {
+      folder: cloudinaryFolder,
+      public_id: isAssociation ? "AssociationDocument" : "KBis",
+      resource_type: "auto",
+    });
+
+    const uploadResult = {
+      public_id: result.public_id,
+      secure_url: result.secure_url,
+    };
+
+    // ✅ stocker AU BON ENDROIT (ce que requestActivation check)
+    (establishment as any).legalInfo = (establishment as any).legalInfo || {};
+
+    if (isAssociation) {
+      (establishment as any).legalInfo.legalDocument = {
+        public_id: uploadResult.public_id,
+        secure_url: uploadResult.secure_url,
+        label: "Statuts / Récépissé",
+      };
+    } else {
+      (establishment as any).legalInfo.KBis = {
+        public_id: uploadResult.public_id,
+        secure_url: uploadResult.secure_url,
+      };
+    }
+
+    await establishment.save();
+
+    Retour.info("Legal doc uploaded");
+    return res.status(200).json({
+      message: "Legal doc uploaded",
+      establishment,
+    });
+  } catch (error: any) {
+    Retour.error(`uploadLegalDoc error: ${error?.message || error}`);
+    return res.status(500).json({
+      message: "Failed to upload legal doc",
+      details: error?.message || String(error),
+    });
+  }
+};
+
 const approveActivation = async (req: Request, res: Response) => {
   try {
     const { establishmentId } = req.params;
@@ -890,15 +978,16 @@ const approveActivation = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Invalid establishment id" });
     }
 
-    const establishment = await Establishment.findById(establishmentId);
-    if (!establishment) {
-      return res.status(404).json({ message: "Establishment not found" });
-    }
+    const adminId = (req as any)?.adminId || (req as any)?.user?._id || null;
 
-    establishment.activated = true;
-    establishment.activationStatus = "approved";
-    establishment.activationReviewedAt = new Date();
-    establishment.activationReviewedBy = (req as any)?.admin?._id || null;
+    const establishment = await Establishment.findById(establishmentId);
+    if (!establishment)
+      return res.status(404).json({ message: "Establishment not found" });
+
+    (establishment as any).activated = true;
+    (establishment as any).activationStatus = "approved";
+    (establishment as any).activationReviewedAt = new Date();
+    (establishment as any).activationReviewedBy = adminId;
 
     await establishment.save();
 
@@ -907,44 +996,39 @@ const approveActivation = async (req: Request, res: Response) => {
       establishment,
     });
   } catch (error: any) {
-    return res.status(500).json({
-      message: "Failed to approve activation",
-      details: error?.message,
-    });
+    Retour.error(`approveActivation error: ${error?.message || error}`);
+    return res.status(500).json({ message: "Failed to approve activation" });
   }
 };
 
 const rejectActivation = async (req: Request, res: Response) => {
   try {
     const { establishmentId } = req.params;
-    const { reason } = req.body;
 
     if (!mongoose.isValidObjectId(establishmentId)) {
       return res.status(400).json({ message: "Invalid establishment id" });
     }
 
-    const establishment = await Establishment.findById(establishmentId);
-    if (!establishment) {
-      return res.status(404).json({ message: "Establishment not found" });
-    }
+    const adminId = (req as any)?.adminId || (req as any)?.user?._id || null;
 
-    establishment.activated = false;
-    establishment.activationStatus = "rejected";
-    establishment.activationReviewedAt = new Date();
-    establishment.activationReviewedBy = (req as any)?.admin?._id || null;
+    const establishment = await Establishment.findById(establishmentId);
+    if (!establishment)
+      return res.status(404).json({ message: "Establishment not found" });
+
+    (establishment as any).activated = false;
+    (establishment as any).activationStatus = "rejected";
+    (establishment as any).activationReviewedAt = new Date();
+    (establishment as any).activationReviewedBy = adminId;
 
     await establishment.save();
 
     return res.status(200).json({
       message: "Activation rejected",
-      reason,
       establishment,
     });
   } catch (error: any) {
-    return res.status(500).json({
-      message: "Failed to reject activation",
-      details: error?.message,
-    });
+    Retour.error(`rejectActivation error: ${error?.message || error}`);
+    return res.status(500).json({ message: "Failed to reject activation" });
   }
 };
 // Fonction pour supprimer un établissement
@@ -979,6 +1063,7 @@ export default {
   // fetchEstablishmentsByJson,
   updateEstablishment,
   requestActivation,
+  uploadLegalDoc,
   approveActivation,
   rejectActivation,
   deleteEstablishment,

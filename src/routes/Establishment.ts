@@ -42,8 +42,17 @@ router.put(
   OwnerIsAuthenticated,
   controller.updateEstablishment,
 );
+/** ✅ AJOUT : upload doc légal */
+router.post(
+  "/upload-legal-doc/:establishmentId",
+  cpUpload,
+  OwnerIsAuthenticated,
+  controller.uploadLegalDoc,
+);
+
 router.post(
   "/request-activation/:establishmentId",
+  AdminIsAuthenticated,
   controller.requestActivation,
 );
 router.post(
