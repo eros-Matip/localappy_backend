@@ -128,12 +128,9 @@ const createOwner = async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Customer not found" });
     }
 
+    // ✅ fichier optionnel
     const fileKeys = req.files ? Object(req.files).file : [];
-
-    if (!fileKeys.length) {
-      console.error("Identity document is missing");
-      return res.status(400).json({ message: "Identity document is missing" });
-    }
+    const hasIdentityDoc = Array.isArray(fileKeys) && fileKeys.length > 0;
 
     const token: string = uid2(26);
     const salt: string = uid2(26);
@@ -179,27 +176,33 @@ const createOwner = async (req: Request, res: Response) => {
       isVerified: false,
       verificationCode,
       customerAccount: customerFinded,
+      // cni: sera rempli seulement si doc fourni
     });
 
-    // Upload sur Cloudinary
-    const result = await cloudinary.v2.uploader.upload(fileKeys[0].path, {
-      folder: `${owner.account.firstname}_${owner.account.name}_folder`,
-    });
+    // ✅ Upload Cloudinary seulement si le fichier existe
+    if (hasIdentityDoc) {
+      const result = await cloudinary.v2.uploader.upload(fileKeys[0].path, {
+        folder: `${owner.account.firstname}_${owner.account.name}_folder`,
+      });
 
-    // Mise à jour de la photo de la piece d'identité avec le dernier fichier téléchargé
-    owner.cni = {
-      public_id: result.public_id,
-      url: result.secure_url,
-    };
+      owner.cni = {
+        public_id: result.public_id,
+        url: result.secure_url,
+      };
+    }
+
     await owner.save();
+
     Object(customerFinded).ownerAccount = owner;
     await Object(customerFinded).save();
-    // Planifier la suppression après 1 heure
+
+    // Planifier la suppression après 1 heure (si non vérifié)
     await agenda.start();
     await agenda.schedule("in 1 hour", "delete unverified owner", {
       ownerId: owner._id,
     });
 
+    // ✅ Tu peux décider de notifier seulement si la CNI est fournie
     await notifyAdminsNewOwner({
       ownerId: String(owner._id),
       ownerFirstname: owner.account.firstname,
@@ -212,6 +215,7 @@ const createOwner = async (req: Request, res: Response) => {
       message: "Owner created. Verification code sent via SMS.",
       ownerId: owner._id,
       token: owner.token,
+      identityProvided: hasIdentityDoc, // ✅ pratique côté front
     });
   } catch (error) {
     console.error("Error creating owner:", error);

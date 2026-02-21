@@ -39,31 +39,31 @@ const createEstablishment = async (req: Request, res: Response) => {
     adressLabel,
     society,
     siret,
-    rna, // ✅ nouveau : RNA association
+    rna,
     adress,
     city,
     zip,
     activityCodeNAF,
-    legalForm, // ✅ "company" | "association"
+    legalForm,
+    owner: ownerId,
   } = req.body;
 
   const form = String(legalForm || "company");
   const isAssociation = form === "association";
 
-  // ✅ champs communs obligatoires
+  // ✅ champs communs obligatoires (on garde)
   if (!activity || !adressLabel || !society || !adress || !city || !zip) {
     Retour.warn("Some value is missing");
     return res.status(400).json({ message: "Some value is missing" });
   }
 
-  // ✅ validation entreprise vs asso
+  // ✅ validation entreprise vs asso (on garde)
   if (!isAssociation) {
     if (!siret || !/^\d{14}$/.test(String(siret).trim())) {
       Retour.warn("SIRET missing/invalid");
       return res.status(400).json({ message: "SIRET manquant ou invalide." });
     }
   } else {
-    // RNA fortement recommandé pour une asso (sinon doublons)
     const rnaNorm = normalizeRna(rna);
     if (!rnaNorm) {
       Retour.warn("RNA missing/invalid");
@@ -74,41 +74,26 @@ const createEstablishment = async (req: Request, res: Response) => {
     }
   }
 
-  // ✅ fichier requis : KBis pour entreprise, document légal pour asso
+  // ✅ fichier OPTIONNEL maintenant : KBis (entreprise) / document légal (asso)
   const fileArr = req.files ? (Object(req.files) as any).photos : [];
   const hasFile = Array.isArray(fileArr) && fileArr.length > 0;
 
-  if (!hasFile) {
-    Retour.warn(
-      isAssociation ? "Legal document is missing" : "KBis is missing",
-    );
-    return res.status(400).json({
-      message: isAssociation
-        ? "Document légal association manquant (statuts/récépissé)."
-        : "KBis is missing",
-    });
-  }
-
   try {
     // ✅ owner
-    const owner = await Owner.findById(req.body.owner);
+    const owner = await Owner.findById(ownerId);
     if (!owner) {
       Retour.warn("Owner not found");
       return res.status(404).json({ message: "Owner not found" });
     }
+
+    // ⚠️ si on veux autoriser la création sans vérif tel, commenter ce bloc
     if (!owner.isVerified) {
       Retour.warn("Owner not verified");
-      return res.status(400).json({ message: "Owner not verified" });
+      return res.status(403).json({
+        message: "Owner phone not verified",
+        action: "VERIFY_PHONE_REQUIRED",
+      });
     }
-
-    // ✅ upload Cloudinary (KBis ou doc association)
-    const cloudinaryFolder = `${owner.account.firstname}_${owner.account.name}_folder`;
-
-    const uploadResult = await cloudinary.v2.uploader.upload(fileArr[0].path, {
-      folder: cloudinaryFolder,
-      public_id: isAssociation ? "AssociationDocument" : "KBis",
-      resource_type: "image",
-    });
 
     // ✅ geocode
     const responseApiGouv = await axios.get(
@@ -141,7 +126,6 @@ const createEstablishment = async (req: Request, res: Response) => {
       }
     } else {
       const rnaNorm = normalizeRna(rna)!;
-
       const existing = await Establishment.findOne({
         legalForm: "association",
         "legalInfo.rna": rnaNorm,
@@ -155,7 +139,25 @@ const createEstablishment = async (req: Request, res: Response) => {
       }
     }
 
-    // ✅ création
+    // ✅ upload Cloudinary seulement si doc fourni
+    let uploadResult: { public_id: string; secure_url: string } | null = null;
+
+    if (hasFile) {
+      const cloudinaryFolder = `${owner.account.firstname}_${owner.account.name}_folder`;
+
+      const result = await cloudinary.v2.uploader.upload(fileArr[0].path, {
+        folder: cloudinaryFolder,
+        public_id: isAssociation ? "AssociationDocument" : "KBis",
+        resource_type: "auto", // ✅ important (PDF ou image)
+      });
+
+      uploadResult = {
+        public_id: result.public_id,
+        secure_url: result.secure_url,
+      };
+    }
+
+    // ✅ création établissement (DOC PAS OBLIGATOIRE)
     const establishment = new Establishment({
       name: society,
       type: Array.isArray(activity) ? activity : [activity],
@@ -185,22 +187,26 @@ const createEstablishment = async (req: Request, res: Response) => {
           : siret
             ? String(siret).trim()
             : undefined,
-        KBis: !isAssociation
-          ? {
-              public_id: uploadResult.public_id,
-              secure_url: uploadResult.secure_url,
-            }
-          : undefined,
+
+        KBis:
+          !isAssociation && uploadResult
+            ? {
+                public_id: uploadResult.public_id,
+                secure_url: uploadResult.secure_url,
+              }
+            : undefined,
 
         // association
         rna: isAssociation ? normalizeRna(rna)! : undefined,
-        legalDocument: isAssociation
-          ? {
-              public_id: uploadResult.public_id,
-              secure_url: uploadResult.secure_url,
-              label: "Statuts / Récépissé",
-            }
-          : undefined,
+
+        legalDocument:
+          isAssociation && uploadResult
+            ? {
+                public_id: uploadResult.public_id,
+                secure_url: uploadResult.secure_url,
+                label: "Statuts / Récépissé",
+              }
+            : undefined,
 
         activityCodeNAF: activityCodeNAF || undefined,
       },
@@ -209,6 +215,8 @@ const createEstablishment = async (req: Request, res: Response) => {
       events: [],
       ads: [],
       staff: [],
+
+      // ✅ Tant que doc pas fourni, on garde désactivé
       activated: false,
     });
 
@@ -217,6 +225,7 @@ const createEstablishment = async (req: Request, res: Response) => {
     owner.establishments.push((establishment as any)._id);
     await owner.save();
 
+    // ✅ notif admins (tu peux la garder)
     notifyAdminsNewEstablishment({
       establishmentId: String(establishment._id),
       establishmentName: society,
@@ -226,10 +235,16 @@ const createEstablishment = async (req: Request, res: Response) => {
       ownerName: owner.account.name,
     }).catch((e) => console.error("Admin notification failed:", e));
 
-    Retour.info("Establishment created successfully");
+    const needsLegalDoc = !hasFile;
+
+    Retour.info("Establishment created successfully (draft mode)");
     return res.status(201).json({
       message: "Establishment created successfully",
       establishment,
+      // ✅ pratique côté front
+      activated: establishment.activated,
+      needsLegalDoc,
+      legalDocType: isAssociation ? "ASSOCIATION_DOC" : "KBIS",
     });
   } catch (error: any) {
     Retour.error(`Error creating establishment: ${error?.message || error}`);
