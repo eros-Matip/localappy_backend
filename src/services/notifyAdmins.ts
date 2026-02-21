@@ -74,3 +74,38 @@ export async function notifyAdminsNewEstablishment(params: {
 
   await sendToAdmins(messages);
 }
+
+// ✅ AJOUT : demande d’activation
+export async function notifyAdminsActivationRequest(params: {
+  establishmentId: string;
+  establishmentName: string;
+  legalForm: "company" | "association";
+  ownerId: string;
+  ownerFirstname: string;
+  ownerName: string;
+}) {
+  const admins = await Admin.find(
+    { expoPushToken: { $exists: true, $ne: null } },
+    { expoPushToken: 1 },
+  ).lean();
+
+  const messages: ExpoPushMessage[] = [];
+
+  for (const admin of admins) {
+    const token = (admin as any).expoPushToken;
+    if (!token || !Expo.isExpoPushToken(token)) continue;
+
+    const label =
+      params.legalForm === "association" ? "Association" : "Entreprise";
+
+    messages.push({
+      to: token,
+      sound: "default",
+      title: `Demande d’activation (${label})`,
+      body: `${params.establishmentName} — demande par ${params.ownerFirstname} ${params.ownerName}.`,
+      data: { type: "ESTABLISHMENT_ACTIVATION_REQUEST", ...params },
+    });
+  }
+
+  await sendToAdmins(messages);
+}

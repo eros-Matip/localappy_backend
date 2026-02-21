@@ -41,6 +41,10 @@ router.put(
   OwnerIsAuthenticated,
   controller.updateEstablishment,
 );
+router.post(
+  "/request-activation/:establishmentId",
+  controller.requestActivation,
+);
 router.delete("/delete", OwnerIsAuthenticated, controller.deleteEstablishment);
 
 export default router;

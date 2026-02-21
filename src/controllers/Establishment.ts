@@ -12,8 +12,8 @@ import mongoose, { Types } from "mongoose";
 import Registration from "../models/Registration";
 import Customer from "../models/Customer";
 import {
+  notifyAdminsActivationRequest,
   notifyAdminsNewEstablishment,
-  notifyAdminsNewOwner,
 } from "../services/notifyAdmins";
 
 const cloudinary = require("cloudinary");
@@ -771,6 +771,117 @@ const updateEstablishment = async (req: Request, res: Response) => {
   }
 };
 
+const requestActivation = async (req: Request, res: Response) => {
+  try {
+    const { establishmentId } = req.params;
+
+    if (!mongoose.isValidObjectId(establishmentId)) {
+      return res.status(400).json({ message: "Invalid establishment id" });
+    }
+
+    // ✅ On essaye d’être compatible avec plusieurs middlewares possibles
+    const requesterOwnerId =
+      (req as any)?.ownerId ||
+      (req as any)?.user?.ownerId ||
+      (req as any)?.user?._id ||
+      (req as any)?.customer?.ownerAccount?.ownerId ||
+      (req as any)?.customer?.ownerAccount?._id ||
+      req.body?.ownerId ||
+      req.body?.owner;
+
+    if (
+      !requesterOwnerId ||
+      !mongoose.isValidObjectId(String(requesterOwnerId))
+    ) {
+      return res.status(401).json({
+        message: "Owner introuvable (auth).",
+        action: "OWNER_AUTH_REQUIRED",
+      });
+    }
+
+    const establishment = await Establishment.findById(establishmentId);
+    if (!establishment) {
+      return res.status(404).json({ message: "Establishment not found" });
+    }
+
+    // ✅ Sécu : seul le owner de l’établissement peut demander l’activation
+    if (String((establishment as any).owner) !== String(requesterOwnerId)) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    // ✅ Si déjà activé : on ne redemande pas
+    if ((establishment as any).activated) {
+      return res.status(409).json({
+        message: "Establishment already activated",
+        activated: true,
+      });
+    }
+
+    // ✅ Vérifs côté backend (même si le front le fait déjà)
+    const nameOk = !!String((establishment as any).name || "").trim();
+    const phoneOk = !!String(
+      (establishment as any).phone ||
+        (establishment as any)?.contact?.phone ||
+        "",
+    ).trim();
+
+    const hasKBis = !!(establishment as any)?.legalInfo?.KBis?.secure_url;
+    const hasAssoDoc = !!(establishment as any)?.legalInfo?.legalDocument
+      ?.secure_url;
+    const docOk = hasKBis || hasAssoDoc;
+
+    const missing: string[] = [];
+    if (!nameOk) missing.push("name");
+    if (!phoneOk) missing.push("phone");
+    if (!docOk) missing.push("legalDoc");
+
+    if (missing.length) {
+      return res.status(400).json({
+        message: "Activation request rejected: missing required fields",
+        missing,
+      });
+    }
+
+    // ✅ Marquer comme “demande envoyée”
+    // ⚠️ IMPORTANT : si ton schema Establishment n’a pas ces champs, ajoute-les,
+    // sinon Mongoose (strict) peut les ignorer.
+    (establishment as any).activationRequested = true;
+    (establishment as any).activationRequestedAt = new Date();
+    (establishment as any).activationStatus = "pending"; // pending | approved | rejected
+    (establishment as any).activationReviewedAt = null;
+    (establishment as any).activationReviewedBy = null;
+
+    await establishment.save();
+
+    // ✅ notif admins (comme createEstablishment)
+    const owner = await Owner.findById(requesterOwnerId);
+
+    notifyAdminsActivationRequest({
+      establishmentId: String((establishment as any)._id),
+      establishmentName: String((establishment as any).name || "—"),
+      legalForm: ((establishment as any).legalForm || "company") as
+        | "company"
+        | "association",
+      ownerId: String(requesterOwnerId),
+      ownerFirstname: owner?.account?.firstname || "—",
+      ownerName: owner?.account?.name || "—",
+    }).catch((e) => console.error("Admin notification failed:", e));
+
+    Retour.info("Activation requested successfully");
+    return res.status(200).json({
+      message: "Activation requested successfully",
+      activationRequested: true,
+      establishment,
+    });
+  } catch (error: any) {
+    Retour.error(`requestActivation error: ${error?.message || error}`);
+    return res.status(500).json({
+      message: "Failed to request activation",
+      details: error?.message || String(error),
+    });
+  }
+};
+
 // Fonction pour supprimer un établissement
 const deleteEstablishment = async (req: Request, res: Response) => {
   try {
@@ -802,5 +913,6 @@ export default {
   getTicketsStatsByEstablishment,
   // fetchEstablishmentsByJson,
   updateEstablishment,
+  requestActivation,
   deleteEstablishment,
 };
