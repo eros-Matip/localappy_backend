@@ -160,7 +160,7 @@ const createEstablishment = async (req: Request, res: Response) => {
         }
 
         // ✅ déjà en demande (pending) -> on bloque la redemande
-        const pendingArr: any[] = ((owner as any).establishmentsPending ||
+        const pendingArr: any[] = ((owner as any).establishments ||
           []) as any[];
         const alreadyPending = pendingArr.some(
           (id: any) => String(id) === String((existing as any)._id),
@@ -195,9 +195,8 @@ const createEstablishment = async (req: Request, res: Response) => {
         await existing.save();
 
         // ✅ on enregistre la demande côté owner (pending)
-        (owner as any).establishmentsPending =
-          (owner as any).establishmentsPending || [];
-        (owner as any).establishmentsPending.push((existing as any)._id);
+        (owner as any).establishments = (owner as any).establishments || [];
+        (owner as any).establishments.push((existing as any)._id);
         await owner.save();
 
         // ✅ notif admins (tu peux la garder)
@@ -255,7 +254,7 @@ const createEstablishment = async (req: Request, res: Response) => {
         }
 
         // ✅ déjà en demande (pending) -> on bloque la redemande
-        const pendingArr: any[] = ((owner as any).establishmentsPending ||
+        const pendingArr: any[] = ((owner as any).establishments ||
           []) as any[];
         const alreadyPending = pendingArr.some(
           (id: any) => String(id) === String((existing as any)._id),
@@ -291,9 +290,8 @@ const createEstablishment = async (req: Request, res: Response) => {
         await existing.save();
 
         // ✅ on enregistre la demande côté owner (pending)
-        (owner as any).establishmentsPending =
-          (owner as any).establishmentsPending || [];
-        (owner as any).establishmentsPending.push((existing as any)._id);
+        (owner as any).establishments = (owner as any).establishments || [];
+        (owner as any).establishments.push((existing as any)._id);
         await owner.save();
 
         // ✅ notif admins (tu peux la garder)
