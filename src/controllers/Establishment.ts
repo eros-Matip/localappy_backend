@@ -212,7 +212,7 @@ const createEstablishment = async (req: Request, res: Response) => {
         const needsLegalDoc = !hasFile && !(existing as any)?.legalInfo?.KBis;
 
         Retour.info("Claim request created successfully (SIRET)");
-        return res.status(202).json({
+        return res.status(201).json({
           message: "Claim request created. Waiting for admin validation.",
           establishment: existing,
           status: "PENDING",
@@ -308,7 +308,7 @@ const createEstablishment = async (req: Request, res: Response) => {
           !hasFile && !(existing as any)?.legalInfo?.legalDocument;
 
         Retour.info("Claim request created successfully (RNA)");
-        return res.status(202).json({
+        return res.status(201).json({
           message: "Claim request created. Waiting for admin validation.",
           establishment: existing,
           status: "PENDING",

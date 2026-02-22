@@ -157,7 +157,7 @@ const createEstablishment = (req, res) => __awaiter(void 0, void 0, void 0, func
                 }).catch((e) => console.error("Admin notification failed:", e));
                 const needsLegalDoc = !hasFile && !((_d = existing === null || existing === void 0 ? void 0 : existing.legalInfo) === null || _d === void 0 ? void 0 : _d.KBis);
                 Retour_1.default.info("Claim request created successfully (SIRET)");
-                return res.status(202).json({
+                return res.status(201).json({
                     message: "Claim request created. Waiting for admin validation.",
                     establishment: existing,
                     status: "PENDING",
@@ -231,7 +231,7 @@ const createEstablishment = (req, res) => __awaiter(void 0, void 0, void 0, func
                 }).catch((e) => console.error("Admin notification failed:", e));
                 const needsLegalDoc = !hasFile && !((_g = existing === null || existing === void 0 ? void 0 : existing.legalInfo) === null || _g === void 0 ? void 0 : _g.legalDocument);
                 Retour_1.default.info("Claim request created successfully (RNA)");
-                return res.status(202).json({
+                return res.status(201).json({
                     message: "Claim request created. Waiting for admin validation.",
                     establishment: existing,
                     status: "PENDING",
