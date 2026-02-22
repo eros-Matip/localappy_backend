@@ -375,7 +375,9 @@ const createEstablishment = async (req: Request, res: Response) => {
         activityCodeNAF: activityCodeNAF || undefined,
       },
 
-      owner: owner._id,
+      // ✅ owner devenu tableau
+      owner: [owner._id],
+
       events: [],
       ads: [],
       staff: [],
@@ -968,8 +970,18 @@ const requestActivation = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Establishment not found" });
     }
 
-    // ✅ Sécu : seul le owner de l’établissement peut demander l’activation
-    if (String((establishment as any).owner) !== String(requesterOwnerId)) {
+    // ✅ Sécu : seul un owner de l’établissement peut demander l’activation
+    const ownersArr = Array.isArray((establishment as any).owner)
+      ? ((establishment as any).owner as any[])
+      : (establishment as any).owner
+        ? [(establishment as any).owner]
+        : [];
+
+    const isOwner = ownersArr.some(
+      (id: any) => String(id) === String(requesterOwnerId),
+    );
+
+    if (!isOwner) {
       return res.status(403).json({ message: "Forbidden" });
     }
 
@@ -1007,8 +1019,6 @@ const requestActivation = async (req: Request, res: Response) => {
     }
 
     // ✅ Marquer comme “demande envoyée”
-    // ⚠️ IMPORTANT : si ton schema Establishment n’a pas ces champs, ajoute-les,
-    // sinon Mongoose (strict) peut les ignorer.
     (establishment as any).activationRequested = true;
     (establishment as any).activationRequestedAt = new Date();
     (establishment as any).activationStatus = "pending"; // pending | approved | rejected
@@ -1068,8 +1078,18 @@ const uploadLegalDoc = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Establishment not found" });
     }
 
-    // seul le owner peut upload
-    if (String((establishment as any).owner) !== String(requesterOwnerId)) {
+    // seul un owner peut upload
+    const ownersArr = Array.isArray((establishment as any).owner)
+      ? ((establishment as any).owner as any[])
+      : (establishment as any).owner
+        ? [(establishment as any).owner]
+        : [];
+
+    const isOwner = ownersArr.some(
+      (id: any) => String(id) === String(requesterOwnerId),
+    );
+
+    if (!isOwner) {
       return res.status(403).json({ message: "Forbidden" });
     }
 
@@ -1195,6 +1215,7 @@ const rejectActivation = async (req: Request, res: Response) => {
     return res.status(500).json({ message: "Failed to reject activation" });
   }
 };
+
 // Fonction pour supprimer un établissement
 const deleteEstablishment = async (req: Request, res: Response) => {
   try {
