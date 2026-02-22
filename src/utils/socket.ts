@@ -26,11 +26,6 @@ function isObjectId(id: any) {
   return typeof id === "string" && /^[a-f\d]{24}$/i.test(id);
 }
 
-/**
- * ✅ Autorisation :
- * - establishment.owner est un Owner (ObjectId)
- * - establishment.staff est Customer[] (ObjectId[])
- */
 function isUserAllowedOnEstablishment(
   establishment: any,
   userId: Types.ObjectId,

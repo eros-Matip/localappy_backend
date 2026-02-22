@@ -1460,10 +1460,23 @@ const generateEstablishmentDescriptionFromTypesController = async (
     }
 
     // (optionnel) sécurité : seul owner peut générer
-    if (
-      establishment.owner &&
-      String(establishment.owner) !== String(requesterId._id)
-    ) {
+
+    const requesterOwnerId =
+      typeof requesterId === "object" && requesterId?._id
+        ? String(requesterId._id)
+        : String(requesterId);
+
+    const ownersArr = Array.isArray((establishment as any).owner)
+      ? ((establishment as any).owner as any[])
+      : (establishment as any).owner
+        ? [(establishment as any).owner]
+        : [];
+
+    const isOwner = ownersArr.some(
+      (id: any) => String(id) === requesterOwnerId,
+    );
+
+    if (!isOwner) {
       return res.status(403).json({ message: "Accès refusé." });
     }
 
@@ -1594,10 +1607,19 @@ const translateEstablishmentDescriptionController = async (
       return res.status(404).json({ message: "Établissement introuvable." });
     }
 
-    if (
-      establishment.owner &&
-      String(establishment.owner) !== String(requesterId)
-    ) {
+    const requesterOwnerId = String(requesterId);
+
+    const ownersArr = Array.isArray((establishment as any).owner)
+      ? ((establishment as any).owner as any[])
+      : (establishment as any).owner
+        ? [(establishment as any).owner]
+        : [];
+
+    const isOwner = ownersArr.some(
+      (id: any) => String(id) === requesterOwnerId,
+    );
+
+    if (!isOwner) {
       return res.status(403).json({ message: "Accès refusé." });
     }
 
