@@ -944,14 +944,7 @@ const requestActivation = async (req: Request, res: Response) => {
     }
 
     // ✅ On essaye d’être compatible avec plusieurs middlewares possibles
-    const requesterOwnerId =
-      (req as any)?.ownerId ||
-      (req as any)?.user?.ownerId ||
-      (req as any)?.user?._id ||
-      (req as any)?.customer?.ownerAccount?.ownerId ||
-      (req as any)?.customer?.ownerAccount?._id ||
-      req.body?.ownerId ||
-      req.body?.owner;
+    const requesterOwnerId = (req as any)?.owner._id;
 
     if (
       !requesterOwnerId ||
