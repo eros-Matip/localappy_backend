@@ -94,7 +94,7 @@ interface IEstablishment extends Document {
   acceptedPayments: IPaymentMethod[];
   legalForm: "company" | "association";
   legalInfo?: ILegalInfo;
-  owner: Types.ObjectId;
+  owner: Types.ObjectId[];
   staff: Types.ObjectId[] | IStaffPublic[];
   events: Types.ObjectId[];
   notifications: Types.ObjectId[];

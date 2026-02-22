@@ -112,33 +112,6 @@ const createEstablishment = async (req: Request, res: Response) => {
     const latitude = responseApiGouv.data.features[0].geometry.coordinates[1];
     const longitude = responseApiGouv.data.features[0].geometry.coordinates[0];
 
-    // ✅ unicité
-    if (!isAssociation) {
-      const existing = await Establishment.findOne({
-        "legalInfo.siret": String(siret).trim(),
-      });
-
-      if (existing) {
-        Retour.warn("Establishment already exists (SIRET)");
-        return res.status(409).json({
-          message: "An establishment with the same SIRET already exists",
-        });
-      }
-    } else {
-      const rnaNorm = normalizeRna(rna)!;
-      const existing = await Establishment.findOne({
-        legalForm: "association",
-        "legalInfo.rna": rnaNorm,
-      });
-
-      if (existing) {
-        Retour.warn("Establishment already exists (RNA)");
-        return res.status(409).json({
-          message: "An association with the same RNA already exists",
-        });
-      }
-    }
-
     // ✅ upload Cloudinary seulement si doc fourni
     let uploadResult: { public_id: string; secure_url: string } | null = null;
 
@@ -155,6 +128,197 @@ const createEstablishment = async (req: Request, res: Response) => {
         public_id: result.public_id,
         secure_url: result.secure_url,
       };
+    }
+
+    // ✅ unicité + demande si existe déjà (SIRET/RNA)
+    if (!isAssociation) {
+      const existing = await Establishment.findOne({
+        "legalInfo.siret": String(siret).trim(),
+      });
+
+      if (existing) {
+        const ownerIdStr = String(owner._id);
+
+        // ✅ déjà rattaché (validé)
+        const existingOwnerValue: any = (existing as any).owner;
+        const isAlreadyLinked = Array.isArray(existingOwnerValue)
+          ? existingOwnerValue.some((id: any) => String(id) === ownerIdStr)
+          : existingOwnerValue
+            ? String(existingOwnerValue) === ownerIdStr
+            : false;
+
+        if (isAlreadyLinked) {
+          Retour.info("Establishment already linked to this owner (SIRET)");
+          return res.status(200).json({
+            message: "Establishment already linked to this owner",
+            establishment: existing,
+            activated: (existing as any).activated,
+            needsLegalDoc:
+              !hasFile && !(existing as any)?.legalInfo?.KBis ? true : false,
+            legalDocType: "KBIS",
+          });
+        }
+
+        // ✅ déjà en demande (pending) -> on bloque la redemande
+        const pendingArr: any[] = ((owner as any).establishmentsPending ||
+          []) as any[];
+        const alreadyPending = pendingArr.some(
+          (id: any) => String(id) === String((existing as any)._id),
+        );
+
+        if (alreadyPending) {
+          Retour.warn("Activation/claim request already pending (SIRET)");
+          return res.status(409).json({
+            message: "A request is already pending for this establishment",
+            establishment: existing,
+            status: "PENDING",
+          });
+        }
+
+        // ✅ si doc fourni, on l'attache (sans rien casser)
+        if (uploadResult) {
+          (existing as any).legalInfo = (existing as any).legalInfo || {};
+          // On ne remplace pas si déjà présent
+          if (!(existing as any)?.legalInfo?.KBis) {
+            (existing as any).legalInfo.KBis = {
+              public_id: uploadResult.public_id,
+              secure_url: uploadResult.secure_url,
+            };
+          }
+        }
+
+        // ✅ on déclenche le workflow d'activation (pending)
+        (existing as any).activationRequested = true;
+        (existing as any).activationRequestedAt = new Date();
+        (existing as any).activationStatus = "pending";
+
+        await existing.save();
+
+        // ✅ on enregistre la demande côté owner (pending)
+        (owner as any).establishmentsPending =
+          (owner as any).establishmentsPending || [];
+        (owner as any).establishmentsPending.push((existing as any)._id);
+        await owner.save();
+
+        // ✅ notif admins (tu peux la garder)
+        notifyAdminsNewEstablishment({
+          establishmentId: String((existing as any)._id),
+          establishmentName: (existing as any).name || society,
+          legalForm: "company",
+          ownerId: String(owner._id),
+          ownerFirstname: owner.account.firstname,
+          ownerName: owner.account.name,
+        }).catch((e) => console.error("Admin notification failed:", e));
+
+        const needsLegalDoc = !hasFile && !(existing as any)?.legalInfo?.KBis;
+
+        Retour.info("Claim request created successfully (SIRET)");
+        return res.status(202).json({
+          message: "Claim request created. Waiting for admin validation.",
+          establishment: existing,
+          status: "PENDING",
+          activated: (existing as any).activated,
+          needsLegalDoc,
+          legalDocType: "KBIS",
+        });
+      }
+    } else {
+      const rnaNorm = normalizeRna(rna)!;
+      const existing = await Establishment.findOne({
+        legalForm: "association",
+        "legalInfo.rna": rnaNorm,
+      });
+
+      if (existing) {
+        const ownerIdStr = String(owner._id);
+
+        // ✅ déjà rattaché (validé)
+        const existingOwnerValue: any = (existing as any).owner;
+        const isAlreadyLinked = Array.isArray(existingOwnerValue)
+          ? existingOwnerValue.some((id: any) => String(id) === ownerIdStr)
+          : existingOwnerValue
+            ? String(existingOwnerValue) === ownerIdStr
+            : false;
+
+        if (isAlreadyLinked) {
+          Retour.info("Establishment already linked to this owner (RNA)");
+          return res.status(200).json({
+            message: "Establishment already linked to this owner",
+            establishment: existing,
+            activated: (existing as any).activated,
+            needsLegalDoc:
+              !hasFile && !(existing as any)?.legalInfo?.legalDocument
+                ? true
+                : false,
+            legalDocType: "ASSOCIATION_DOC",
+          });
+        }
+
+        // ✅ déjà en demande (pending) -> on bloque la redemande
+        const pendingArr: any[] = ((owner as any).establishmentsPending ||
+          []) as any[];
+        const alreadyPending = pendingArr.some(
+          (id: any) => String(id) === String((existing as any)._id),
+        );
+
+        if (alreadyPending) {
+          Retour.warn("Activation/claim request already pending (RNA)");
+          return res.status(409).json({
+            message: "A request is already pending for this establishment",
+            establishment: existing,
+            status: "PENDING",
+          });
+        }
+
+        // ✅ si doc fourni, on l'attache (sans rien casser)
+        if (uploadResult) {
+          (existing as any).legalInfo = (existing as any).legalInfo || {};
+          // On ne remplace pas si déjà présent
+          if (!(existing as any)?.legalInfo?.legalDocument) {
+            (existing as any).legalInfo.legalDocument = {
+              public_id: uploadResult.public_id,
+              secure_url: uploadResult.secure_url,
+              label: "Statuts / Récépissé",
+            };
+          }
+        }
+
+        // ✅ on déclenche le workflow d'activation (pending)
+        (existing as any).activationRequested = true;
+        (existing as any).activationRequestedAt = new Date();
+        (existing as any).activationStatus = "pending";
+
+        await existing.save();
+
+        // ✅ on enregistre la demande côté owner (pending)
+        (owner as any).establishmentsPending =
+          (owner as any).establishmentsPending || [];
+        (owner as any).establishmentsPending.push((existing as any)._id);
+        await owner.save();
+
+        // ✅ notif admins (tu peux la garder)
+        notifyAdminsNewEstablishment({
+          establishmentId: String((existing as any)._id),
+          establishmentName: (existing as any).name || society,
+          legalForm: "association",
+          ownerId: String(owner._id),
+          ownerFirstname: owner.account.firstname,
+          ownerName: owner.account.name,
+        }).catch((e) => console.error("Admin notification failed:", e));
+
+        const needsLegalDoc =
+          !hasFile && !(existing as any)?.legalInfo?.legalDocument;
+
+        Retour.info("Claim request created successfully (RNA)");
+        return res.status(202).json({
+          message: "Claim request created. Waiting for admin validation.",
+          establishment: existing,
+          status: "PENDING",
+          activated: (existing as any).activated,
+          needsLegalDoc,
+          legalDocType: "ASSOCIATION_DOC",
+        });
+      }
     }
 
     // ✅ création établissement (DOC PAS OBLIGATOIRE)
