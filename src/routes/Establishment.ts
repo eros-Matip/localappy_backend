@@ -45,8 +45,8 @@ router.put(
 /** ✅ AJOUT : upload doc légal */
 router.post(
   "/upload-legal-doc/:establishmentId",
-  cpUpload,
   OwnerIsAuthenticated,
+  cpUpload,
   controller.uploadLegalDoc,
 );
 
@@ -56,13 +56,13 @@ router.post(
   controller.requestActivation,
 );
 router.post(
-  "/establishment/approve-activation/:establishmentId",
+  "/approve-activation/:establishmentId",
   AdminIsAuthenticated,
   controller.approveActivation,
 );
 
 router.post(
-  "/establishment/reject-activation/:establishmentId",
+  "/reject-activation/:establishmentId",
   AdminIsAuthenticated,
   controller.rejectActivation,
 );

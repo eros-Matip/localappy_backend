@@ -944,7 +944,7 @@ const requestActivation = async (req: Request, res: Response) => {
     }
 
     // ✅ On essaye d’être compatible avec plusieurs middlewares possibles
-    const requesterOwnerId = (req as any)?.owner._id;
+    const requesterOwnerId = req.body?.owner._id;
 
     if (
       !requesterOwnerId ||
@@ -967,6 +967,8 @@ const requestActivation = async (req: Request, res: Response) => {
       : (establishment as any).owner
         ? [(establishment as any).owner]
         : [];
+    console.log("ownersArr", ownersArr);
+    console.log("establishment as any).owner", (establishment as any).owner);
 
     const isOwner = ownersArr.some(
       (id: any) => String(id) === String(requesterOwnerId),
