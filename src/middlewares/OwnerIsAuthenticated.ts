@@ -1,79 +1,147 @@
 import { Request, Response, NextFunction } from "express";
-import Owner from "../models/Owner";
-import Event from "../models/Event"; // Assurez-vous que ce modèle est importé
 import mongoose from "mongoose";
+import Owner from "../models/Owner";
+import Event from "../models/Event";
 import Establishment from "../models/Establishment";
 
 const OwnerIsAuthenticated = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
-  // Vérifier si un token Bearer est présent dans l'en-tête
-  if (!req.headers.authorization) {
+  const auth = req.headers.authorization;
+  if (!auth) {
     return res.status(401).json({ error: "Unauthorized, no token provided" });
   }
 
   try {
-    // Extraire et nettoyer le token Bearer
-    const token = req.headers.authorization.replace("Bearer ", "");
-
-    // Trouver l'Owner correspondant au token
-    const ownerFinded = await Owner.findOne({ token: token });
+    const token = auth.replace("Bearer ", "").trim();
+    const ownerFinded = await Owner.findOne({ token });
 
     if (!ownerFinded) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    // Récupérer l'ID de la ressource depuis l'URL
-    const resourceId = req.originalUrl.split("/").pop();
-    const resourceType = req.originalUrl.split("/")[1];
-    const ressourceCall = req.originalUrl.split("/")[2];
+    (req as any).owner = ownerFinded;
+    (req as any).ownerId = ownerFinded._id;
 
-    if (!resourceId) {
-      return res.status(400).json({ error: "Resource ID not found in URL" });
-    }
+    req.body.owner = ownerFinded;
 
-    // Si c'est une création d'événement (POST) -> pas besoin de vérifier l'existence d'un événement
+    const originalUrl = req.originalUrl || "";
+    const parts = originalUrl.split("?")[0].split("/").filter(Boolean);
+
+    // Exemple: /establishment/request-activation/:id
+    // parts[0] = "establishment"
+    // parts[1] = "request-activation"
+    // parts[2] = ":id"
+    const resourceType = parts[0]; // "event" | "establishment" | ...
+    const ressourceCall = parts[1]; // "create" | "update" | ...
+    const resourceId = parts[parts.length - 1]; // souvent l'id (si présent)
+
+    // Si aucune "id" dans l’URL (ex: /establishment/create), on ne bloque pas
+    const hasObjectIdInUrl = mongoose.isValidObjectId(resourceId);
+
+    // -----------------------------
+    // ✅ CAS EVENT : on garde ta logique PROD (avec guards anti-crash)
+    // -----------------------------
+    // POST /event/create (ou POST event) : pas de check de propriété
     if (resourceType === "event" && req.method === "POST") {
-      // Ajouter le propriétaire à la requête
-      req.body.owner = ownerFinded;
-      return next(); // Passer à l'étape suivante (création de l'événement)
+      return next();
     }
 
-    // Pour les autres requêtes (GET, PUT, DELETE) sur un événement
-    if (resourceType === "event" && req.method !== "POST") {
-      // Vérification si l'événement appartient à l'un des établissements du propriétaire
+    // Autres méthodes sur event : check appartenance
+    if (resourceType === "event" && req.method !== "POST" && hasObjectIdInUrl) {
       const eventFinded = await Event.findById(resourceId).populate(
-        "organizer.establishment"
+        "organizer.establishment",
       );
 
       if (!eventFinded) {
         return res.status(404).json({ error: "Event not found" });
       }
 
-      // Vérifier si l'établissement organisateur de l'événement appartient au propriétaire
       const establishmentFinded = await Establishment.findOne({
         events: eventFinded._id,
       });
-      const establishmentExists = ownerFinded.establishments.some(
-        (establishment) =>
-          (Object(establishment)._id as mongoose.Types.ObjectId).equals(
-            Object(establishmentFinded)._id
+
+      if (!establishmentFinded) {
+        return res.status(404).json({ error: "Establishment not found" });
+      }
+
+      const ownerEstablishments: any[] = Array.isArray(
+        (ownerFinded as any).establishments,
+      )
+        ? ((ownerFinded as any).establishments as any[])
+        : [];
+
+      const establishmentExists = ownerEstablishments.some((est: any) => {
+        // compat: est peut être ObjectId ou doc
+        const estId = (est && (est._id || est)) as any;
+        return (
+          mongoose.isValidObjectId(estId) &&
+          new mongoose.Types.ObjectId(estId).equals(
+            new mongoose.Types.ObjectId((establishmentFinded as any)._id),
           )
-      );
+        );
+      });
 
       if (!establishmentExists && ressourceCall !== "create") {
         return res.status(403).json({
           error: "Forbidden, owner does not have access to this event",
         });
       }
+
+      return next();
     }
 
-    // Ajout du propriétaire dans le corps de la requête pour les étapes suivantes
-    req.body.owner = ownerFinded;
+    // -----------------------------
+    // ✅ CAS ESTABLISHMENT : ne pas casser la prod
+    // -----------------------------
+    // ⚠️ On n’applique PAS de blocage sur les GET pour l’instant (ex: getInformations),
+    // sinon tu risques de casser des écrans où l’owner “voit” un établissement avant rattachement.
+    //
+    // ✅ Par contre, on sécurise les routes “sensibles” (modif/upload/demande activation).
+    const isEstablishmentSensitiveCall =
+      resourceType === "establishment" &&
+      (req.method === "PUT" ||
+        // upload-legal-doc et request-activation sont des POST mais “sensibles”
+        (req.method === "POST" &&
+          ["upload-legal-doc", "request-activation", "update"].includes(
+            ressourceCall || "",
+          )));
 
-    // Si tout est validé, passer à l'étape suivante
+    if (isEstablishmentSensitiveCall) {
+      if (!hasObjectIdInUrl) {
+        // si pas d’id en URL, on ne bloque pas (ex: /establishment/create)
+        return next();
+      }
+
+      const establishment = await Establishment.findById(resourceId);
+      if (!establishment) {
+        return res.status(404).json({ error: "Establishment not found" });
+      }
+
+      const ownersArr = Array.isArray((establishment as any).owner)
+        ? ((establishment as any).owner as any[])
+        : (establishment as any).owner
+          ? [(establishment as any).owner]
+          : [];
+
+      const isOwner = ownersArr.some(
+        (id: any) => String(id) === String(ownerFinded._id),
+      );
+
+      if (!isOwner) {
+        return res.status(403).json({
+          error: "Forbidden, owner does not have access to this establishment",
+        });
+      }
+
+      return next();
+    }
+
+    // -----------------------------
+    // ✅ Par défaut : token valide => OK (comportement prod conservé)
+    // -----------------------------
     return next();
   } catch (error) {
     console.error("Error during owner authentication:", error);
