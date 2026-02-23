@@ -1213,24 +1213,81 @@ const rejectActivation = async (req: Request, res: Response) => {
 // Fonction pour supprimer un établissement
 const deleteEstablishment = async (req: Request, res: Response) => {
   try {
-    const { id } = req.params; // Extraire l'ID de l'établissement à supprimer
+    const establishmentId = req.params.id;
+    if (!mongoose.isValidObjectId(establishmentId)) {
+      return res.status(400).json({ message: "Invalid establishment id" });
+    }
 
-    // Trouver et supprimer l'établissement
-    const deletedEstablishment = await Establishment.findByIdAndDelete(id);
-    if (!deletedEstablishment) {
+    // ✅ Owner authentifié par middleware
+    const requesterOwnerId =
+      (req as any)?.ownerId || (req as any)?.owner?._id || req.body?.owner?._id;
+
+    if (
+      !requesterOwnerId ||
+      !mongoose.isValidObjectId(String(requesterOwnerId))
+    ) {
+      return res.status(401).json({ message: "Owner introuvable (auth)." });
+    }
+
+    const establishment = await Establishment.findById(establishmentId);
+    if (!establishment) {
       return res.status(404).json({ message: "Establishment not found" });
     }
 
-    // Optionnel : Retirer l'établissement de la liste des établissements du propriétaire
+    // ✅ Vérifie que l’owner est bien dans establishment.owner
+    const ownersArr = Array.isArray((establishment as any).owner)
+      ? ((establishment as any).owner as any[])
+      : (establishment as any).owner
+        ? [(establishment as any).owner]
+        : [];
+
+    const isOwner = ownersArr.some(
+      (id: any) => String(id) === String(requesterOwnerId),
+    );
+    if (!isOwner) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    // 1) Retirer l’établissement du tableau establishments de l’owner (quoi qu’il arrive)
     await Owner.updateOne(
-      { establishments: id },
-      { $pull: { establishments: id } },
+      { _id: requesterOwnerId },
+      { $pull: { establishments: establishment._id } },
     );
 
-    // Retourner un message de succès après suppression
-    return res.status(200).json({ message: "Establishment deleted" });
+    // 2) Retirer l’owner du tableau owner[] de l’établissement
+    await Establishment.updateOne(
+      { _id: establishment._id },
+      { $pull: { owner: requesterOwnerId } },
+    );
+
+    // 3) Recharger l’établissement pour savoir s’il reste des owners
+    const updated = await Establishment.findById(establishment._id).lean();
+
+    const updatedOwnersArr = Array.isArray((updated as any)?.owner)
+      ? ((updated as any).owner as any[])
+      : (updated as any)?.owner
+        ? [(updated as any).owner]
+        : [];
+
+    // ✅ S’il reste au moins 1 owner : on ne supprime PAS l’établissement
+    if (updatedOwnersArr.length > 0) {
+      return res.status(200).json({
+        message: "Owner detached from establishment (establishment kept).",
+        establishmentId: String(establishment._id),
+        remainingOwners: updatedOwnersArr.map(String),
+      });
+    }
+
+    // ✅ Sinon : plus aucun owner → suppression establishment
+    await Establishment.deleteOne({ _id: establishment._id });
+
+    return res.status(200).json({
+      message: "Establishment deleted (no owners left).",
+      establishmentId: String(establishment._id),
+    });
   } catch (error) {
-    return res.status(500).json({ error: "Failed to delete establishment" });
+    console.error("[deleteEstablishment] error:", error);
+    return res.status(500).json({ message: "Failed to delete establishment" });
   }
 };
 
