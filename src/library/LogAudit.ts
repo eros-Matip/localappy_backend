@@ -1,4 +1,5 @@
 import AuditLog from "../models/AuditLog";
+import Retour from "./Retour";
 
 export const logAudit = async ({
   action,
@@ -16,6 +17,6 @@ export const logAudit = async ({
   try {
     await AuditLog.create({ action, email, role, ip, details });
   } catch (err) {
-    console.error("Erreur lors de l'enregistrement du log :", err);
+    Retour.error(`Erreur lors de l'enregistrement du log :", ${err}`);
   }
 };
