@@ -16,6 +16,7 @@ import { sendEventConfirmationEmail } from "../utils/sendEventConfirmation";
 import mongoose, { Types } from "mongoose";
 import { sendExpoPushNotifications } from "../utils/push";
 import Owner from "../models/Owner";
+import { MailerSend, EmailParams, Sender, Recipient } from "mailersend";
 const CryptoJS = require("crypto-js");
 
 // Utiliser promisify pour rendre les fonctions fs asynchrones
@@ -940,6 +941,71 @@ const createEventForAnEstablishment = async (req: Request, res: Response) => {
     if (!establishmentFinded.events.includes(draftEvent._id)) {
       establishmentFinded.events.push(draftEvent._id);
       await establishmentFinded.save();
+    }
+    // MAILERSEND - Merci pour la publication (uniquement si pas brouillon)
+    if (!draftEvent.isDraft) {
+      try {
+        const mailerSend = new MailerSend({
+          apiKey: process.env.MAILERSEND_API_KEY as string,
+        });
+
+        const sentFrom = new Sender("noreply@localappy.fr", "Localappy");
+
+        const recipients = [
+          new Recipient(req.body.owner.email, establishmentFinded.name),
+        ];
+
+        const formatDate = (d: any) => {
+          if (!d) return "";
+          const date = new Date(d);
+          return date.toLocaleString("fr-FR", {
+            timeZone: "Europe/Paris",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+        };
+
+        const personalization = [
+          {
+            email: establishmentFinded.email,
+            data: {
+              year: new Date().getFullYear().toString(),
+              establishment_name: establishmentFinded.name,
+              event_title: draftEvent.title,
+              starting_date: formatDate(draftEvent.startingDate),
+              ending_date: formatDate(draftEvent.endingDate),
+              event_address: draftEvent.address,
+              event_price:
+                typeof draftEvent.price === "number"
+                  ? draftEvent.price.toString()
+                  : draftEvent.price,
+              event_capacity:
+                typeof draftEvent.capacity === "number"
+                  ? draftEvent.capacity.toString()
+                  : draftEvent.capacity,
+              registration_status: draftEvent.registrationOpen ? "Oui" : "Non",
+              event_link: `localappy://event/${draftEvent?._id}`,
+            },
+          },
+        ];
+
+        const emailParams = new EmailParams()
+          .setFrom(sentFrom)
+          .setTo(recipients)
+          .setReplyTo(sentFrom)
+          .setSubject("Merci ! Votre événement est en ligne 🎉")
+          .setTemplateId(
+            process.env.MAILERSEND_TEMPLATE_EVENT_CREATED as string,
+          )
+          .setPersonalization(personalization);
+
+        await mailerSend.email.send(emailParams);
+      } catch (mailError) {
+        console.error("MailerSend error:", mailError);
+      }
     }
 
     const estObjId = establishmentFinded._id as Types.ObjectId;
