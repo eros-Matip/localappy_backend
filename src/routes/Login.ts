@@ -46,15 +46,19 @@ router.post(
 
       // ✅ Vérification si le compte existe
       if (!customerFinded && !adminFinded && !ownerFinded) {
-        Retour.error("Account was not found");
+        Retour.error(`Account with this mail: "${email}" was not found`);
         await logAudit({
           action: "login_failed",
           email,
           ip: req.ip,
-          details: { reason: "Account not found" },
+          details: {
+            reason: `Account with this mail: "${email}" was not found`,
+          },
         });
 
-        return res.status(401).json({ message: "Account was not found" });
+        return res.status(401).json({
+          message: `Account with this mail: "${email}" was not found`,
+        });
       }
 
       // 🔹 Détection de l'utilisateur correspondant
@@ -115,7 +119,7 @@ router.post(
 
       if (userFinded && hashToLog && hashToLog === userFinded.hash) {
         Retour.log(
-          `${userFinded.account.firstname} ${userFinded.account.name} is logged`
+          `${userFinded.account.firstname} ${userFinded.account.name} is logged`,
         );
 
         const newToken: string = uid2(26);
@@ -153,7 +157,7 @@ router.post(
       Retour.error({ message: "Error caught", error });
       return res.status(500).json({ message: "Error caught", error });
     }
-  }
+  },
 );
 
 export default router;
