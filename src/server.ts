@@ -10,6 +10,8 @@ const router = express();
 const cloudinary = require("cloudinary");
 const cron = require("node-cron");
 
+router.set("trust proxy", 1);
+
 // Library
 import Logging from "./library/Logging";
 
@@ -141,8 +143,11 @@ const startServer = () => {
   // =========================
   router.use((req: Request, res: Response, next: NextFunction) => {
     res.on("finish", () => {
+      const xff = req.headers["x-forwarded-for"];
+      const requestId = req.headers["x-request-id"];
+
       Logging.info(
-        `Server Started -> Methode: [${req.method}] - Url: [${req.originalUrl}] - Ip: [${req.socket.remoteAddress}] - Status: [${res.statusCode}]`,
+        `Server Started -> Methode: [${req.method}] - Url: [${req.originalUrl}] - Ip: [${req.ip}] - XFF: [${xff}] - ReqId: [${requestId}] - Status: [${res.statusCode}]`,
       );
     });
     next();
