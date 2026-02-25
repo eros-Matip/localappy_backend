@@ -142,14 +142,41 @@ const startServer = () => {
   // ✅ LOGGING
   // =========================
   router.use((req: Request, res: Response, next: NextFunction) => {
+    const startedAt = Date.now();
+
     res.on("finish", () => {
+      const ms = Date.now() - startedAt;
+
+      const requestId = (req.headers["x-request-id"] as string) || "no-reqid";
+
       const xff = req.headers["x-forwarded-for"];
-      const requestId = req.headers["x-request-id"];
+      const ip = req.ip;
+
+      const ua = (req.headers["user-agent"] as string) || "";
+      const isMobile = /expo|okhttp|cfnetwork|darwin|ios|android/i.test(ua);
+
+      const origin = (req.headers["origin"] as string) || "";
+      const source = origin.includes("localappy.fr")
+        ? "web"
+        : isMobile
+          ? "mobile"
+          : "unknown";
+
+      const status = res.statusCode;
+      const ok = status >= 200 && status < 400 ? "✅" : "❌";
 
       Logging.info(
-        `Server Started -> Methode: [${req.method}] - Url: [${req.originalUrl}] - Ip: [${req.ip}] - XFF: [${xff}] - ReqId: [${requestId}] - Status: [${res.statusCode}]`,
+        `${ok} ${req.method} ${req.originalUrl} ${status} - ${ms}ms | ip=${ip} | src=${source} | reqId=${requestId}`,
       );
+
+      // (optionnel) si tu veux voir le user-agent seulement quand c'est louche
+      if (source === "unknown") {
+        Logging.warn(
+          `⚠️ Unknown client | ua="${ua}" | xff="${xff}" | reqId=${requestId}`,
+        );
+      }
     });
+
     next();
   });
 
