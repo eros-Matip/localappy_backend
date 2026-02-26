@@ -1,5 +1,6 @@
 import express from "express";
 import controller from "../controllers/Establishment";
+import controllerTools from "../controllers/Tools";
 import OwnerIsAuthenticated from "../middlewares/OwnerIsAuthenticated";
 import multer from "multer";
 import { multerConfig } from "../middlewares/Multer";
@@ -59,6 +60,12 @@ router.post(
   "/approve-activation/:establishmentId",
   AdminIsAuthenticated,
   controller.approveActivation,
+);
+
+router.post(
+  "/translate-descriptif",
+  OwnerIsAuthenticated,
+  controllerTools.translateEstablishmentDescriptionController,
 );
 
 router.post(

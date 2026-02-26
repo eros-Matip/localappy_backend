@@ -24,9 +24,4 @@ router.post(
   controller.generateEstablishmentDescriptionFromTypesController,
 );
 
-router.post(
-  "/establishment/translate-descriptif",
-  OwnerIsAuthenticated,
-  controller.translateEstablishmentDescriptionController,
-);
 export default router;
