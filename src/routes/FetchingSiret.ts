@@ -39,19 +39,19 @@ const getLibelleByCodeNAF = (codeNAF: string): string | null => {
  */
 const ASSOCIATIONS_64_PATH = path.resolve(
   process.cwd(),
-  "data/associations_dpt_64.json"
+  "data/associations_dpt_64.json",
 );
 
 let ASSOCIATIONS_64: any[] = [];
 try {
   if (fs.existsSync(ASSOCIATIONS_64_PATH)) {
     ASSOCIATIONS_64 = JSON.parse(
-      fs.readFileSync(ASSOCIATIONS_64_PATH, "utf-8")
+      fs.readFileSync(ASSOCIATIONS_64_PATH, "utf-8"),
     );
     console.log(`✅ Associations 64 chargées: ${ASSOCIATIONS_64.length}`);
   } else {
     console.warn(
-      `⚠️ associations_dpt_64.json introuvable: ${ASSOCIATIONS_64_PATH}`
+      `⚠️ associations_dpt_64.json introuvable: ${ASSOCIATIONS_64_PATH}`,
     );
   }
 } catch (e) {
@@ -126,7 +126,7 @@ router.post(
        */
       if (rnaNormalized) {
         const found = ASSOCIATIONS_64.find(
-          (a) => normalizeRna(String(a?.rna ?? "")) === rnaNormalized
+          (a) => normalizeRna(String(a?.rna ?? "")) === rnaNormalized,
         );
 
         if (!found) {
@@ -177,7 +177,7 @@ router.post(
         try {
           const entrepriseResponse = await axios.get(
             `https://api.insee.fr/api-sirene/3.11/siret/${encodeURIComponent(
-              queryRaw
+              queryRaw,
             )}`,
             {
               headers: {
@@ -185,7 +185,7 @@ router.post(
                 Accept: "application/json",
               },
               timeout: 15000,
-            }
+            },
           );
           inseeData = entrepriseResponse.data;
         } catch (_err) {
@@ -235,6 +235,29 @@ router.post(
         const codeNAF = uniteLegale.activitePrincipaleUniteLegale ?? "";
         const libelleNAF = getLibelleByCodeNAF(codeNAF);
 
+        // ✅ IMPORTANT:
+        // Si auto-entreprise / entrepreneur individuel (pas de dénomination),
+        // on met "Prénom NOM" dans le champ "denomination" (donc society reste identique côté front)
+        const denomination = (() => {
+          const denom = String(
+            uniteLegale.denominationUniteLegale ?? "",
+          ).trim();
+          if (denom) return denom;
+
+          const nom = String(
+            uniteLegale.nomUsageUniteLegale ?? uniteLegale.nomUniteLegale ?? "",
+          ).trim();
+
+          const prenom = String(
+            uniteLegale.prenom1UniteLegale ??
+              uniteLegale.prenomUsuelUniteLegale ??
+              "",
+          ).trim();
+
+          const nomPrenom = `${prenom} ${nom}`.trim();
+          return nomPrenom || null;
+        })();
+
         const adressLabel = `${adresse.numeroVoieEtablissement ?? ""} ${
           adresse.typeVoieEtablissement ?? ""
         } ${adresse.libelleVoieEtablissement ?? ""} ${
@@ -246,7 +269,7 @@ router.post(
         } ${adresse.libelleVoieEtablissement ?? ""}`.trim();
 
         return respondEtab({
-          society: uniteLegale.denominationUniteLegale ?? null,
+          society: denomination, // <-- ici: dénomination OU "Prénom NOM" si EI/auto-entreprise
           currentName:
             uniteLegale.denominationUsuelle1UniteLegale ??
             periode?.enseigne1Etablissement ??
@@ -257,7 +280,7 @@ router.post(
           zip: String(adresse.codePostalEtablissement ?? ""),
           city: String(adresse.libelleCommuneEtablissement ?? ""),
           adressComplement: String(
-            adresse.complementAdresseEtablissement ?? ""
+            adresse.complementAdresseEtablissement ?? "",
           ),
           administratifStateOpen: periode?.dateFin === null,
           headquartersSociety: Boolean(etab.etablissementSiege),
@@ -295,7 +318,7 @@ router.post(
       });
 
       const exact = matches.find(
-        (a) => normalizeText(String(a?.name ?? "")) === qNorm
+        (a) => normalizeText(String(a?.name ?? "")) === qNorm,
       );
 
       if (exact) {
@@ -351,7 +374,7 @@ router.post(
         },
       });
     }
-  }
+  },
 );
 
 export default router;

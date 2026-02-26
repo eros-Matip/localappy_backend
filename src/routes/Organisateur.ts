@@ -3,75 +3,81 @@ import EventModel from "../models/Event";
 import Establishment from "../models/Establishment";
 import axios from "axios";
 import Event from "../models/Event";
+import AdminIsAuthenticated from "../middlewares/AdminIsAuthenticated";
 
 const router = express.Router();
 
-router.get("/organisateurs", async (req: Request, res: Response) => {
-  try {
-    const events = await EventModel.find().select("organizer").lean();
+router.get(
+  "/organisateurs",
+  AdminIsAuthenticated,
+  async (req: Request, res: Response) => {
+    try {
+      const events = await EventModel.find().select("organizer").lean();
 
-    const uniqueOrganizersMap = new Map<
-      string,
-      (typeof events)[0]["organizer"]
-    >();
+      const uniqueOrganizersMap = new Map<
+        string,
+        (typeof events)[0]["organizer"]
+      >();
 
-    for (const event of events) {
-      const organizer = event.organizer;
-      if (organizer) {
-        const key = [
-          organizer.legalName?.toLowerCase().trim() || "",
-          organizer.email?.toLowerCase().trim() || "",
-          organizer.phone?.toLowerCase().trim() || "",
-        ].join("|");
+      for (const event of events) {
+        const organizer = event.organizer;
+        if (organizer) {
+          const key = [
+            organizer.legalName?.toLowerCase().trim() || "",
+            organizer.email?.toLowerCase().trim() || "",
+            organizer.phone?.toLowerCase().trim() || "",
+          ].join("|");
 
-        if (!uniqueOrganizersMap.has(key)) {
-          uniqueOrganizersMap.set(key, organizer);
+          if (!uniqueOrganizersMap.has(key)) {
+            uniqueOrganizersMap.set(key, organizer);
+          }
         }
       }
-    }
 
-    const uniqueOrganizers = Array.from(uniqueOrganizersMap.values());
+      const uniqueOrganizers = Array.from(uniqueOrganizersMap.values());
 
-    // Création des établissements à partir des organisateurs uniques
-    const createdEstablishments = [];
+      // Création des établissements à partir des organisateurs uniques
+      const createdEstablishments = [];
 
-    for (const org of uniqueOrganizers) {
-      // Vérifier si l'établissement existe déjà (par nom + téléphone par ex)
-      const exists = await Establishment.findOne({
-        name: org.legalName,
-        phone: org.phone,
-      });
-
-      if (!exists) {
-        const newEstablishment = new Establishment({
+      for (const org of uniqueOrganizers) {
+        // Vérifier si l'établissement existe déjà (par nom + téléphone par ex)
+        const exists = await Establishment.findOne({
           name: org.legalName,
-          email: org.email,
           phone: org.phone,
-          // Ici tu peux ajouter d'autres champs si disponibles dans org
-          // ex: description, address, etc si ils existent
         });
 
-        await newEstablishment.save();
-        createdEstablishments.push(newEstablishment);
-      }
-    }
+        if (!exists) {
+          const newEstablishment = new Establishment({
+            name: org.legalName,
+            email: org.email,
+            phone: org.phone,
+            // Ici tu peux ajouter d'autres champs si disponibles dans org
+            // ex: description, address, etc si ils existent
+          });
 
-    return res.status(200).json({
-      message: "Établissements créés depuis organisateurs uniques",
-      countCreated: createdEstablishments.length,
-      establishments: createdEstablishments,
-    });
-  } catch (error) {
-    console.error("Erreur lors de la création des établissements :", error);
-    return res.status(500).json({
-      message: "Erreur serveur lors de la création des établissements",
-      error,
-    });
-  }
-});
+          await newEstablishment.save();
+          createdEstablishments.push(newEstablishment);
+        }
+      }
+
+      return res.status(200).json({
+        message: "Établissements créés depuis organisateurs uniques",
+        countCreated: createdEstablishments.length,
+        establishments: createdEstablishments,
+      });
+    } catch (error) {
+      console.error("Erreur lors de la création des établissements :", error);
+      return res.status(500).json({
+        message: "Erreur serveur lors de la création des établissements",
+        error,
+      });
+    }
+  },
+);
 
 router.get(
   "/events/assignToEstablishments",
+  AdminIsAuthenticated,
   async (req: Request, res: Response) => {
     try {
       const etablissements = await Establishment.find();
@@ -81,7 +87,7 @@ router.get(
           "organizer.establishment": { $exists: false },
           "organizer.legalName": { $ne: null },
         },
-        { title: 1, "organizer.legalName": 1 }
+        { title: 1, "organizer.legalName": 1 },
       );
 
       console.log(`📦 ${events.length} événements non liés à traiter...`);
@@ -94,7 +100,7 @@ router.get(
         if (!legalName) continue;
 
         const etab = etablissements.find(
-          (e) => e.name?.trim().toLowerCase() === legalName.toLowerCase()
+          (e) => e.name?.trim().toLowerCase() === legalName.toLowerCase(),
         );
 
         if (!etab) {
@@ -105,10 +111,10 @@ router.get(
         // ✅ Ajouter l'établissement à l'événement
         await Event.updateOne(
           { _id: event._id },
-          { $set: { "organizer.establishment": etab._id } }
+          { $set: { "organizer.establishment": etab._id } },
         );
         console.log(
-          `📌 Événement "${event.title}" lié à l’établissement "${etab.name}"`
+          `📌 Événement "${event.title}" lié à l’établissement "${etab.name}"`,
         );
         eventsUpdated++;
 
@@ -116,10 +122,10 @@ router.get(
         if (!etab.events?.some((e) => e.toString() === event._id.toString())) {
           await Establishment.updateOne(
             { _id: etab._id },
-            { $addToSet: { events: event._id } }
+            { $addToSet: { events: event._id } },
           );
           console.log(
-            `➕ Ajout de l’événement "${event.title}" à "${etab.name}"`
+            `➕ Ajout de l’événement "${event.title}" à "${etab.name}"`,
           );
           etablissementsUpdated++;
         }
@@ -137,7 +143,7 @@ router.get(
         error,
       });
     }
-  }
+  },
 );
 
 export default router;

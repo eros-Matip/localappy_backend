@@ -12,8 +12,8 @@ const upload = multer(multerConfig);
 const cpUpload = upload.fields([{ name: "file", maxCount: 3 }]);
 
 router.post("/create", controller.createCustomer);
-router.get("/get/:customerId", controller.readCustomer);
-router.get("/get/", controller.readAll);
+router.get("/get/:customerId", AdminIsAuthenticated, controller.readCustomer);
+router.get("/get/", AdminIsAuthenticated, controller.readAll);
 router.put(
   "/update/:customerId",
   AdminIsAuthenticated,
