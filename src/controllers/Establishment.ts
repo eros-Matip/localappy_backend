@@ -779,6 +779,30 @@ const updateEstablishment = async (req: Request, res: Response) => {
     }
 
     // ===============================
+    // ✅ FIX: empêche CastError si KBis/legalDocument arrivent "undefined"/undefined
+    // ===============================
+    if (updates?.legalInfo) {
+      const li = updates.legalInfo;
+
+      const isUndefLike = (v: any) =>
+        v === undefined || v === null || v === "undefined" || v === "null";
+
+      if ("KBis" in li && isUndefLike(li.KBis)) delete li.KBis;
+      if ("legalDocument" in li && isUndefLike(li.legalDocument))
+        delete li.legalDocument;
+
+      // si legalInfo devient vide, on peut la supprimer (optionnel mais safe)
+      if (
+        li &&
+        typeof li === "object" &&
+        !Array.isArray(li) &&
+        Object.keys(li).length === 0
+      ) {
+        delete updates.legalInfo;
+      }
+    }
+
+    // ===============================
     // ✅ RIB validation + sanitize
     // ===============================
     if (updates?.legalInfo?.rib) {
@@ -870,6 +894,7 @@ const updateEstablishment = async (req: Request, res: Response) => {
 
       const currentSet = new Set(current.map(String));
 
+      // --- set complet : payload = [...] OU { set: [...] }
       if (Array.isArray(staffPayload) || Array.isArray(staffPayload?.set)) {
         const targetRaw = Array.isArray(staffPayload)
           ? staffPayload
@@ -897,7 +922,11 @@ const updateEstablishment = async (req: Request, res: Response) => {
             { $addToSet: { establishmentStaffOf: establishment._id } },
           );
         }
-      } else if (staffPayload && typeof staffPayload === "object") {
+      }
+
+      // --- add/remove incrémental
+      else if (staffPayload && typeof staffPayload === "object") {
+        // add
         if (Array.isArray(staffPayload.add)) {
           const addIds = uniq(
             await ensureExistingCustomers(toObjectIds(staffPayload.add)),
@@ -912,6 +941,7 @@ const updateEstablishment = async (req: Request, res: Response) => {
           }
         }
 
+        // remove
         if (Array.isArray(staffPayload.remove)) {
           const removeIds = uniq(
             await ensureExistingCustomers(toObjectIds(staffPayload.remove)),
@@ -936,8 +966,10 @@ const updateEstablishment = async (req: Request, res: Response) => {
       }
     }
 
+    // ✅ Save
     const saved = await establishment.save();
 
+    // ✅ Retour avec staff peuplé (sinon ton front n’a pas account/picture)
     const populated = await Establishment.findById(saved._id).populate(
       "staff",
       "email account picture",
