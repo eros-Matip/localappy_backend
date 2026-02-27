@@ -85,8 +85,12 @@ const EstablishmentSchema = new Schema<IEstablishment>(
         secure_url: { type: String },
         label: { type: String },
       },
+      rib: {
+        iban: { type: String },
+        bic: { type: String },
+      },
+      _id: false,
     },
-
     ads: [{ type: Schema.Types.ObjectId, ref: "Ads" }],
     owner: [{ type: Schema.Types.ObjectId, ref: "Owner" }],
     staff: [{ type: Schema.Types.ObjectId, ref: "Customer" }],

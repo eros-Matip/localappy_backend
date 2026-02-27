@@ -54,19 +54,20 @@ interface ILegalInfo {
   siret?: string;
   rna?: string;
   insuranceCertificate?: string;
-
   KBis?: {
     public_id: string;
     secure_url: string;
   };
-
   legalDocument?: {
     public_id: string;
     secure_url: string;
     label?: string;
   };
-
   activityCodeNAF?: string;
+  rib: {
+    iban: string;
+    bic: string;
+  };
 }
 
 interface IEstablishment extends Document {
