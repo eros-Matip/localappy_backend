@@ -77,18 +77,44 @@ const EstablishmentSchema = new Schema<IEstablishment>(
     legalInfo: {
       siret: { type: String },
       insuranceCertificate: { type: String },
-      KBis: { public_id: String, secure_url: String },
+
+      KBis: {
+        type: new Schema(
+          {
+            public_id: { type: String },
+            secure_url: { type: String },
+          },
+          { _id: false },
+        ),
+        default: undefined,
+      },
+
       activityCodeNAF: { type: String },
       rna: { type: String },
+
       legalDocument: {
-        public_id: { type: String },
-        secure_url: { type: String },
-        label: { type: String },
+        type: new Schema(
+          {
+            public_id: { type: String },
+            secure_url: { type: String },
+            label: { type: String },
+          },
+          { _id: false },
+        ),
+        default: undefined,
       },
+
       rib: {
-        iban: { type: String },
-        bic: { type: String },
+        type: new Schema(
+          {
+            iban: { type: String },
+            bic: { type: String },
+          },
+          { _id: false },
+        ),
+        default: undefined,
       },
+
       _id: false,
     },
     ads: [{ type: Schema.Types.ObjectId, ref: "Ads" }],
