@@ -90,6 +90,8 @@ const customerSchema = new Schema<ICustomer>(
     token: { type: String, default: "" },
     hash: { type: String, default: "" },
     salt: { type: String, default: "" },
+    activated: { type: Boolean, default: true },
+    banned: { type: Boolean, default: false },
   },
   { timestamps: true },
 );

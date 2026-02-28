@@ -69,4 +69,6 @@ export default interface ICustomer extends Document {
   token: string;
   hash: string;
   salt: string;
+  activated: boolean;
+  banned: boolean;
 }

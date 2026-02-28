@@ -36,6 +36,7 @@ import RegistrationRoutes from "./routes/Registration";
 import invoiceRoutes from "./routes/invoice.routes";
 import OrganisateurRoute from "./routes/Organisateur";
 import AdminCompaniesControlRoutes from "./routes/AdminCompaniesControl";
+import AdminUsersControlRoutes from "./routes/AdminUsersControl";
 
 // Middlewares
 import AdminIsAuthenticated from "./middlewares/IsAuthenticated";
@@ -192,6 +193,7 @@ const startServer = () => {
   router.use("/ads/", AdsRoutes);
   router.use("/registration/", RegistrationRoutes);
   router.use("/companiesControl/", AdminCompaniesControlRoutes);
+  router.use("/usersControl/", AdminUsersControlRoutes);
   router.use(LoginRoute);
   router.use(ToolsRoutes);
   router.use(PaymentRoute);

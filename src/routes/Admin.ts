@@ -10,28 +10,29 @@ router.get("/dashboard/summary", AdminIsAuthenticated, controller.summary);
 router.get(
   "/dashboard/distribution",
   AdminIsAuthenticated,
-  controller.distribution
+  controller.distribution,
 );
 router.get(
   "/dashboard/recentActivity",
   AdminIsAuthenticated,
-  controller.recentActivity
+  controller.recentActivity,
 );
 router.get(
   "/dashboard/topEstablishments",
   AdminIsAuthenticated,
-  controller.topEstablishments
+  controller.topEstablishments,
 );
 router.get(
   "/dashboard/customersDashboard",
   AdminIsAuthenticated,
-  controller.customersDashboard
+  controller.customersDashboard,
 );
 router.get(
   "/dashboard/adsDashboard",
   AdminIsAuthenticated,
-  controller.adsDashboard
+  controller.adsDashboard,
 );
+
 router.put("/update/:adminId", AdminIsAuthenticated, controller.updateAdmin);
 router.delete("/delete", AdminIsAuthenticated, controller.deleteAdmin);
 
