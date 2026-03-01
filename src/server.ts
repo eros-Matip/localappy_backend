@@ -115,11 +115,30 @@ const startServer = () => {
 
     const blockedUaFragments = ["l9scan", "leakix"];
     const blockedPaths = [
+      // API docs / gql
       "/swagger.json",
       "/swagger",
       "/api-docs",
       "/graphql",
       "/gql",
+
+      // secrets & configs
+      "/.env",
+      "/.env.local",
+      "/.env.production",
+      "/config.env",
+      "/config.js",
+      "/config/config.yml",
+      "/shared/.env",
+      "/shared/config.env",
+      "/shared/config/config.env",
+      "/shared/config/.env",
+
+      // backups / dumps fréquents
+      "/.git",
+      "/.git/config",
+      "/wp-login.php",
+      "/phpinfo.php",
     ];
 
     const isBadUa = blockedUaFragments.some((f) => ua.includes(f));
