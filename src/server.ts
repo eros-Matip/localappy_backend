@@ -10,8 +10,6 @@ const router = express();
 const cloudinary = require("cloudinary");
 const cron = require("node-cron");
 
-router.set("trust proxy", 1);
-
 // Library
 import Logging from "./library/Logging";
 
@@ -107,6 +105,33 @@ const startServer = () => {
     } catch (error) {
       console.error("❌ [CRON] Erreur lors du nettoyage :", error);
     }
+  });
+
+  router.set("trust proxy", true);
+
+  router.use((req: Request, res: Response, next: NextFunction) => {
+    const ua = (req.headers["user-agent"] || "").toString().toLowerCase();
+    const path = (req.path || "").toLowerCase();
+
+    const blockedUaFragments = ["l9scan", "leakix"];
+    const blockedPaths = [
+      "/swagger.json",
+      "/swagger",
+      "/api-docs",
+      "/graphql",
+      "/gql",
+    ];
+
+    const isBadUa = blockedUaFragments.some((f) => ua.includes(f));
+    const isBadPath = blockedPaths.some(
+      (p) => path === p || path.startsWith(p + "/"),
+    );
+
+    if (isBadUa || isBadPath) {
+      return res.status(404).send("Not found");
+    }
+
+    return next();
   });
 
   // =========================
