@@ -54,7 +54,7 @@ router.post("/socialLogin", async (req: Request, res: Response) => {
     let userData: any;
 
     // =========================
-    // ✅ GOOGLE (stabilisé)
+    // ✅ GOOGLE
     // =========================
     if (provider === "google") {
       try {
@@ -70,7 +70,6 @@ router.post("/socialLogin", async (req: Request, res: Response) => {
           sub: tokenInfo.data.sub,
         };
 
-        // (optionnel mais recommandé) Vérif audience
         if (
           process.env.GOOGLE_WEB_CLIENT_ID &&
           tokenInfo.data.aud !== process.env.GOOGLE_WEB_CLIENT_ID
@@ -80,7 +79,6 @@ router.post("/socialLogin", async (req: Request, res: Response) => {
             .json({ message: "Invalid Google token audience" });
         }
       } catch (err) {
-        // Fallback : access_token (si jamais tu en envoies encore)
         const googleResponse = await axios.get(
           `https://www.googleapis.com/oauth2/v3/userinfo?access_token=${accessToken}`,
         );
@@ -125,7 +123,7 @@ router.post("/socialLogin", async (req: Request, res: Response) => {
     }
 
     // =========================
-    // 🚫 APPLE (inchangé)
+    // 🚫 APPLE
     // =========================
     else if (provider === "apple") {
       try {
@@ -188,7 +186,9 @@ router.post("/socialLogin", async (req: Request, res: Response) => {
       await customer.save();
     }
 
-    Retour.info("Social login successful");
+    Retour.info(
+      `${customer.account.firstname} ${customer.account.name} logged by Social login`,
+    );
     return res.status(200).json({
       message: "Social login successful",
       customer,
