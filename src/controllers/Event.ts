@@ -1414,21 +1414,66 @@ const getEventsByPostalCode = async (
 //   }
 // };
 
+const getCityFromCoordinates = async (lat: number, lon: number) => {
+  try {
+    const { data } = await axios.get(
+      "https://nominatim.openstreetmap.org/reverse",
+      {
+        params: {
+          lat,
+          lon,
+          format: "json",
+          addressdetails: 1,
+        },
+        headers: {
+          "User-Agent": "my-app/1.0 contact@localappy.com",
+        },
+        timeout: 5000,
+      },
+    );
+
+    const address = data?.address;
+
+    const city =
+      address?.city ??
+      address?.town ??
+      address?.village ??
+      address?.municipality ??
+      address?.hamlet ??
+      address?.county ??
+      null;
+
+    return city;
+  } catch (error) {
+    console.error("Erreur reverse geocoding (Nominatim) :", error);
+    return null;
+  }
+};
+
 const getEventsByPosition = async (req: Request, res: Response) => {
   try {
     const { latitude, longitude, radius } = req.body;
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 100;
-    const maxDistance = parseFloat(radius) * 1000 || 50000; // Par défaut 50 km
 
-    if (!latitude || !longitude) {
+    const page = parseInt(req.query.page as string, 10) || 1;
+    const limit = parseInt(req.query.limit as string, 10) || 100;
+
+    // radius en km -> mètres, fallback 50km
+    const maxDistance =
+      (radius !== undefined && radius !== null && radius !== ""
+        ? parseFloat(radius)
+        : NaN) * 1000;
+
+    const finalMaxDistance = !isNaN(maxDistance) ? maxDistance : 50000;
+
+    if (latitude === undefined || longitude === undefined) {
       return res
         .status(400)
         .json({ message: "La latitude et la longitude sont requises." });
     }
 
-    const lat = parseFloat(latitude);
-    const lon = parseFloat(longitude);
+    const lat = typeof latitude === "number" ? latitude : parseFloat(latitude);
+    const lon =
+      typeof longitude === "number" ? longitude : parseFloat(longitude);
 
     if (isNaN(lat) || isNaN(lon)) {
       return res
@@ -1438,14 +1483,14 @@ const getEventsByPosition = async (req: Request, res: Response) => {
 
     const currentDate = new Date();
 
-    // Fonction pour récupérer les événements uniques par titre
+    // Fonction pour récupérer les événements uniques par titre + total
     const fetchUniqueEventsWithCount = async (matchCondition: any) => {
-      const total = await Event.aggregate([
+      const totalAgg = await Event.aggregate([
         {
           $geoNear: {
-            near: { type: "Point", coordinates: [lon, lat] },
+            near: { type: "Point", coordinates: [lon, lat] }, // Mongo: [lon, lat]
             distanceField: "distance",
-            maxDistance: maxDistance,
+            maxDistance: finalMaxDistance,
             spherical: true,
           },
         },
@@ -1462,9 +1507,9 @@ const getEventsByPosition = async (req: Request, res: Response) => {
       const events = await Event.aggregate([
         {
           $geoNear: {
-            near: { type: "Point", coordinates: [lon, lat] },
+            near: { type: "Point", coordinates: [lon, lat] }, // Mongo: [lon, lat]
             distanceField: "distance",
-            maxDistance: maxDistance,
+            maxDistance: finalMaxDistance,
             spherical: true,
           },
         },
@@ -1482,12 +1527,14 @@ const getEventsByPosition = async (req: Request, res: Response) => {
       ]).allowDiskUse(true);
 
       return {
-        total: total[0]?.total || 0,
+        total: totalAgg[0]?.total || 0,
         events,
       };
     };
 
-    const [pastData, currentData, upcomingData] = await Promise.all([
+    // Reverse geocoding + 3 agrégations en parallèle
+    const [city, pastData, currentData, upcomingData] = await Promise.all([
+      getCityFromCoordinates(lat, lon), // Nominatim: lat, lon
       fetchUniqueEventsWithCount({
         endingDate: { $lt: currentDate },
         isDraft: false,
@@ -1502,9 +1549,16 @@ const getEventsByPosition = async (req: Request, res: Response) => {
         isDraft: false,
       }),
     ]);
-
+    Retour.info(`all event from ${city} as been read`);
     return res.status(200).json({
       metadata: {
+        radiusKm: !isNaN(
+          radius !== undefined && radius !== null && radius !== ""
+            ? parseFloat(radius)
+            : NaN,
+        )
+          ? parseFloat(radius)
+          : 50,
         pastTotal: pastData.total,
         currentTotal: currentData.total,
         upcomingTotal: upcomingData.total,
@@ -1519,7 +1573,7 @@ const getEventsByPosition = async (req: Request, res: Response) => {
     console.error("Erreur lors de la récupération des événements :", error);
     return res
       .status(500)
-      .json({ message: "Erreur interne du serveur.", error: error });
+      .json({ message: "Erreur interne du serveur.", error });
   }
 };
 
