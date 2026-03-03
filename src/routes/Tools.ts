@@ -11,6 +11,10 @@ router.post(
 );
 
 router.post("/translate", controller.translateController);
+router.post(
+  "/tools/establishment/translate-descriptif",
+  controller.translateController,
+);
 
 router.post(
   "/customer/generate-descriptif",
