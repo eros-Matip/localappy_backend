@@ -11,7 +11,7 @@ const MAX_BYTES = 60; // ~5 minutes max par connexion suspecte
 const SUSPICIOUS_PATTERNS: RegExp[] = [
   /\.env$/i,
   /\.ya?ml$/i,
-  /\.json$/i, // attention : tes routes /api ne doivent pas matcher ici
+  /\.json$/i,
   /\.bak$/i,
   /\.save$/i,
   /\.old$/i,

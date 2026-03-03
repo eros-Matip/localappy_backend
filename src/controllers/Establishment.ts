@@ -45,7 +45,6 @@ const createEstablishment = async (req: Request, res: Response) => {
     zip,
     activityCodeNAF,
     legalForm,
-    owner,
   } = req.body;
 
   const form = String(legalForm || "company");
@@ -80,7 +79,15 @@ const createEstablishment = async (req: Request, res: Response) => {
 
   try {
     // ✅ owner
-    const owner = await Owner.findById(req.body.owner._id);
+    const ownerFromMiddleware = (req as any).owner; // injecté par OwnerIsAuthenticated
+    console.log("ownerFromMiddleware", ownerFromMiddleware?._id);
+
+    if (!ownerFromMiddleware?._id) {
+      return res.status(401).json({ message: "Unauthorized (owner missing)" });
+    }
+
+    const owner = ownerFromMiddleware; // ✅ on utilise directement le doc
+
     if (!owner) {
       Retour.warn("Owner not found");
       return res.status(404).json({ message: "Owner not found" });
@@ -778,53 +785,6 @@ const updateEstablishment = async (req: Request, res: Response) => {
       }
     }
 
-    // ===============================
-    // ✅ FIX: empêche CastError si KBis/legalDocument arrivent "undefined"/undefined
-    // ===============================
-    if (updates?.legalInfo) {
-      const li = updates.legalInfo;
-
-      const isUndefLike = (v: any) =>
-        v === undefined || v === null || v === "undefined" || v === "null";
-
-      if ("KBis" in li && isUndefLike(li.KBis)) delete li.KBis;
-      if ("legalDocument" in li && isUndefLike(li.legalDocument))
-        delete li.legalDocument;
-
-      // si legalInfo devient vide, on peut la supprimer (optionnel mais safe)
-      if (
-        li &&
-        typeof li === "object" &&
-        !Array.isArray(li) &&
-        Object.keys(li).length === 0
-      ) {
-        delete updates.legalInfo;
-      }
-    }
-
-    // ===============================
-    // ✅ RIB validation + sanitize
-    // ===============================
-    if (updates?.legalInfo?.rib) {
-      const normalize = (s: any) =>
-        String(s || "")
-          .replace(/\s+/g, "")
-          .toUpperCase();
-
-      const iban = normalize(updates.legalInfo.rib.iban);
-      const bic = normalize(updates.legalInfo.rib.bic);
-
-      const isValidBic = (v: string) => v.length === 8 || v.length === 11;
-      const isValidIbanBasic = (v: string) =>
-        v.length >= 15 && v.length <= 34 && /^[A-Z]{2}\d{2}[A-Z0-9]+$/.test(v);
-
-      if (!isValidIbanBasic(iban) || !isValidBic(bic)) {
-        return res.status(400).json({ message: "Invalid IBAN or BIC" });
-      }
-
-      updates.legalInfo.rib = { iban, bic };
-    }
-
     // ✅ Staff payload isolé (évite overwrite via boucle générique)
     const staffPayload = updates.staff;
     delete updates.staff;
@@ -991,8 +951,7 @@ const requestActivation = async (req: Request, res: Response) => {
     }
 
     // ✅ On essaye d’être compatible avec plusieurs middlewares possibles
-    const requesterOwnerId = req.body?.owner._id;
-    console.log("requesterOwnerId", requesterOwnerId);
+    const requesterOwnerId = req.body?.ownerId || req.body?.owner?._id;
 
     if (
       !requesterOwnerId ||
@@ -1015,8 +974,6 @@ const requestActivation = async (req: Request, res: Response) => {
       : (establishment as any).owner
         ? [(establishment as any).owner]
         : [];
-    console.log("ownersArr", ownersArr);
-    console.log("establishment as any).owner", (establishment as any).owner);
 
     const isOwner = ownersArr.some(
       (id: any) => String(id) === String(requesterOwnerId),
@@ -1260,81 +1217,24 @@ const rejectActivation = async (req: Request, res: Response) => {
 // Fonction pour supprimer un établissement
 const deleteEstablishment = async (req: Request, res: Response) => {
   try {
-    const establishmentId = req.params.id;
-    if (!mongoose.isValidObjectId(establishmentId)) {
-      return res.status(400).json({ message: "Invalid establishment id" });
-    }
+    const { id } = req.params; // Extraire l'ID de l'établissement à supprimer
 
-    // ✅ Owner authentifié par middleware
-    const requesterOwnerId =
-      (req as any)?.ownerId || (req as any)?.owner?._id || req.body?.owner?._id;
-
-    if (
-      !requesterOwnerId ||
-      !mongoose.isValidObjectId(String(requesterOwnerId))
-    ) {
-      return res.status(401).json({ message: "Owner introuvable (auth)." });
-    }
-
-    const establishment = await Establishment.findById(establishmentId);
-    if (!establishment) {
+    // Trouver et supprimer l'établissement
+    const deletedEstablishment = await Establishment.findByIdAndDelete(id);
+    if (!deletedEstablishment) {
       return res.status(404).json({ message: "Establishment not found" });
     }
 
-    // ✅ Vérifie que l’owner est bien dans establishment.owner
-    const ownersArr = Array.isArray((establishment as any).owner)
-      ? ((establishment as any).owner as any[])
-      : (establishment as any).owner
-        ? [(establishment as any).owner]
-        : [];
-
-    const isOwner = ownersArr.some(
-      (id: any) => String(id) === String(requesterOwnerId),
-    );
-    if (!isOwner) {
-      return res.status(403).json({ message: "Forbidden" });
-    }
-
-    // 1) Retirer l’établissement du tableau establishments de l’owner (quoi qu’il arrive)
+    // Optionnel : Retirer l'établissement de la liste des établissements du propriétaire
     await Owner.updateOne(
-      { _id: requesterOwnerId },
-      { $pull: { establishments: establishment._id } },
+      { establishments: id },
+      { $pull: { establishments: id } },
     );
 
-    // 2) Retirer l’owner du tableau owner[] de l’établissement
-    await Establishment.updateOne(
-      { _id: establishment._id },
-      { $pull: { owner: requesterOwnerId } },
-    );
-
-    // 3) Recharger l’établissement pour savoir s’il reste des owners
-    const updated = await Establishment.findById(establishment._id).lean();
-
-    const updatedOwnersArr = Array.isArray((updated as any)?.owner)
-      ? ((updated as any).owner as any[])
-      : (updated as any)?.owner
-        ? [(updated as any).owner]
-        : [];
-
-    // ✅ S’il reste au moins 1 owner : on ne supprime PAS l’établissement
-    if (updatedOwnersArr.length > 0) {
-      return res.status(200).json({
-        message: "Owner detached from establishment (establishment kept).",
-        establishmentId: String(establishment._id),
-        remainingOwners: updatedOwnersArr.map(String),
-      });
-    }
-
-    // ✅ Sinon : plus aucun owner → suppression establishment
-    await Establishment.deleteOne({ _id: establishment._id });
-
-    return res.status(200).json({
-      message: "Establishment deleted (no owners left).",
-      establishmentId: String(establishment._id),
-    });
+    // Retourner un message de succès après suppression
+    return res.status(200).json({ message: "Establishment deleted" });
   } catch (error) {
-    console.error("[deleteEstablishment] error:", error);
-    return res.status(500).json({ message: "Failed to delete establishment" });
+    return res.status(500).json({ error: "Failed to delete establishment" });
   }
 };
 

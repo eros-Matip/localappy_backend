@@ -25,8 +25,6 @@ const OwnerIsAuthenticated = async (
     (req as any).owner = ownerFinded;
     (req as any).ownerId = ownerFinded._id;
 
-    req.body.owner = ownerFinded;
-
     const originalUrl = req.originalUrl || "";
     const parts = originalUrl.split("?")[0].split("/").filter(Boolean);
 
