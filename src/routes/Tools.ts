@@ -19,7 +19,7 @@ router.post(
 );
 
 router.post(
-  "/tools/establishment/generate-descriptif ",
+  "/tools/establishment/generate-descriptif",
   OwnerIsAuthenticated,
   controller.generateEstablishmentDescriptionFromTypesController,
 );
