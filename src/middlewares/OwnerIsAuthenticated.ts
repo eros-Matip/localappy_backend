@@ -25,6 +25,13 @@ const OwnerIsAuthenticated = async (
     (req as any).owner = ownerFinded;
     (req as any).ownerId = ownerFinded._id;
 
+    // ✅ injecter dans le body pour compatibilité controllers
+    if (!req.body) {
+      req.body = {};
+    }
+
+    req.body.owner = ownerFinded;
+
     const originalUrl = req.originalUrl || "";
     const parts = originalUrl.split("?")[0].split("/").filter(Boolean);
 
