@@ -10,17 +10,18 @@ router.post(
   controller.generateEventDescriptionController,
 );
 
-router.post("/translate", controller.translateController);
-router.post(
-  "/tools/establishment/translate-descriptif",
-  OwnerIsAuthenticated,
-  controller.translateEstablishmentDescriptionController,
-);
-
 router.post(
   "/customer/generate-descriptif",
   CustomerIsAuthenticated,
   controller.generateCustomerDescriptifFromThemesController,
+);
+
+router.post("/translate", controller.translateController);
+
+router.post(
+  "/tools/establishment/translate-descriptif",
+  OwnerIsAuthenticated,
+  controller.translateEstablishmentDescriptionController,
 );
 
 router.post(

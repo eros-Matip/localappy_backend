@@ -198,6 +198,7 @@ const createEstablishment = async (req: Request, res: Response) => {
         (existing as any).activationRequested = true;
         (existing as any).activationRequestedAt = new Date();
         (existing as any).activationStatus = "pending";
+        (existing as any).owner.push(owner._id);
 
         await existing.save();
 
@@ -293,6 +294,7 @@ const createEstablishment = async (req: Request, res: Response) => {
         (existing as any).activationRequested = true;
         (existing as any).activationRequestedAt = new Date();
         (existing as any).activationStatus = "pending";
+        (existing as any).owner.push(owner._id);
 
         await existing.save();
 
@@ -391,8 +393,8 @@ const createEstablishment = async (req: Request, res: Response) => {
       activated: false,
     });
 
+    establishment.owner.push(owner._id);
     await establishment.save();
-
     owner.establishments.push((establishment as any)._id);
     await owner.save();
 
