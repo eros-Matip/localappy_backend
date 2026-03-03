@@ -45,7 +45,7 @@ const createEstablishment = async (req: Request, res: Response) => {
     zip,
     activityCodeNAF,
     legalForm,
-    owner: ownerId,
+    owner,
   } = req.body;
 
   const form = String(legalForm || "company");
@@ -80,7 +80,7 @@ const createEstablishment = async (req: Request, res: Response) => {
 
   try {
     // ✅ owner
-    const owner = await Owner.findById(ownerId);
+    const owner = await Owner.findById(req.body.owner._id);
     if (!owner) {
       Retour.warn("Owner not found");
       return res.status(404).json({ message: "Owner not found" });

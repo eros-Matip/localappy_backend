@@ -39,6 +39,7 @@ import AdminUsersControlRoutes from "./routes/AdminUsersControl";
 // Middlewares
 import AdminIsAuthenticated from "./middlewares/IsAuthenticated";
 import CustomerIsAuthenticated from "./middlewares/IsAuthenticated";
+import { honeypot } from "./middlewares/Honeypot";
 
 // MODELS
 import Event from "./models/Event";
@@ -328,6 +329,8 @@ const startServer = () => {
       }
     },
   );
+
+  router.use(honeypot); // ← le place ici = très important
 
   /** Error handling */
   router.use((req: Request, res: Response) => {
