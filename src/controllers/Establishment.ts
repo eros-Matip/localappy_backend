@@ -587,7 +587,7 @@ const trackEstablishmentQrScan = async (req: Request, res: Response) => {
         scannedAt: new Date(),
         ip,
         userAgent,
-        source: "qrcode",
+        source: "unknown",
       });
       return res.status(204).send();
     }
@@ -607,7 +607,7 @@ const trackEstablishmentQrScan = async (req: Request, res: Response) => {
         scannedAt: new Date(),
         ip,
         userAgent,
-        source: "qrcode",
+        source: "flyer",
       });
     }
 
