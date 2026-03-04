@@ -11,11 +11,11 @@ import slugify from "slugify";
 import mongoose, { Types } from "mongoose";
 import Registration from "../models/Registration";
 import Customer from "../models/Customer";
+import QrScan from "../models/QrScan";
 import {
   notifyAdminsActivationRequest,
   notifyAdminsNewEstablishment,
 } from "../services/notifyAdmins";
-import QrScan from "../models/QrScan";
 
 const cloudinary = require("cloudinary");
 
@@ -579,6 +579,18 @@ const trackEstablishmentQrScan = async (req: Request, res: Response) => {
       "unknown";
 
     const userAgent = String(req.headers["user-agent"] || "");
+
+    // si on ne peut pas identifier l'ip, on enregistre quand même (sinon tout est dédupliqué)
+    if (ip === "unknown") {
+      await QrScan.create({
+        establishment: establishmentId,
+        scannedAt: new Date(),
+        ip,
+        userAgent,
+        source: "qrcode",
+      });
+      return res.status(204).send();
+    }
 
     // anti spam: 2 minutes par (establishment + ip)
     const since = new Date(Date.now() - 2 * 60 * 1000);
