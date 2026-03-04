@@ -230,7 +230,7 @@ const configureApp = () => {
   router.use("/registration/", RegistrationRoutes);
   router.use("/companiesControl/", AdminCompaniesControlRoutes);
   router.use("/usersControl/", AdminUsersControlRoutes);
-  router.use("/ownersControl", AdminOwnersControlRoutes);
+  router.use("/ownersControl/", AdminOwnersControlRoutes);
   router.use(LoginRoute);
   router.use(ToolsRoutes);
   router.use(PaymentRoute);
