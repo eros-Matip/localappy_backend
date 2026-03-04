@@ -28,7 +28,7 @@ router.get(
   controller.getAllInformation,
 );
 
-router.post("/:establishmentId/qr-scan", controller.trackEstablishmentQrScan);
+router.post("/qr-scan/:establishmentId", controller.trackEstablishmentQrScan);
 
 router.get(
   "/getPublicInformation/:establishmentId",

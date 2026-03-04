@@ -15,7 +15,7 @@ const upload = (0, multer_1.default)(Multer_1.multerConfig);
 const cpUpload = upload.fields([{ name: "photos", maxCount: 10 }]);
 router.post("/create", OwnerIsAuthenticated_1.default, cpUpload, Establishment_1.default.createEstablishment);
 router.get("/getInformations/:establishmentId", OwnerIsAuthenticated_1.default, Establishment_1.default.getAllInformation);
-router.post("/:establishmentId/qr-scan", Establishment_1.default.trackEstablishmentQrScan);
+router.post("/qr-scan/:establishmentId", Establishment_1.default.trackEstablishmentQrScan);
 router.get("/getPublicInformation/:establishmentId", Establishment_1.default.getPublicInformation);
 router.get("/getTicketsStatsByEstablishment/:establishmentId", OwnerIsAuthenticated_1.default, Establishment_1.default.getTicketsStatsByEstablishment);
 router.put("/update/:establishmentId", OwnerIsAuthenticated_1.default, cpUpload, Establishment_1.default.updateEstablishment);
