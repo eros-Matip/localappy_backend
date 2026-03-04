@@ -48,23 +48,7 @@ import Bill from "./models/Bill";
 import Retour from "./library/Retour";
 
 const isProd = process.env.NODE_ENV === "production";
-
-mongoose
-  .set("strictQuery", false)
-  .set("autoIndex", !isProd)
-  .connect(`${config.mongooseUrl}`, {
-    retryWrites: true,
-    w: "majority",
-    autoIndex: !isProd,
-  })
-  .then(() => {
-    Logging.info("mongoDB is connected");
-    startServer();
-  })
-  .catch((error) => {
-    Logging.error("Unable to connect");
-    Logging.error(error);
-  });
+const isTest = process.env.NODE_ENV === "test";
 
 // Stockage de photos avec Cloudinary
 cloudinary.config({
@@ -73,40 +57,48 @@ cloudinary.config({
   api_secret: process.env.API_SECRET_CLOUDINARY,
 });
 
-// The server start only if mongo is already connected
-const startServer = () => {
+/**
+ * Configure l'app (middlewares + routes + handlers).
+ * Important: on ne fait PAS server.listen ici.
+ * Cette fonction reprend ton contenu de startServer "tel quel" (hors listen),
+ * afin que les tests puissent importer l'app déjà configurée.
+ */
+const configureApp = () => {
   // Check tous les Jours à 00:00 si nous avons changé de mois.
-  cron.schedule("0 0 0 * * *", async () => {
-    console.log("🔄 [CRON] Nettoyage des registrations pending...");
+  // En test, on évite de lancer le cron (effets de bord + DB)
+  if (!isTest) {
+    cron.schedule("0 0 0 * * *", async () => {
+      console.log("🔄 [CRON] Nettoyage des registrations pending...");
 
-    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-    try {
-      const pendingRegistrations = await Registration.find({
-        status: "pending",
-        date: { $lt: oneDayAgo },
-      });
-
-      for (const reg of pendingRegistrations) {
-        const bill = await Bill.findOne({
-          registration: reg._id,
+      try {
+        const pendingRegistrations = await Registration.find({
           status: "pending",
+          date: { $lt: oneDayAgo },
         });
 
-        if (bill) {
-          await bill.deleteOne();
-          console.log(`🧾 Bill supprimée: ${bill._id}`);
+        for (const reg of pendingRegistrations) {
+          const bill = await Bill.findOne({
+            registration: reg._id,
+            status: "pending",
+          });
+
+          if (bill) {
+            await bill.deleteOne();
+            console.log(`🧾 Bill supprimée: ${bill._id}`);
+          }
+
+          await reg.deleteOne();
+          console.log(`🎟️ Registration supprimée: ${reg._id}`);
         }
 
-        await reg.deleteOne();
-        console.log(`🎟️ Registration supprimée: ${reg._id}`);
+        console.log("✅ [CRON] Nettoyage terminé.");
+      } catch (error) {
+        console.error("❌ [CRON] Erreur lors du nettoyage :", error);
       }
-
-      console.log("✅ [CRON] Nettoyage terminé.");
-    } catch (error) {
-      console.error("❌ [CRON] Erreur lors du nettoyage :", error);
-    }
-  });
+    });
+  }
 
   router.set("trust proxy", true);
 
@@ -155,7 +147,7 @@ const startServer = () => {
   });
 
   // =========================
-  // ✅ CORS (PROPRE)
+  // CORS
   // =========================
   const allowedOrigins = [
     "http://localhost:3000",
@@ -177,15 +169,15 @@ const startServer = () => {
     }),
   );
 
-  // ✅ répond aux preflight (indispensable si Authorization)
+  // répond aux preflight (indispensable si Authorization)
   router.options("*", cors());
 
-  // ✅ parsers (une seule fois)
+  // parsers (une seule fois)
   router.use(express.json({}));
   router.use(express.urlencoded({ extended: true }));
 
   // =========================
-  // ✅ LOGGING
+  // LOGGING
   // =========================
   router.use((req: Request, res: Response, next: NextFunction) => {
     const startedAt = Date.now();
@@ -215,7 +207,6 @@ const startServer = () => {
         `${ok} ${req.method} ${req.originalUrl} ${status} - ${ms}ms | ip=${ip} | src=${source} | reqId=${requestId}`,
       );
 
-      // (optionnel) si tu veux voir le user-agent seulement quand c'est louche
       if (source === "unknown") {
         Logging.warn(
           `⚠️ Unknown client | ua="${ua}" | xff="${xff}" | reqId=${requestId}`,
@@ -227,7 +218,7 @@ const startServer = () => {
   });
 
   // =========================
-  // ✅ ROUTES
+  // ROUTES
   // =========================
   router.use("/event/", EventRoutes);
   router.use("/owner/", OwnerRoutes);
@@ -330,7 +321,7 @@ const startServer = () => {
     },
   );
 
-  router.use(honeypot); // ← le place ici = très important
+  router.use(honeypot);
 
   /** Error handling */
   router.use((req: Request, res: Response) => {
@@ -341,9 +332,13 @@ const startServer = () => {
     Logging.error(error.message);
     return res.status(404).json(error.message);
   });
+};
 
+// The server start only if mongo is already connected
+const startServer = () => {
+  configureApp();
   // =========================
-  // ✅ SERVER + SOCKET
+  //  SERVER + SOCKET
   // =========================
   const server = initSocket(router);
 
@@ -351,3 +346,34 @@ const startServer = () => {
     Logging.info(`Server + Socket started on port ${config.port}`);
   });
 };
+
+/**
+ * PROD : on garde exactement le comportement actuel
+ * mongo connect -> startServer()
+ *
+ * TEST : on configure l'app, mais on ne connecte pas mongo et on ne listen pas.
+ */
+if (!isTest) {
+  mongoose
+    .set("strictQuery", false)
+    .set("autoIndex", !isProd)
+    .connect(`${config.mongooseUrl}`, {
+      retryWrites: true,
+      w: "majority",
+      autoIndex: !isProd,
+    })
+    .then(() => {
+      Logging.info("mongoDB is connected");
+      startServer();
+    })
+    .catch((error) => {
+      Logging.error("Unable to connect");
+      Logging.error(error);
+    });
+} else {
+  // En test: on veut juste l'app configurée pour supertest
+  configureApp();
+}
+
+export default router;
+export { startServer };

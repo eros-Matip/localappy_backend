@@ -28,6 +28,8 @@ router.get(
   controller.getAllInformation,
 );
 
+router.post("/:establishmentId/qr-scan", controller.trackEstablishmentQrScan);
+
 router.get(
   "/getPublicInformation/:establishmentId",
   controller.getPublicInformation,

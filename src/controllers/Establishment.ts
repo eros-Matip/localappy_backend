@@ -15,6 +15,7 @@ import {
   notifyAdminsActivationRequest,
   notifyAdminsNewEstablishment,
 } from "../services/notifyAdmins";
+import QrScan from "../models/QrScan";
 
 const cloudinary = require("cloudinary");
 
@@ -565,6 +566,43 @@ const getPublicInformation = async (req: Request, res: Response) => {
     return res.status(500).json({
       error: "Erreur lors de la récupération des données publiques.",
     });
+  }
+};
+
+const trackEstablishmentQrScan = async (req: Request, res: Response) => {
+  try {
+    const establishmentId = req.params.establishmentId;
+
+    const ip =
+      (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ||
+      req.socket.remoteAddress ||
+      "unknown";
+
+    const userAgent = String(req.headers["user-agent"] || "");
+
+    // anti spam: 2 minutes par (establishment + ip)
+    const since = new Date(Date.now() - 2 * 60 * 1000);
+
+    const already = await QrScan.findOne({
+      establishment: establishmentId,
+      ip,
+      scannedAt: { $gte: since },
+    }).select("_id");
+
+    if (!already) {
+      await QrScan.create({
+        establishment: establishmentId,
+        scannedAt: new Date(),
+        ip,
+        userAgent,
+        source: "qrcode",
+      });
+    }
+
+    return res.status(204).send();
+  } catch (error) {
+    Retour.error(`Erreur trackEstablishmentQrScan: ${error}`);
+    return res.status(500).json({ error: "Erreur tracking QR." });
   }
 };
 
@@ -1244,6 +1282,7 @@ export default {
   createEstablishment,
   getAllInformation,
   getPublicInformation,
+  trackEstablishmentQrScan,
   getTicketsStatsByEstablishment,
   // fetchEstablishmentsByJson,
   updateEstablishment,
