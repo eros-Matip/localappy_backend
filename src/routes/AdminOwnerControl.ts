@@ -1,6 +1,6 @@
 import express from "express";
 import controller from "../controllers/Owner";
-import AdminIsAuthenticated from "../middlewares/IsAuthenticated";
+import AdminIsAuthenticated from "../middlewares/AdminIsAuthenticated";
 
 const router = express.Router();
 
