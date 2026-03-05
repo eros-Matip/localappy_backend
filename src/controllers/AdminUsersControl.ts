@@ -171,6 +171,75 @@ export const userSetPremium = async (req: Request, res: Response) => {
     return res.status(500).json({ message: "Error updating premium", error });
   }
 };
+/* =========================================
+   GET /admin/stats/new-customers-per-day?days=14
+   -> [{ date: "YYYY-MM-DD", count: number }]
+========================================= */
+
+export const newCustomersPerDay = async (req: Request, res: Response) => {
+  try {
+    const daysRaw = Number(req.query.days || 14);
+    const days = Number.isFinite(daysRaw)
+      ? Math.min(Math.max(daysRaw, 1), 90)
+      : 14;
+
+    const timezone = "Europe/Paris";
+
+    const end = new Date();
+    const start = new Date(end);
+    start.setDate(end.getDate() - (days - 1));
+    start.setHours(0, 0, 0, 0);
+
+    // ✅ createdAtSafe = createdAt si existe, sinon date extraite de l'ObjectId
+    const rows = await Customer.aggregate([
+      {
+        $addFields: {
+          createdAtSafe: {
+            $ifNull: ["$createdAt", { $toDate: "$_id" }],
+          },
+        },
+      },
+      { $match: { createdAtSafe: { $gte: start, $lte: end } } },
+      {
+        $group: {
+          _id: {
+            $dateToString: {
+              format: "%Y-%m-%d",
+              date: "$createdAtSafe",
+              timezone,
+            },
+          },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+
+    const map = new Map<string, number>();
+    for (const r of rows) map.set(r._id, r.count);
+
+    // ✅ remplir les jours manquants à 0
+    const data: { date: string; count: number }[] = [];
+    const cur = new Date(start);
+
+    for (let i = 0; i < days; i++) {
+      const yyyy = cur.getFullYear();
+      const mm = String(cur.getMonth() + 1).padStart(2, "0");
+      const dd = String(cur.getDate()).padStart(2, "0");
+      const key = `${yyyy}-${mm}-${dd}`;
+
+      data.push({ date: key, count: map.get(key) || 0 });
+      cur.setDate(cur.getDate() + 1);
+    }
+
+    return res.status(200).json({ days, timezone, data });
+  } catch (error: any) {
+    return res.status(500).json({
+      message: "Error fetching new customers per day",
+      error: error?.message || error,
+    });
+  }
+};
 
 /* =========================================
    DELETE /admin/users/:userId

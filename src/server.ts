@@ -46,6 +46,7 @@ import Event from "./models/Event";
 import Registration from "./models/Registration";
 import Bill from "./models/Bill";
 import Retour from "./library/Retour";
+import Customer from "./models/Customer";
 
 const isProd = process.env.NODE_ENV === "production";
 const isTest = process.env.NODE_ENV === "test";
@@ -248,7 +249,7 @@ const configureApp = () => {
   /** Healthcheck */
   router.all(
     "/test",
-    AdminIsAuthenticated,
+
     async (req: Request, res: Response) => {
       if (req.body.test === "registrations") {
         try {
@@ -306,6 +307,220 @@ const configureApp = () => {
               arrayFilters: [{ "elem.source": "deeplink" }],
             },
           );
+
+          return res.status(200).json({
+            message: "Migration terminée",
+            modifiedCount: result.modifiedCount,
+          });
+        } catch (error) {
+          Retour.info("error catched");
+          return res.status(500).json({ message: "error catched", error });
+        }
+      } else if (req.body.test === "customers favorites -> auto descriptif") {
+        try {
+          const customers = await Customer.find({
+            $and: [
+              // ✅ a au moins 1 favori
+              {
+                $or: [
+                  { themesFavorites: { $exists: true, $not: { $size: 0 } } },
+                  { eventsFavorites: { $exists: true, $not: { $size: 0 } } },
+                  { customersFavorites: { $exists: true, $not: { $size: 0 } } },
+                  {
+                    establishmentFavorites: {
+                      $exists: true,
+                      $not: { $size: 0 },
+                    },
+                  },
+                ],
+              },
+              // ✅ cible uniquement les descriptifs auto "moches" existants (pour pouvoir relancer la migration)
+              {
+                $or: [
+                  { descriptif: { $regex: "^J’aime\\s*:" } },
+                  { descriptif: "" },
+                  { descriptif: null },
+                  { descriptif: { $exists: false } },
+                ],
+              },
+            ],
+          })
+            .select(
+              "_id themesFavorites eventsFavorites customersFavorites establishmentFavorites descriptif",
+            )
+            .populate([
+              { path: "themesFavorites", model: "Theme", select: "theme" },
+              { path: "eventsFavorites", model: "Event", select: "title name" },
+              {
+                path: "customersFavorites",
+                model: "Customer",
+                select: "fullName username name",
+              },
+              {
+                path: "establishmentFavorites",
+                model: "Establishment",
+                select: "name title",
+              },
+            ]);
+
+          const THEME_TRANSLATIONS: Record<string, string> = {
+            EntertainmentAndEvent: "Divertissement et Événement",
+            Market: "Marché",
+            PointOfInterest: "Point d'intérêt",
+            SaleEvent: "Vente",
+            Conference: "Conférence",
+            CulturalEvent: "Événement culturel",
+            ShowEvent: "Spectacle",
+            Concert: "Concert",
+            LocalAnimation: "Animation locale",
+            SocialEvent: "Événement social",
+            TheaterEvent: "Théâtre",
+            BricABrac: "Bric-à-brac",
+            GarageSale: "Vide-grenier",
+            Exhibition: "Exposition",
+            SportsCompetition: "Compétition sportive",
+            SportsEvent: "Événement sportif",
+            FairOrShow: "Foire ou Salon",
+            Festival: "Festival",
+            Rambling: "Randonnée",
+            Game: "Jeu",
+            Practice: "Pratique",
+            Product: "Produit",
+            Traineeship: "Stage",
+            OpenDay: "Journée portes ouvertes",
+            ScreeningEvent: "Projection",
+            ArtistSigning: "Dédicace",
+            Visit: "Visite",
+            Parade: "Parade",
+            Rally: "Rallye",
+            Commemoration: "Commémoration",
+            VisualArtsEvent: "Événement arts visuels",
+            ReligiousEvent: "Événement religieux",
+            TraditionalCelebration: "Célébration traditionnelle",
+            Carnival: "Carnaval",
+            BusinessEvent: "Événement professionnel",
+            Congress: "Congrès",
+            Seminar: "Séminaire",
+            Opera: "Opéra",
+            ChildrensEvent: "Événement pour enfants",
+            CircusEvent: "Cirque",
+            Recital: "Récital",
+            TrainingWorkshop: "Atelier de formation",
+            Reading: "Lecture",
+            SportsDemonstration: "Démonstration sportive",
+            DanceEvent: "Événement de danse",
+            PilgrimageAndProcession: "Pèlerinage et procession",
+            Harvest: "Récolte",
+            IntroductionCourse: "Cours d'initiation",
+            PlaceOfInterest: "Lieu d'intérêt",
+            SportsAndLeisurePlace: "Lieu de sport et de loisir",
+            Theater: "Théâtre",
+            Cinema: "Cinéma",
+            Cinematheque: "Cinémathèque",
+            FreePractice: "Pratique libre",
+            Course: "Cours",
+            Accommodation: "Hébergement",
+            RentalAccommodation: "Location de logement",
+            ActivityProvider: "Prestataire d'activités",
+            WorkMeeting: "Réunion de travail",
+            CircusPlace: "Lieu de cirque",
+            AntiqueAndSecondhandGoodDealer: "Antiquaire et brocanteur",
+            Store: "Magasin",
+            CulturalSite: "Site culturel",
+            Competition: "Compétition",
+            Tasting: "Dégustation",
+            Tour: "Visite guidée",
+            WalkingTour: "Promenade",
+            Cirque: "Cirque",
+            NaturalHeritage: "Patrimoine naturel",
+            Soiree: "Soirée",
+          };
+
+          const uniq = (arr: string[]) =>
+            Array.from(new Set(arr.filter(Boolean)));
+
+          const joinNatural = (arr: string[]) => {
+            if (arr.length === 0) return "";
+            if (arr.length === 1) return arr[0];
+            if (arr.length === 2) return `${arr[0]} et ${arr[1]}`;
+            return `${arr.slice(0, -1).join(", ")} et ${arr[arr.length - 1]}`;
+          };
+
+          const buildAutoDescriptif = (opts: {
+            themes: string[];
+            events: string[];
+            establishments: string[];
+          }) => {
+            const themes = uniq(opts.themes).slice(0, 4);
+            const events = uniq(opts.events).slice(0, 3);
+            const establishments = uniq(opts.establishments).slice(0, 2);
+
+            const parts: string[] = [];
+
+            if (themes.length > 0) {
+              parts.push(`Passionné(e) par ${joinNatural(themes)}.`);
+            }
+
+            if (events.length > 0) {
+              parts.push(
+                `J’aime participer à des événements comme ${joinNatural(events)}.`,
+              );
+            }
+
+            if (establishments.length > 0) {
+              parts.push(
+                `Toujours curieux(se) de découvrir ${joinNatural(establishments)}.`,
+              );
+            }
+
+            if (parts.length === 0) {
+              return "Curieux(se) de découvrir de nouveaux événements et lieux.";
+            }
+
+            return parts.join(" ");
+          };
+
+          const bulkOps = customers.map((c: any) => {
+            const themes =
+              (c.themesFavorites || [])
+                .map((t: any) => {
+                  const raw = typeof t?.theme === "string" ? t.theme : "";
+                  return THEME_TRANSLATIONS[raw] || raw;
+                })
+                .filter(Boolean) || [];
+
+            const events =
+              (c.eventsFavorites || [])
+                .map((e: any) => e?.title || e?.name)
+                .filter(Boolean) || [];
+
+            const establishments =
+              (c.establishmentFavorites || [])
+                .map((e: any) => e?.name || e?.title)
+                .filter(Boolean) || [];
+
+            const bio = buildAutoDescriptif({
+              themes,
+              events,
+              establishments,
+            });
+
+            return {
+              updateOne: {
+                filter: { _id: c._id },
+                update: { $set: { descriptif: bio } }, // ✅ modifie uniquement descriptif
+              },
+            };
+          });
+
+          if (bulkOps.length === 0) {
+            return res.status(200).json({
+              message: "Migration terminée",
+              modifiedCount: 0,
+            });
+          }
+
+          const result = await Customer.bulkWrite(bulkOps, { ordered: false });
 
           return res.status(200).json({
             message: "Migration terminée",

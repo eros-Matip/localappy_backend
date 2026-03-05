@@ -8,6 +8,7 @@ import {
   userDisable,
   userSetPremium,
   userDelete,
+  newCustomersPerDay,
 } from "../controllers/AdminUsersControl";
 const router = Router();
 
@@ -19,7 +20,11 @@ router.patch("/users/:userId/ban", AdminIsAuthenticated, userBan);
 router.patch("/users/:userId/unban", AdminIsAuthenticated, userUnban);
 router.patch("/users/:userId/activate", AdminIsAuthenticated, userActivate);
 router.patch("/users/:userId/disable", AdminIsAuthenticated, userDisable);
-
+router.get(
+  "/admin/stats/new-customers-per-day",
+  AdminIsAuthenticated,
+  newCustomersPerDay,
+);
 // premium (ton front envoie { premiumStatus: boolean })
 router.patch("/users/:userId/premium", AdminIsAuthenticated, userSetPremium);
 
