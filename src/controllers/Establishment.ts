@@ -81,7 +81,6 @@ const createEstablishment = async (req: Request, res: Response) => {
   try {
     // ✅ owner
     const ownerFromMiddleware = (req as any).owner; // injecté par OwnerIsAuthenticated
-    console.log("ownerFromMiddleware", ownerFromMiddleware?._id);
 
     if (!ownerFromMiddleware?._id) {
       return res.status(401).json({ message: "Unauthorized (owner missing)" });

@@ -279,6 +279,94 @@ const addingOrRemoveFavorites = async (req: Request, res: Response) => {
 
     const invalidIds: { type: string; id: string }[] = [];
 
+    // =========================
+    // ✅ AUTO-GENERATION TEXTE (ajout uniquement)
+    // =========================
+    const removedLabels: Record<string, string[]> = {
+      Theme: [],
+      Event: [],
+      Customer: [],
+      Establishment: [],
+    };
+
+    const getLabel = (type: string, doc: any): string => {
+      if (!doc || typeof doc !== "object") return "";
+      switch (type) {
+        case "Theme":
+          return typeof doc.theme === "string" ? doc.theme : "";
+        case "Event":
+          return typeof doc.title === "string"
+            ? doc.title
+            : typeof doc.name === "string"
+              ? doc.name
+              : "";
+        case "Customer":
+          return typeof doc.fullName === "string"
+            ? doc.fullName
+            : typeof doc.username === "string"
+              ? doc.username
+              : typeof doc.name === "string"
+                ? doc.name
+                : "";
+        case "Establishment":
+          return typeof doc.name === "string"
+            ? doc.name
+            : typeof doc.title === "string"
+              ? doc.title
+              : "";
+        default:
+          return "";
+      }
+    };
+
+    const uniq = (arr: string[]) => Array.from(new Set(arr.filter(Boolean)));
+
+    const buildAutoDescriptif = (opts: {
+      themes: string[];
+      events: string[];
+      customers: string[];
+      establishments: string[];
+      removed: Record<string, string[]>;
+      maxList?: number;
+      maxRemoved?: number;
+    }) => {
+      const maxList = typeof opts.maxList === "number" ? opts.maxList : 6;
+      const maxRemoved =
+        typeof opts.maxRemoved === "number" ? opts.maxRemoved : 3;
+
+      const parts: string[] = [];
+
+      const addLine = (prefix: string, items: string[]) => {
+        const list = uniq(items).slice(0, maxList);
+        if (list.length > 0) parts.push(`${prefix} ${list.join(", ")}.`);
+      };
+
+      addLine("J’aime :", [...opts.themes, ...opts.events]);
+      addLine("Je m’intéresse aussi à :", [
+        ...opts.establishments,
+        ...opts.customers,
+      ]);
+
+      const removedFlat = uniq([
+        ...(opts.removed.Theme || []),
+        ...(opts.removed.Event || []),
+        ...(opts.removed.Customer || []),
+        ...(opts.removed.Establishment || []),
+      ]).slice(0, maxRemoved);
+
+      if (removedFlat.length > 0) {
+        // wording soft (remove ≠ déteste)
+        parts.push(
+          `En ce moment, je suis moins attiré(e) par : ${removedFlat.join(", ")}.`,
+        );
+      }
+
+      return parts.length > 0
+        ? parts.join("\n")
+        : "Profil en cours de personnalisation.";
+    };
+    // =========================
+
     const handleFavorites = async (
       arr: string[],
       customerFavorites: mongoose.Types.ObjectId[],
@@ -296,6 +384,7 @@ const addingOrRemoveFavorites = async (req: Request, res: Response) => {
 
         if (target) {
           const objectId = target._id;
+
           if (action === "add") {
             if (!customerFavorites.some((favId) => favId.equals(objectId))) {
               customerFavorites.push(objectId);
@@ -319,6 +408,11 @@ const addingOrRemoveFavorites = async (req: Request, res: Response) => {
                 $pull: { favorieds: customer._id },
               });
             }
+
+            // ✅ AUTO-GENERATION TEXTE : garder trace de ce qui a été retiré sur cet appel
+            const label = getLabel(type, target);
+            if (label)
+              removedLabels[type] = [...(removedLabels[type] || []), label];
           }
         } else {
           invalidIds.push({ type, id: value });
@@ -366,6 +460,54 @@ const addingOrRemoveFavorites = async (req: Request, res: Response) => {
         invalidIds,
       });
     }
+
+    // =========================
+    // ✅ AUTO-GENERATION TEXTE (ajout uniquement)
+    // - n'écrase pas un descriptif manuel envoyé dans le body
+    // =========================
+    if (!descriptif) {
+      await customer.populate([
+        { path: "themesFavorites", model: "Theme", select: "theme" },
+        { path: "eventsFavorites", model: "Event", select: "title name" },
+        {
+          path: "customersFavorites",
+          model: "Customer",
+          select: "fullName username name",
+        },
+        {
+          path: "establishmentFavorites",
+          model: "Establishment",
+          select: "name title",
+        },
+      ]);
+
+      const themesNow = ((customer as any).themesFavorites ?? [])
+        .map((t: any) => getLabel("Theme", t))
+        .filter(Boolean);
+
+      const eventsNow = ((customer as any).eventsFavorites ?? [])
+        .map((e: any) => getLabel("Event", e))
+        .filter(Boolean);
+
+      const customersNow = ((customer as any).customersFavorites ?? [])
+        .map((c: any) => getLabel("Customer", c))
+        .filter(Boolean);
+
+      const establishmentsNow = ((customer as any).establishmentFavorites ?? [])
+        .map((es: any) => getLabel("Establishment", es))
+        .filter(Boolean);
+
+      customer.descriptif = buildAutoDescriptif({
+        themes: themesNow,
+        events: eventsNow,
+        customers: customersNow,
+        establishments: establishmentsNow,
+        removed: removedLabels,
+        maxList: 6,
+        maxRemoved: 3,
+      });
+    }
+    // =========================
 
     await customer.save();
     return res.status(200).json({ message: "Favorites updated", customer });
