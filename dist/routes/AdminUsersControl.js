@@ -12,7 +12,7 @@ router.patch("/users/:userId/ban", AdminIsAuthenticated_1.default, AdminUsersCon
 router.patch("/users/:userId/unban", AdminIsAuthenticated_1.default, AdminUsersControl_1.userUnban);
 router.patch("/users/:userId/activate", AdminIsAuthenticated_1.default, AdminUsersControl_1.userActivate);
 router.patch("/users/:userId/disable", AdminIsAuthenticated_1.default, AdminUsersControl_1.userDisable);
-router.get("/admin/stats/new-customers-per-day", AdminIsAuthenticated_1.default, AdminUsersControl_1.newCustomersPerDay);
+router.get("/users/stats/new-customers-per-day", AdminIsAuthenticated_1.default, AdminUsersControl_1.newCustomersPerDay);
 router.patch("/users/:userId/premium", AdminIsAuthenticated_1.default, AdminUsersControl_1.userSetPremium);
 router.delete("/users/:userId", AdminIsAuthenticated_1.default, AdminUsersControl_1.userDelete);
 exports.default = router;

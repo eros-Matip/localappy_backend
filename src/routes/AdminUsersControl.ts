@@ -21,7 +21,7 @@ router.patch("/users/:userId/unban", AdminIsAuthenticated, userUnban);
 router.patch("/users/:userId/activate", AdminIsAuthenticated, userActivate);
 router.patch("/users/:userId/disable", AdminIsAuthenticated, userDisable);
 router.get(
-  "/admin/stats/new-customers-per-day",
+  "/users/stats/new-customers-per-day",
   AdminIsAuthenticated,
   newCustomersPerDay,
 );
