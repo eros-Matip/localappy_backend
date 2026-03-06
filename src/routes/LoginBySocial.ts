@@ -5,6 +5,7 @@ import jwt from "jsonwebtoken";
 import jwksClient from "jwks-rsa";
 const uid2 = require("uid2");
 import Retour from "../library/Retour";
+import { trackLoginStat } from "../library/TrackloginStat";
 
 const router = express.Router();
 
@@ -185,7 +186,9 @@ router.post("/socialLogin", async (req: Request, res: Response) => {
       if (expoPushToken) customer.expoPushToken = expoPushToken;
       await customer.save();
     }
-
+    await trackLoginStat({
+      role: "customer",
+    });
     Retour.info(
       `${customer.account.firstname} ${customer.account.name} logged by Social login`,
     );

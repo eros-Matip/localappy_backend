@@ -9,6 +9,7 @@ import Customer from "../models/Customer";
 import Owner from "../models/Owner";
 import Admin from "../models/Admin";
 import { logAudit } from "../library/LogAudit";
+import { trackLoginStat } from "../library/TrackloginStat";
 
 const router = express.Router();
 
@@ -184,6 +185,10 @@ router.post(
         userFinded.passwordLosted.code = null;
 
         await userFinded.save();
+
+        await trackLoginStat({
+          role: role as "customer" | "owner" | "admin",
+        });
 
         Retour.log("PASSWORD_RESET_SUCCESS", {
           ...userContext,
