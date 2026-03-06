@@ -1,12 +1,13 @@
 import { Request, Response, NextFunction } from "express";
 import Customer from "../models/Customer";
 import Retour from "../library/Retour";
+import { trackLoginStat } from "../library/TrackloginStat";
 const uid2 = require("uid2");
 
 const CustomerIsAuthenticated = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   const isLoginRoute = req.originalUrl.split("/").includes("login");
 
@@ -50,8 +51,11 @@ const CustomerIsAuthenticated = async (
 
         // Sauvegarder le nouveau token si modifié
         await CustomerFinded.save();
+        await trackLoginStat({
+          role: "customer",
+        });
         Retour.info(
-          `Customer ${CustomerFinded.account.firstname} ${CustomerFinded.account.name} logged by token `
+          `Customer ${CustomerFinded.account.firstname} ${CustomerFinded.account.name} logged by token `,
         );
         return res.status(200).json({
           message: "Token valid",
