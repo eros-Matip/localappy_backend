@@ -17,6 +17,7 @@ import mongoose, { Types } from "mongoose";
 import { sendExpoPushNotifications } from "../utils/push";
 import Owner from "../models/Owner";
 import { MailerSend, EmailParams, Sender, Recipient } from "mailersend";
+import { trackCityConsultationStat } from "../library/TrackCityConsultationStat";
 const CryptoJS = require("crypto-js");
 
 // Utiliser promisify pour rendre les fonctions fs asynchrones
@@ -1549,6 +1550,7 @@ const getEventsByPosition = async (req: Request, res: Response) => {
         isDraft: false,
       }),
     ]);
+    await trackCityConsultationStat({ city });
     Retour.info(`all event from ${city} as been read`);
     return res.status(200).json({
       metadata: {
