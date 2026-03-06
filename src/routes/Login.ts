@@ -237,7 +237,9 @@ router.post(
           ip: getClientIp(req),
           details: { requestId },
         });
-
+        await trackLoginStat({
+          role: role as "customer" | "owner" | "admin",
+        });
         return res.status(200).json({
           message: "Logged in with email and password",
           user: userFinded,
