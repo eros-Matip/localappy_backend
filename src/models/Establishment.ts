@@ -57,23 +57,25 @@ const EstablishmentSchema = new Schema<IEstablishment>(
     },
     logo: { type: String },
     photos: { type: [String] },
-
     openingHours: [
       {
         dayOfWeek: { type: String },
-        opens: { type: String },
-        closes: { type: String },
+        slots: [
+          {
+            opens: { type: String },
+            closes: { type: String },
+            _id: false,
+          },
+        ],
         _id: false,
       },
     ],
-
     acceptedPayments: [
       {
         type: { type: String },
         label: { type: String },
       },
     ],
-
     legalInfo: {
       siret: { type: String },
       insuranceCertificate: { type: String },
@@ -88,7 +90,6 @@ const EstablishmentSchema = new Schema<IEstablishment>(
         ),
         default: undefined,
       },
-
       activityCodeNAF: { type: String },
       rna: { type: String },
 
@@ -103,7 +104,6 @@ const EstablishmentSchema = new Schema<IEstablishment>(
         ),
         default: undefined,
       },
-
       rib: {
         type: new Schema(
           {
@@ -114,7 +114,6 @@ const EstablishmentSchema = new Schema<IEstablishment>(
         ),
         default: undefined,
       },
-
       _id: false,
     },
     ads: [{ type: Schema.Types.ObjectId, ref: "Ads" }],

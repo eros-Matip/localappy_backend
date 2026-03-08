@@ -13,10 +13,14 @@ export interface IStaffPublic {
   isActive?: boolean;
 }
 
-interface IOpeningHours {
-  dayOfWeek: string;
+interface IOpeningSlot {
   opens: string;
   closes: string;
+}
+
+interface IOpeningHours {
+  dayOfWeek: string;
+  slots: IOpeningSlot[];
 }
 
 interface IAddress {

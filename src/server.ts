@@ -47,6 +47,11 @@ import Registration from "./models/Registration";
 import Bill from "./models/Bill";
 import Retour from "./library/Retour";
 import Customer from "./models/Customer";
+import OpenAI from "openai";
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 const isProd = process.env.NODE_ENV === "production";
 const isTest = process.env.NODE_ENV === "test";
@@ -249,7 +254,7 @@ const configureApp = () => {
   /** Healthcheck */
   router.all(
     "/test",
-
+    AdminIsAuthenticated,
     async (req: Request, res: Response) => {
       if (req.body.test === "registrations") {
         try {
@@ -528,6 +533,185 @@ const configureApp = () => {
           });
         } catch (error) {
           Retour.info("error catched");
+          return res.status(500).json({ message: "error catched", error });
+        }
+      } else if (req.body.test === "update descriptif event and translate it") {
+        try {
+          if (!req.body.eventId) {
+            Retour.warn("eventId is required");
+            return res.status(404).json({ message: "eventId is required" });
+          }
+
+          const {
+            eventId,
+            baseLang = "fr",
+            targetLangs = ["en", "es", "fr", "de", "it", "nl", "eu"],
+          } = req.body as {
+            eventId: string;
+            baseLang?: string;
+            targetLangs?: string[];
+          };
+
+          const eventFinded = await Event.findById(eventId);
+
+          if (!eventFinded) {
+            Retour.warn("event not found");
+            return res.status(404).json({ message: "event not found" });
+          }
+
+          if (!eventFinded.description) {
+            Retour.warn("event description is required");
+            return res.status(400).json({
+              message: "event description is required",
+            });
+          }
+
+          if (!process.env.OPENAI_API_KEY) {
+            Retour.error("OPENAI_API_KEY missing");
+            return res.status(500).json({
+              message: "OPENAI_API_KEY missing in env",
+            });
+          }
+
+          const uniqueLangs: string[] = Array.from(
+            new Set(targetLangs || []),
+          ).filter(Boolean);
+
+          if (uniqueLangs.length === 0) {
+            Retour.warn("targetLangs is required");
+            return res.status(400).json({
+              message: "targetLangs is required",
+            });
+          }
+
+          const prompt = `
+Tu es un traducteur professionnel.
+
+TEXTE SOURCE :
+- Langue source : ${baseLang}
+- Description : ${eventFinded.description}
+
+TÂCHE :
+Traduire cette description dans chacune des langues suivantes :
+${JSON.stringify(uniqueLangs)}
+
+CONTRAINTES :
+- Respecter le sens et le ton.
+- Adapter légèrement le style pour que ce soit naturel dans chaque langue cible.
+- Ne PAS résumer, ne PAS rallonger inutilement.
+
+FORMAT DE RÉPONSE :
+Tu DOIS renvoyer STRICTEMENT un JSON valide, sans texte avant ou après, de la forme :
+
+{
+  "en": { "description": "..." },
+  "es": { "description": "..." }
+}
+
+- Chaque clé DOIT correspondre aux codes donnés dans ${JSON.stringify(uniqueLangs)}.
+- Pas d'autres clés, pas de commentaires.
+    `.trim();
+
+          const response = await openai.responses.create({
+            model: "gpt-4.1-mini",
+            input: prompt,
+          });
+
+          const raw = (response as any).output_text?.trim() || "";
+
+          let parsed: Record<string, { description?: string }> = {};
+
+          try {
+            let jsonText = raw;
+            const firstBrace = raw.indexOf("{");
+            const lastBrace = raw.lastIndexOf("}");
+
+            if (
+              firstBrace !== -1 &&
+              lastBrace !== -1 &&
+              lastBrace > firstBrace
+            ) {
+              jsonText = raw.slice(firstBrace, lastBrace + 1);
+            }
+
+            parsed = JSON.parse(jsonText);
+          } catch (e) {
+            console.error("Réponse de traduction non JSON :", raw);
+
+            const existingTranslations = Array.isArray(eventFinded.translations)
+              ? eventFinded.translations
+              : [];
+
+            const fallbackTranslations = uniqueLangs.map((code: string) => {
+              const existingTranslation = existingTranslations.find(
+                (translation: any) => translation.lang === code,
+              );
+
+              return {
+                lang: code,
+                title: existingTranslation?.title,
+                shortDescription: existingTranslation?.shortDescription,
+                description: eventFinded.description || "",
+              };
+            });
+
+            const mergedTranslations = [
+              ...existingTranslations.filter(
+                (translation: any) => !uniqueLangs.includes(translation.lang),
+              ),
+              ...fallbackTranslations,
+            ];
+
+            eventFinded.translations = mergedTranslations;
+
+            await eventFinded.save();
+
+            Retour.info("event translated with fallback");
+            return res.status(200).json({
+              message: "event translated with fallback",
+              event: eventFinded,
+              warning:
+                "Impossible de parser le JSON de traduction, fallback sur la description source.",
+            });
+          }
+
+          const existingTranslations = Array.isArray(eventFinded.translations)
+            ? eventFinded.translations
+            : [];
+
+          const newTranslations = uniqueLangs.map((code: string) => {
+            const existingTranslation = existingTranslations.find(
+              (translation: any) => translation.lang === code,
+            );
+
+            return {
+              lang: code,
+              title: existingTranslation?.title,
+              shortDescription: existingTranslation?.shortDescription,
+              description:
+                parsed[code]?.description ?? eventFinded.description ?? "",
+            };
+          });
+
+          const mergedTranslations = [
+            ...existingTranslations.filter(
+              (translation: any) => !uniqueLangs.includes(translation.lang),
+            ),
+            ...newTranslations,
+          ];
+
+          eventFinded.translations = mergedTranslations;
+
+          await eventFinded.save();
+
+          Retour.info("event description translated");
+          return res.status(200).json({
+            message: "event description translated",
+            event: eventFinded,
+          });
+        } catch (error) {
+          console.log(error);
+          Retour.error("error catched");
           return res.status(500).json({ message: "error catched", error });
         }
       } else {
