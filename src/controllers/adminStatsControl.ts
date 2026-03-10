@@ -243,6 +243,127 @@ export const getQrScanStats = async (req: Request, res: Response) => {
 };
 
 /* =========================================
+   GET /admin/stats/top-scanned-establishments?days=14&limit=10
+========================================= */
+
+export const getTopScannedEstablishments = async (
+  req: Request,
+  res: Response,
+) => {
+  try {
+    const daysRaw = Number(req.query.days || 14);
+    const limitRaw = Number(req.query.limit || 10);
+
+    const days = Number.isFinite(daysRaw)
+      ? Math.min(Math.max(daysRaw, 1), 90)
+      : 14;
+
+    const limit = Number.isFinite(limitRaw)
+      ? Math.min(Math.max(limitRaw, 1), 50)
+      : 10;
+
+    const { start, end } = buildDateRange(days);
+
+    const rows = await QrScan.aggregate([
+      {
+        $match: {
+          scannedAt: { $gte: start, $lte: end },
+          establishment: { $exists: true, $ne: null },
+        },
+      },
+      {
+        $group: {
+          _id: "$establishment",
+          totalScans: { $sum: 1 },
+          lastScanAt: { $max: "$scannedAt" },
+          tableScans: {
+            $sum: {
+              $cond: [{ $eq: ["$source", "table"] }, 1, 0],
+            },
+          },
+          flyerScans: {
+            $sum: {
+              $cond: [{ $eq: ["$source", "flyer"] }, 1, 0],
+            },
+          },
+          stickerScans: {
+            $sum: {
+              $cond: [{ $eq: ["$source", "sticker"] }, 1, 0],
+            },
+          },
+          unknownScans: {
+            $sum: {
+              $cond: [{ $eq: ["$source", "unknown"] }, 1, 0],
+            },
+          },
+        },
+      },
+      {
+        $lookup: {
+          from: "establishments",
+          localField: "_id",
+          foreignField: "_id",
+          as: "establishment",
+        },
+      },
+      {
+        $unwind: {
+          path: "$establishment",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          establishmentId: "$_id",
+          totalScans: 1,
+          lastScanAt: 1,
+          bySource: {
+            table: "$tableScans",
+            flyer: "$flyerScans",
+            sticker: "$stickerScans",
+            unknown: "$unknownScans",
+          },
+          name: {
+            $ifNull: [
+              "$establishment.name",
+              {
+                $ifNull: ["$establishment.title", "Établissement inconnu"],
+              },
+            ],
+          },
+          city: {
+            $ifNull: ["$establishment.city", null],
+          },
+          slug: {
+            $ifNull: ["$establishment.slug", null],
+          },
+        },
+      },
+      {
+        $sort: {
+          totalScans: -1,
+          lastScanAt: -1,
+        },
+      },
+      {
+        $limit: limit,
+      },
+    ]);
+
+    return res.status(200).json({
+      days,
+      limit,
+      data: rows,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      message: "Error fetching top scanned establishments",
+      error: error?.message || error,
+    });
+  }
+};
+/* =========================================
    GET /admin/stats/dashboard?days=14
 ========================================= */
 

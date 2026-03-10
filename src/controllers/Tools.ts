@@ -1446,7 +1446,6 @@ const generateEstablishmentDescriptionFromTypesController = async (
       maxTags = 6,
       maxPhraseItems = 3,
       lang,
-      // ✅ texte fourni par l'entreprise (front) si tu n'as pas encore descriptionRaw en DB
       partialDescription,
     } = req.body ?? {};
 
@@ -1454,12 +1453,16 @@ const generateEstablishmentDescriptionFromTypesController = async (
       return res.status(400).json({ message: "establishmentId invalide." });
     }
 
+    if (!process.env.OPENAI_API_KEY) {
+      return res
+        .status(500)
+        .json({ message: "OPENAI_API_KEY manquant dans le .env" });
+    }
+
     const establishment = await Establishment.findById(establishmentId);
     if (!establishment) {
       return res.status(404).json({ message: "Établissement introuvable." });
     }
-
-    // (optionnel) sécurité : seul owner peut générer
 
     const requesterOwnerId =
       typeof requesterId === "object" && requesterId?._id
@@ -1479,6 +1482,8 @@ const generateEstablishmentDescriptionFromTypesController = async (
     if (!isOwner) {
       return res.status(403).json({ message: "Accès refusé." });
     }
+
+    type Lang = "fr" | "en" | "de" | "es" | "it" | "eu";
 
     const isSupportedLang = (x: any): x is Lang =>
       typeof x === "string" && ["fr", "en", "de", "es", "it", "eu"].includes(x);
@@ -1500,9 +1505,22 @@ const generateEstablishmentDescriptionFromTypesController = async (
 
     const name =
       String((establishment as any).name ?? "").trim() || "Cet établissement";
-    const city = (establishment as any).address?.city as string | undefined;
 
-    // ✅ tags (utile si tu veux les afficher)
+    const city = String((establishment as any).address?.city ?? "").trim();
+    const street = String((establishment as any).address?.street ?? "").trim();
+    const zipCode = String(
+      (establishment as any).address?.zipCode ?? "",
+    ).trim();
+    const country = String(
+      (establishment as any).address?.country ?? "",
+    ).trim();
+
+    const addressParts = [street, zipCode, city, country].filter(Boolean);
+    const fullAddress = addressParts.length ? addressParts.join(", ") : "";
+
+    const phone = String((establishment as any).phone ?? "").trim();
+    const website = String((establishment as any).website ?? "").trim();
+
     const { tags } = buildEstablishmentDescriptionUnique(
       String(establishment._id),
       types,
@@ -1512,7 +1530,8 @@ const generateEstablishmentDescriptionFromTypesController = async (
       clampInt(maxPhraseItems, 1, 4),
     );
 
-    // ✅ description brute : priorité DB -> body.partialDescription
+    const tagsArray = Array.isArray(tags) ? tags : [String(tags)];
+
     const rawFromDb = String(
       (establishment as any).descriptionRaw ?? "",
     ).trim();
@@ -1525,26 +1544,97 @@ const generateEstablishmentDescriptionFromTypesController = async (
 
     const shouldWrite = force || !alreadyHasFinal;
 
-    // ✅ si l'entreprise n'a rien écrit, on génère quand même mais en mode "safe"
     const safeRaw =
       raw.length >= 20
         ? raw
         : `Bienvenue chez ${name}${city ? `, à ${city}` : ""}.`;
 
-    const description = buildEstablishmentLongDescriptionFromRaw(
-      String(establishment._id),
-      name,
-      city,
-      safeRaw,
-      types,
-      finalLang,
-      clampInt(maxPhraseItems, 1, 4),
-    );
+    const langLabels: Record<Lang, string> = {
+      fr: "français",
+      en: "anglais",
+      de: "allemand",
+      es: "espagnol",
+      it: "italien",
+      eu: "basque",
+    };
+
+    const prompt = `
+Tu es le rédacteur officiel de Localappy, l'application dédiée aux commerces et établissements de proximité.
+
+OBJECTIF :
+Générer ou enrichir la description d'un établissement dans la langue : ${langLabels[finalLang]} (${finalLang}).
+Si une description existe déjà, tu dois la conserver dans son intention et l'améliorer.
+Si elle est absente ou trop courte, tu rédiges une description complète à partir des données disponibles.
+
+CONTRAINTES DE STYLE :
+- 6 à 10 phrases.
+- Style : chaleureux, clair, concret, naturel.
+- Ton : positif, professionnel, accessible au grand public.
+- Le texte doit être fluide et agréable à lire.
+- Terminer par une phrase douce et accueillante.
+- Écrire en 2 à 4 paragraphes.
+- Chaque paragraphe doit contenir 2 à 3 phrases.
+- Sauts de ligne REQUIS entre les paragraphes.
+
+RÈGLES IMPORTANTES :
+- N'invente jamais d'informations non fournies.
+- N'invente pas de produits, services, spécialités, horaires, équipements, labels ou promesses commerciales.
+- Si une information n'est pas connue, reste général et prudent.
+- Tu peux valoriser l'activité et l'ambiance de manière sobre à partir des catégories fournies.
+- N'utilise pas de liste à puces.
+- Ne mets pas de guillemets autour de la réponse.
+- Renvoie uniquement la description finale, sans explication.
+
+DONNÉES DE L'ÉTABLISSEMENT :
+- Nom : "${name}"
+- Ville : "${city || "non précisée"}"
+- Adresse : "${fullAddress || "non précisée"}"
+- Téléphone : "${phone || "non précisé"}"
+- Site web : "${website || "non précisé"}"
+- Types / catégories : ${types.length ? types.join(", ") : "non précisés"}
+- Tags éditoriaux : ${tags.length ? tagsArray.join(", ") : "non précisés"}
+
+DESCRIPTION EXISTANTE À ENRICHIR :
+${safeRaw}
+
+INSTRUCTION FINALE :
+Renvoie uniquement la description finale complète dans la bonne langue.
+`.trim();
+
+    let description = "";
+
+    try {
+      const response = await openai.responses.create({
+        model: "gpt-4.1-mini",
+        input: prompt,
+      });
+
+      description = (response as any).output_text?.trim() || "";
+    } catch (openaiError) {
+      console.error("Erreur OpenAI description établissement :", openaiError);
+    }
+
+    if (!description) {
+      description = buildEstablishmentLongDescriptionFromRaw(
+        String(establishment._id),
+        name,
+        city || undefined,
+        safeRaw,
+        types,
+        finalLang,
+        clampInt(maxPhraseItems, 1, 4),
+      );
+    }
+
+    if (!description) {
+      return res.status(500).json({
+        message: "Impossible de générer une description pour le moment.",
+      });
+    }
 
     if (save && shouldWrite) {
       (establishment as any).description = description;
 
-      // optionnel : stocker le raw si tu as le champ en DB
       if (rawFromBody && !(establishment as any).descriptionRaw) {
         (establishment as any).descriptionRaw = rawFromBody;
       }
@@ -1564,6 +1654,11 @@ const generateEstablishmentDescriptionFromTypesController = async (
       saved: Boolean(save && shouldWrite),
       typesCount: types.length,
       usedRaw: Boolean(raw),
+      source: description
+        ? raw.length || types.length
+          ? "ai_or_fallback"
+          : "fallback"
+        : "fallback",
     });
   } catch (error) {
     console.error("Erreur génération description établissement :", error);

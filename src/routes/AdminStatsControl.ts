@@ -7,6 +7,7 @@ import {
   getTopCities,
   getQrScanStats,
   getDashboardStats,
+  getTopScannedEstablishments,
 } from "../controllers/adminStatsControl";
 import AdminIsAuthenticated from "../middlewares/AdminIsAuthenticated";
 
@@ -30,6 +31,11 @@ router.get(
 );
 router.get("/admin/stats/top-cities", AdminIsAuthenticated, getTopCities);
 router.get("/admin/stats/qr-scans", AdminIsAuthenticated, getQrScanStats);
+router.get(
+  "/admin/stats/top-scanned-establishments",
+  AdminIsAuthenticated,
+  getTopScannedEstablishments,
+);
 router.get("/admin/stats/dashboard", AdminIsAuthenticated, getDashboardStats);
 
 export default router;
