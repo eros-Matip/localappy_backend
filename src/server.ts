@@ -36,6 +36,7 @@ import OrganisateurRoute from "./routes/Organisateur";
 import AdminCompaniesControlRoutes from "./routes/AdminCompaniesControl";
 import AdminUsersControlRoutes from "./routes/AdminUsersControl";
 import AdminOwnersControlRoutes from "./routes/AdminOwnerControl";
+import AdminStatsControlRoutes from "./routes/AdminStatsControl";
 // Middlewares
 import AdminIsAuthenticated from "./middlewares/IsAuthenticated";
 import CustomerIsAuthenticated from "./middlewares/IsAuthenticated";
@@ -237,6 +238,8 @@ const configureApp = () => {
   router.use("/companiesControl/", AdminCompaniesControlRoutes);
   router.use("/usersControl/", AdminUsersControlRoutes);
   router.use("/ownersControl/", AdminOwnersControlRoutes);
+  router.use("/statsControl/", AdminStatsControlRoutes);
+
   router.use(LoginRoute);
   router.use(ToolsRoutes);
   router.use(PaymentRoute);
