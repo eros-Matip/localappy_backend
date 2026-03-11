@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import Establishment from "../models/Establishment";
 import Owner from "../models/Owner";
 import Event from "../models/Event"; // utile si tu veux bloquer suppression
+import QrScan from "../models/QrScan";
 
 type SortDir = 1 | -1;
 
@@ -445,6 +446,306 @@ export const disableCompany = async (req: Request, res: Response) => {
   }
 };
 
+const parseDateRange = (req: Request) => {
+  const days = Math.max(1, Math.min(365, Number(req.query.days || 30)));
+  const timezone = String(req.query.timezone || "Europe/Paris");
+
+  let from = req.query.from ? new Date(String(req.query.from)) : null;
+  let to = req.query.to ? new Date(String(req.query.to)) : null;
+
+  if (
+    !from ||
+    Number.isNaN(from.getTime()) ||
+    !to ||
+    Number.isNaN(to.getTime())
+  ) {
+    to = new Date();
+    from = new Date();
+    from.setDate(from.getDate() - days);
+  }
+
+  to.setHours(23, 59, 59, 999);
+
+  return { from, to, days, timezone };
+};
+
+const fillMissingDays = (
+  from: Date,
+  to: Date,
+  rows: Array<{ date: string; qrScans?: number; eventViews?: number }>,
+) => {
+  const map = new Map(
+    rows.map((r) => [
+      r.date,
+      {
+        date: r.date,
+        qrScans: Number(r.qrScans || 0),
+        eventViews: Number(r.eventViews || 0),
+      },
+    ]),
+  );
+
+  const cursor = new Date(from);
+  const end = new Date(to);
+
+  while (cursor <= end) {
+    const key = cursor.toISOString().slice(0, 10);
+    if (!map.has(key)) {
+      map.set(key, { date: key, qrScans: 0, eventViews: 0 });
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
+};
+/**
+ * GET /companiesControl/companies/:id/stats?days=30
+ * GET /companiesControl/companies/:id/stats?from=2026-03-01&to=2026-03-11
+ */
+export const getCompanyStatsById = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (!isValidId(id)) {
+      return res.status(400).json({ error: "Invalid id" });
+    }
+
+    const { from, to, timezone } = parseDateRange(req);
+
+    const company = await Establishment.findById(id)
+      .select("_id name legalForm events createdAt")
+      .lean();
+
+    if (!company) {
+      return res.status(404).json({ error: "Not found" });
+    }
+
+    const establishmentObjectId = new mongoose.Types.ObjectId(id);
+
+    // =========================
+    // QR SCANS PAR JOUR
+    // =========================
+    const qrByDay = await QrScan.aggregate([
+      {
+        $match: {
+          establishment: establishmentObjectId,
+          scannedAt: { $gte: from, $lte: to },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: {
+              format: "%Y-%m-%d",
+              date: "$scannedAt",
+              timezone,
+            },
+          },
+          qrScans: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+      {
+        $project: {
+          _id: 0,
+          date: "$_id",
+          qrScans: 1,
+        },
+      },
+    ]);
+
+    // =========================
+    // VUES EVENTS PAR JOUR
+    // Hypothèse :
+    // - les vues sont déjà stockées dans Event.clics
+    // - chaque clic a au moins createdAt (ou date)
+    // - et un source/type permettant d’identifier une vue
+    //
+    // ⚠️ Si chez toi le champ date s’appelle autrement,
+    // remplace "clics.createdAt" par le bon chemin.
+    // =========================
+    const eventViewsByDay = await Event.aggregate([
+      {
+        $match: {
+          _id: {
+            $in: Array.isArray((company as any).events)
+              ? (company as any).events
+              : [],
+          },
+        },
+      },
+      { $unwind: "$clics" },
+      {
+        $match: {
+          $and: [
+            {
+              $or: [
+                { "clics.source": "event-view" },
+                { "clics.source": "view" },
+                { "clics.source": "consultation" },
+                { "clics.type": "view" },
+              ],
+            },
+            {
+              $or: [
+                { "clics.createdAt": { $gte: from, $lte: to } },
+                { "clics.date": { $gte: from, $lte: to } },
+              ],
+            },
+          ],
+        },
+      },
+      {
+        $addFields: {
+          clicDate: {
+            $ifNull: ["$clics.createdAt", "$clics.date"],
+          },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: {
+              format: "%Y-%m-%d",
+              date: "$clicDate",
+              timezone,
+            },
+          },
+          eventViews: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+      {
+        $project: {
+          _id: 0,
+          date: "$_id",
+          eventViews: 1,
+        },
+      },
+    ]);
+
+    // =========================
+    // VUES PAR EVENT
+    // =========================
+    const viewsByEvent = await Event.aggregate([
+      {
+        $match: {
+          _id: {
+            $in: Array.isArray((company as any).events)
+              ? (company as any).events
+              : [],
+          },
+        },
+      },
+      {
+        $project: {
+          _id: 1,
+          title: 1,
+          startingDate: 1,
+          clics: 1,
+        },
+      },
+      { $unwind: { path: "$clics", preserveNullAndEmptyArrays: true } },
+      {
+        $match: {
+          $and: [
+            {
+              $or: [
+                { "clics.source": "event-view" },
+                { "clics.source": "view" },
+                { "clics.source": "consultation" },
+                { "clics.type": "view" },
+              ],
+            },
+            {
+              $or: [
+                { "clics.createdAt": { $gte: from, $lte: to } },
+                { "clics.date": { $gte: from, $lte: to } },
+              ],
+            },
+          ],
+        },
+      },
+      {
+        $group: {
+          _id: "$_id",
+          title: { $first: "$title" },
+          startingDate: { $first: "$startingDate" },
+          views: { $sum: 1 },
+        },
+      },
+      { $sort: { views: -1, startingDate: 1 } },
+      {
+        $project: {
+          _id: 0,
+          eventId: "$_id",
+          title: 1,
+          startingDate: 1,
+          views: 1,
+        },
+      },
+    ]);
+
+    // =========================
+    // MERGE QR + EVENT VIEWS
+    // =========================
+    const mergedMap = new Map<
+      string,
+      { date: string; qrScans: number; eventViews: number }
+    >();
+
+    for (const row of qrByDay) {
+      mergedMap.set(row.date, {
+        date: row.date,
+        qrScans: Number(row.qrScans || 0),
+        eventViews: 0,
+      });
+    }
+
+    for (const row of eventViewsByDay) {
+      const existing = mergedMap.get(row.date);
+      if (existing) {
+        existing.eventViews = Number(row.eventViews || 0);
+      } else {
+        mergedMap.set(row.date, {
+          date: row.date,
+          qrScans: 0,
+          eventViews: Number(row.eventViews || 0),
+        });
+      }
+    }
+
+    const byDay = fillMissingDays(from, to, Array.from(mergedMap.values()));
+
+    const totals = {
+      qrScans: byDay.reduce((sum, r) => sum + Number(r.qrScans || 0), 0),
+      eventViews: byDay.reduce((sum, r) => sum + Number(r.eventViews || 0), 0),
+      eventsCount: Array.isArray((company as any).events)
+        ? (company as any).events.length
+        : 0,
+    };
+
+    return res.status(200).json({
+      company: {
+        _id: company._id,
+        name: (company as any).name,
+        legalForm: (company as any).legalForm,
+      },
+      range: {
+        from,
+        to,
+        timezone,
+      },
+      totals,
+      byDay,
+      byEvent: viewsByEvent,
+    });
+  } catch (e: any) {
+    return res.status(500).json({
+      error: "Failed to load company stats",
+      details: e?.message || e,
+    });
+  }
+};
 /**
  * DELETE /companiesControl/companies/:id
  * Soft delete + blocage si events liés (optionnel)

@@ -7,6 +7,7 @@ import {
   disableCompany,
   deleteCompany,
   getCompanyById,
+  getCompanyStatsById,
 } from "../controllers/AdminCompaniesControl";
 import AdminIsAuthenticated from "../middlewares/AdminIsAuthenticated";
 
@@ -19,6 +20,7 @@ router.get("/companies/:id", AdminIsAuthenticated, getCompanyById);
 router.patch("/companies/:id/ban", AdminIsAuthenticated, banCompany);
 router.patch("/companies/:id/unban", AdminIsAuthenticated, unbanCompany);
 router.patch("/companies/:id/activate", AdminIsAuthenticated, activateCompany);
+router.get("/companies/:id/stats", AdminIsAuthenticated, getCompanyStatsById);
 router.patch("/companies/:id/disable", AdminIsAuthenticated, disableCompany);
 router.delete("/companies/:id", AdminIsAuthenticated, deleteCompany);
 
