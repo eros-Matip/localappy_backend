@@ -521,6 +521,10 @@ export const getCompanyStatsById = async (req: Request, res: Response) => {
 
     const establishmentObjectId = new mongoose.Types.ObjectId(id);
 
+    const eventIds = Array.isArray((company as any).events)
+      ? (company as any).events
+      : [];
+
     // =========================
     // QR SCANS PAR JOUR
     // =========================
@@ -554,51 +558,24 @@ export const getCompanyStatsById = async (req: Request, res: Response) => {
     ]);
 
     // =========================
-    // VUES EVENTS PAR JOUR
-    // Hypothèse :
-    // - les vues sont déjà stockées dans Event.clics
-    // - chaque clic a au moins createdAt (ou date)
-    // - et un source/type permettant d’identifier une vue
-    //
-    // ⚠️ Si chez toi le champ date s’appelle autrement,
-    // remplace "clics.createdAt" par le bon chemin.
+    // CLICS / VUES EVENTS PAR JOUR
+    // Ici on lit Event.clics[].date
     // =========================
     const eventViewsByDay = await Event.aggregate([
       {
         $match: {
-          _id: {
-            $in: Array.isArray((company as any).events)
-              ? (company as any).events
-              : [],
-          },
+          _id: { $in: eventIds },
         },
       },
       { $unwind: "$clics" },
       {
         $match: {
-          $and: [
-            {
-              $or: [
-                { "clics.source": "event-view" },
-                { "clics.source": "view" },
-                { "clics.source": "consultation" },
-                { "clics.type": "view" },
-              ],
-            },
-            {
-              $or: [
-                { "clics.createdAt": { $gte: from, $lte: to } },
-                { "clics.date": { $gte: from, $lte: to } },
-              ],
-            },
-          ],
+          "clics.date": { $gte: from, $lte: to },
         },
       },
       {
         $addFields: {
-          clicDate: {
-            $ifNull: ["$clics.createdAt", "$clics.date"],
-          },
+          clicDate: "$clics.date",
         },
       },
       {
@@ -624,16 +601,12 @@ export const getCompanyStatsById = async (req: Request, res: Response) => {
     ]);
 
     // =========================
-    // VUES PAR EVENT
+    // CLICS / VUES PAR EVENT
     // =========================
     const viewsByEvent = await Event.aggregate([
       {
         $match: {
-          _id: {
-            $in: Array.isArray((company as any).events)
-              ? (company as any).events
-              : [],
-          },
+          _id: { $in: eventIds },
         },
       },
       {
@@ -647,22 +620,7 @@ export const getCompanyStatsById = async (req: Request, res: Response) => {
       { $unwind: { path: "$clics", preserveNullAndEmptyArrays: true } },
       {
         $match: {
-          $and: [
-            {
-              $or: [
-                { "clics.source": "event-view" },
-                { "clics.source": "view" },
-                { "clics.source": "consultation" },
-                { "clics.type": "view" },
-              ],
-            },
-            {
-              $or: [
-                { "clics.createdAt": { $gte: from, $lte: to } },
-                { "clics.date": { $gte: from, $lte: to } },
-              ],
-            },
-          ],
+          "clics.date": { $gte: from, $lte: to },
         },
       },
       {
@@ -719,9 +677,7 @@ export const getCompanyStatsById = async (req: Request, res: Response) => {
     const totals = {
       qrScans: byDay.reduce((sum, r) => sum + Number(r.qrScans || 0), 0),
       eventViews: byDay.reduce((sum, r) => sum + Number(r.eventViews || 0), 0),
-      eventsCount: Array.isArray((company as any).events)
-        ? (company as any).events.length
-        : 0,
+      eventsCount: eventIds.length,
     };
 
     return res.status(200).json({
