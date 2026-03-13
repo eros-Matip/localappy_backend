@@ -66,4 +66,5 @@ export default interface IEvent extends Document {
 
   color: string;
   isDraft: boolean;
+  deletedAt: Date;
 }

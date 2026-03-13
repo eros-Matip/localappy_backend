@@ -18,6 +18,7 @@ const normalizeNAF = (code: string) => (code || "").replace(".", "").trim();
 
 const getLibelleByCodeNAF = (codeNAF: string): string | null => {
   const code = normalizeNAF(codeNAF);
+
   const nafEntry = libelleCodeNaf?.NAF?.find((entry: any) => {
     const entryCode = normalizeNAF(entry?.Code ?? entry?.code ?? "");
     return entryCode === code;
@@ -43,12 +44,20 @@ const ASSOCIATIONS_64_PATH = path.resolve(
 );
 
 let ASSOCIATIONS_64: any[] = [];
+
 try {
   if (fs.existsSync(ASSOCIATIONS_64_PATH)) {
     ASSOCIATIONS_64 = JSON.parse(
       fs.readFileSync(ASSOCIATIONS_64_PATH, "utf-8"),
     );
+
     console.log(`✅ Associations 64 chargées: ${ASSOCIATIONS_64.length}`);
+    if (ASSOCIATIONS_64.length > 0) {
+      console.log(
+        "ℹ️ Exemple de clés du 1er objet association:",
+        Object.keys(ASSOCIATIONS_64[0]),
+      );
+    }
   } else {
     console.warn(
       `⚠️ associations_dpt_64.json introuvable: ${ASSOCIATIONS_64_PATH}`,
@@ -58,13 +67,23 @@ try {
   console.error("❌ Erreur lecture associations_dpt_64.json:", e);
 }
 
+/**
+ * -------------------------------
+ * Helpers de normalisation
+ * -------------------------------
+ */
 const normalizeText = (v: string) =>
   (v ?? "")
     .toString()
     .trim()
     .toUpperCase()
+    .replace(/[’`´]/g, "'")
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/['"]/g, " ")
+    .replace(/[^A-Z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 
 /**
  * Accepte:
@@ -77,7 +96,7 @@ const normalizeText = (v: string) =>
 const normalizeRna = (input: string): string | null => {
   if (!input) return null;
 
-  const cleaned = input
+  const cleaned = String(input)
     .toUpperCase()
     .replace(/\s+/g, "")
     .replace(/[^A-Z0-9]/g, "");
@@ -90,6 +109,82 @@ const normalizeRna = (input: string): string | null => {
 
 const isSiret = (v: string) => /^\d{14}$/.test(String(v ?? "").trim());
 const isDigitsOnly = (v: string) => /^\d+$/.test(String(v ?? "").trim());
+
+/**
+ * -------------------------------
+ * Helpers association
+ * -------------------------------
+ */
+const getAssociationName = (a: any): string => {
+  return String(
+    a?.name ?? a?.title ?? a?.nom ?? a?.titre ?? a?.libelle ?? "",
+  ).trim();
+};
+
+const getAssociationAddress = (a: any): string => {
+  return String(a?.address ?? a?.adresse ?? a?.adress ?? a?.voie ?? "").trim();
+};
+
+const getAssociationZip = (a: any): string => {
+  return String(a?.zip ?? a?.cp ?? a?.codePostal ?? "").trim();
+};
+
+const getAssociationCity = (a: any): string => {
+  return String(a?.city ?? a?.commune ?? a?.ville ?? "").trim();
+};
+
+const getAssociationObject = (a: any): string => {
+  return String(a?.objet ?? a?.object ?? "Association").trim();
+};
+
+const buildAssociationResponse = (association: any) => {
+  const address = getAssociationAddress(association);
+  const zip = getAssociationZip(association);
+  const city = getAssociationCity(association);
+
+  return {
+    society: getAssociationName(association) || null,
+    currentName: null,
+    siret: association?.siret ?? null,
+    rna:
+      normalizeRna(String(association?.rna ?? "")) ?? association?.rna ?? null,
+    adressLabel: `${address} ${zip} ${city}`.trim(),
+    adress: address || null,
+    zip,
+    city,
+    adressComplement: "",
+    administratifStateOpen:
+      association?.position !== undefined && association?.position !== null
+        ? String(association.position).trim().toUpperCase() === "A"
+        : true,
+    headquartersSociety: true,
+    numberOfEmployed: "Unité non employeuse",
+    codeNAF: "",
+    activityLabel: getAssociationObject(association),
+  };
+};
+
+/**
+ * Debug optionnel pour comprendre pourquoi une asso n'est pas retrouvée
+ */
+const debugAssociationSearch = (queryRaw: string, qNorm: string) => {
+  const firstCandidates = ASSOCIATIONS_64.filter((a) => {
+    const name = getAssociationName(a);
+    const n = normalizeText(name);
+    return n.includes(qNorm) || qNorm.includes(n);
+  }).slice(0, 5);
+
+  console.log("🔎 Debug recherche association:", {
+    queryRaw,
+    qNorm,
+    sample: firstCandidates.map((a) => ({
+      rawName: getAssociationName(a),
+      normalizedName: normalizeText(getAssociationName(a)),
+      rna: a?.rna ?? null,
+      siret: a?.siret ?? null,
+    })),
+  });
+};
 
 /**
  * -------------------------------
@@ -109,6 +204,7 @@ router.post(
   async (req: Request, res: Response, _next: NextFunction) => {
     try {
       const queryRaw = String(req.body?.query ?? req.body?.siret ?? "").trim();
+
       if (!queryRaw) {
         return res.status(400).json({ message: "query/siret manquant." });
       }
@@ -135,29 +231,7 @@ router.post(
           });
         }
 
-        const address = String(found.address ?? "").trim();
-        const zip = String(found.zip ?? "").trim();
-        const city = String(found.city ?? "").trim();
-
-        return respondEtab({
-          society: found.name ?? null,
-          currentName: null,
-          siret: found.siret ?? null,
-          rna: found.rna ?? null,
-          adressLabel: `${address} ${zip} ${city}`.trim(),
-          adress: address || null,
-          zip,
-          city,
-          adressComplement: "",
-          administratifStateOpen:
-            found.position !== undefined && found.position !== null
-              ? String(found.position).trim() === "A"
-              : true,
-          headquartersSociety: true,
-          numberOfEmployed: "Unité non employeuse",
-          codeNAF: "",
-          activityLabel: found.objet ?? "Association",
-        });
+        return respondEtab(buildAssociationResponse(found));
       }
 
       /**
@@ -167,6 +241,7 @@ router.post(
        */
       if (isSiret(queryRaw)) {
         const apiKey = String(process.env.API_SIRET_CLIENT_ID ?? "").trim();
+
         if (!apiKey) {
           return res.status(500).json({
             message: "Clé INSEE manquante (API_SIRET_CLIENT_ID).",
@@ -174,6 +249,7 @@ router.post(
         }
 
         let inseeData: any;
+
         try {
           const entrepriseResponse = await axios.get(
             `https://api.insee.fr/api-sirene/3.11/siret/${encodeURIComponent(
@@ -187,6 +263,7 @@ router.post(
               timeout: 15000,
             },
           );
+
           inseeData = entrepriseResponse.data;
         } catch (_err) {
           Retour.error(`SIRET ${queryRaw} not found.`);
@@ -196,6 +273,7 @@ router.post(
         }
 
         const etab = inseeData?.etablissement;
+
         if (!etab) {
           return res
             .status(404)
@@ -235,9 +313,6 @@ router.post(
         const codeNAF = uniteLegale.activitePrincipaleUniteLegale ?? "";
         const libelleNAF = getLibelleByCodeNAF(codeNAF);
 
-        // ✅ IMPORTANT:
-        // Si auto-entreprise / entrepreneur individuel (pas de dénomination),
-        // on met "Prénom NOM" dans le champ "denomination" (donc society reste identique côté front)
         const denomination = (() => {
           const denom = String(
             uniteLegale.denominationUniteLegale ?? "",
@@ -269,7 +344,7 @@ router.post(
         } ${adresse.libelleVoieEtablissement ?? ""}`.trim();
 
         return respondEtab({
-          society: denomination, // <-- ici: dénomination OU "Prénom NOM" si EI/auto-entreprise
+          society: denomination,
           currentName:
             uniteLegale.denominationUsuelle1UniteLegale ??
             periode?.enseigne1Etablissement ??
@@ -292,20 +367,40 @@ router.post(
 
       /**
        * ======================================================
-       * 3) Si chiffres mais pas 14 -> invalide
+       * 3) Si chiffres mais pas 14 -> soit RNA 9 chiffres, soit invalide
        * ======================================================
        */
-      if (isDigitsOnly(queryRaw) && queryRaw.length !== 14) {
-        return res.status(400).json({
-          message: "SIRET invalide : 14 chiffres requis.",
-        });
+      if (isDigitsOnly(queryRaw)) {
+        if (queryRaw.length === 9) {
+          const rnaFromDigits = normalizeRna(queryRaw);
+
+          const found = ASSOCIATIONS_64.find(
+            (a) => normalizeRna(String(a?.rna ?? "")) === rnaFromDigits,
+          );
+
+          if (!found) {
+            return res.status(404).json({
+              message: `Association introuvable pour RNA ${rnaFromDigits}`,
+            });
+          }
+
+          return respondEtab(buildAssociationResponse(found));
+        }
+
+        if (queryRaw.length !== 14) {
+          return res.status(400).json({
+            message:
+              "Identifiant invalide : 9 chiffres pour RNA ou 14 chiffres pour SIRET.",
+          });
+        }
       }
 
       /**
        * ======================================================
-       * 4) Sinon -> association par NOM (insensible casse+accents)
-       *  - si 1 correspondance EXACTE normalisée => { etablissement }
-       *  - sinon 409 + suggestions (le front doit choisir, puis rappeler avec RNA)
+       * 4) Sinon -> association par NOM (insensible casse+accents+ponctuation)
+       *  - si 1 correspondance => { etablissement }
+       *  - si 1 correspondance exacte normalisée => { etablissement }
+       *  - sinon 409 + suggestions
        * ======================================================
        */
       if (qNorm.length < 2) {
@@ -313,48 +408,43 @@ router.post(
       }
 
       const matches = ASSOCIATIONS_64.filter((a) => {
-        const n = normalizeText(String(a?.name ?? ""));
-        return n.includes(qNorm);
+        const rawName = getAssociationName(a);
+        const normalizedName = normalizeText(rawName);
+
+        if (!normalizedName) return false;
+
+        return normalizedName.includes(qNorm) || qNorm.includes(normalizedName);
       });
 
+      if (matches.length === 0) {
+        debugAssociationSearch(queryRaw, qNorm);
+
+        return res.status(404).json({
+          message: `Aucune association trouvée pour "${queryRaw}".`,
+        });
+      }
+
       const exact = matches.find(
-        (a) => normalizeText(String(a?.name ?? "")) === qNorm,
+        (a) => normalizeText(getAssociationName(a)) === qNorm,
       );
 
       if (exact) {
-        const address = String(exact.address ?? "").trim();
-        const zip = String(exact.zip ?? "").trim();
-        const city = String(exact.city ?? "").trim();
+        return respondEtab(buildAssociationResponse(exact));
+      }
 
-        return respondEtab({
-          society: exact.name ?? null,
-          currentName: null,
-          siret: exact.siret ?? null,
-          adressLabel: `${address} ${zip} ${city}`.trim(),
-          adress: address || null,
-          zip,
-          city,
-          adressComplement: "",
-          administratifStateOpen:
-            exact.position !== undefined && exact.position !== null
-              ? String(exact.position).trim() === "A"
-              : true,
-          headquartersSociety: true,
-          numberOfEmployed: "Unité non employeuse",
-          codeNAF: "",
-          activityLabel: exact.objet ?? "Association",
-        });
+      if (matches.length === 1) {
+        return respondEtab(buildAssociationResponse(matches[0]));
       }
 
       return res.status(409).json({
         message: "Plusieurs associations trouvées. Veuillez sélectionner.",
         suggestions: matches.slice(0, 20).map((a) => ({
-          rna: a.rna ?? null,
-          name: a.name ?? null,
-          zip: a.zip ?? null,
-          city: a.city ?? null,
-          address: a.address ?? null,
-          siret: a.siret ?? null,
+          rna: normalizeRna(String(a?.rna ?? "")) ?? a?.rna ?? null,
+          name: getAssociationName(a) || null,
+          zip: getAssociationZip(a) || null,
+          city: getAssociationCity(a) || null,
+          address: getAssociationAddress(a) || null,
+          siret: a?.siret ?? null,
         })),
       });
     } catch (error: any) {

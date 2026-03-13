@@ -4,7 +4,7 @@ import csv from "csv-parser";
 
 const INPUT_CSV = path.resolve(
   process.cwd(),
-  "data/rna_waldec_20250401_dpt_64.csv",
+  "data/rna_waldec_20260306_dpt_64.csv",
 );
 const OUTPUT_JSON = path.resolve(
   process.cwd(),

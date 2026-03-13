@@ -12,7 +12,7 @@ const eventSchema = new Schema<IEvent>(
             return true;
           }
           return themes.every(
-            (theme) => typeof theme === "string" && theme.trim() !== ""
+            (theme) => typeof theme === "string" && theme.trim() !== "",
           );
         },
         message: "Chaque thème doit être une chaîne non vide.",
@@ -119,10 +119,13 @@ const eventSchema = new Schema<IEvent>(
         _id: false,
       },
     ],
-
+    deletedAt: {
+      type: Date,
+      status: null,
+    },
     color: String,
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 eventSchema.index({

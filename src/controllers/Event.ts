@@ -2866,41 +2866,45 @@ const deleteEvent = async (req: Request, res: Response, next: NextFunction) => {
   const owner = req.body.owner;
 
   try {
-    // Trouver l'événement par ID
-    const eventFinded = await Event.findById(eventId);
+    const eventFinded = await Event.findById(eventId).select(
+      "_id organizer registrations deletedAt",
+    );
+
     if (!owner) {
-      return res.status(404).json({ message: "Non authorized to delete" });
+      return res.status(403).json({ message: "Non autorisé à supprimer" });
     }
+
     if (!eventFinded) {
       return res.status(404).json({ message: "Événement non trouvé" });
     }
 
-    // Si l'événement a un établissement associé, le retirer de sa liste d'événements
-    if (eventFinded && eventFinded.organizer.establishment) {
-      const establishment = await Establishment.findOne({
-        events: eventFinded._id,
-      });
-
-      if (establishment) {
-        const filter = establishment.events.filter(
-          (event) =>
-            JSON.stringify(Object(event)._id) !==
-            JSON.stringify(eventFinded._id),
-        );
-        Object(establishment).events = filter;
-        await establishment.save(); // Sauvegarder les modifications
-      }
+    if ((eventFinded as any).deletedAt) {
+      return res.status(409).json({ message: "Événement déjà supprimé" });
     }
 
-    // Supprimer l'événement de la base de données
-    await Event.findByIdAndDelete(eventId);
+    const hasRegistrations =
+      Array.isArray((eventFinded as any).registrations) &&
+      (eventFinded as any).registrations.length > 0;
+
+    if (hasRegistrations) {
+      return res.status(409).json({
+        message: "Impossible de supprimer un événement avec des inscriptions",
+      });
+    }
+
+    await Event.findByIdAndUpdate(eventId, {
+      $set: {
+        deletedAt: new Date(),
+        isDraft: false,
+      },
+    });
 
     return res.status(200).json({
       message: `L'événement ${eventId} a été supprimé avec succès`,
     });
   } catch (error) {
     console.error("Erreur lors de la suppression de l'événement:", error);
-    return res.status(500).json({ error: error });
+    return res.status(500).json({ error });
   }
 };
 
