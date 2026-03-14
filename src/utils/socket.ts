@@ -5,8 +5,10 @@ import { Express } from "express";
 import { Types } from "mongoose";
 
 import Registration from "../models/Registration";
-import Event from "../models/Event";
-import Establishment from "../models/Establishment";
+
+let ioRef: Server | null = null;
+let liveNspRef: ReturnType<Server["of"]> | null = null;
+let ticketsNspRef: ReturnType<Server["of"]> | null = null;
 
 // ✅ Payload : ton QR peut contenir soit une registrationId, soit un eventId
 type TicketPayload =
@@ -69,14 +71,7 @@ function buildTicketData(reg: any) {
   };
 }
 
-/**
- * ✅ Récupère une registration en partant de :
- * - registrationId (direct)
- * - eventId (on cherche la dernière registration payée/confirmée du jour, ou la plus récente)
- *   => si tu veux un autre critère, dis-moi.
- */
 async function findRegistrationFromPayload(payload: TicketPayload) {
-  // 1) registrationId direct
   if ("registrationId" in payload && isObjectId(payload.registrationId)) {
     const reg = await Registration.findById(payload.registrationId)
       .populate({
@@ -100,7 +95,6 @@ async function findRegistrationFromPayload(payload: TicketPayload) {
     return reg;
   }
 
-  // 2) eventId => on tente de trouver une registration liée à cet event
   if ("eventId" in payload && isObjectId(payload.eventId)) {
     const reg = await Registration.findOne({ event: payload.eventId })
       .sort({ createdAt: -1 })
@@ -131,13 +125,7 @@ async function findRegistrationFromPayload(payload: TicketPayload) {
   return null;
 }
 
-/**
- * ✅ Check-in (sans controller externe)
- * - idempotent
- * - option : uniquement si paid/confirmed
- */
 async function checkInRegistration(reg: any, byUserId: string) {
-  // déjà check-in
   if (reg.checkInStatus === "checked-in") {
     return { code: "ALREADY_SCANNED" as const, registration: reg };
   }
@@ -163,24 +151,23 @@ export default function initSocket(app: Express): http.Server {
   });
 
   const nsp = io.of("/tickets");
+  const liveNsp = io.of("/live");
+
+  ioRef = io;
+  ticketsNspRef = nsp;
+  liveNspRef = liveNsp;
 
   nsp.on("connection", (socket: Socket) => {
     console.log("🔌 connected:", socket.id);
 
-    // ✅ rattacher un user à une socket (front -> emit setUser)
     socket.on("setUser", (userData: UserPayload) => {
       (socket as any).user = userData;
       socket.emit("user:set", { ok: true });
       console.log("👤 setUser:", userData);
     });
 
-    // ✅ DEBUG
     socket.on("ping", () => socket.emit("pong", { ok: true }));
 
-    /**
-     * ✅ PREVIEW : tu scannes -> tu veux afficher les infos AVANT de valider
-     * front: socket.emit("registration:preview", { registrationId }) ou { eventId }
-     */
     socket.on("registration:preview", async (payload: TicketPayload) => {
       try {
         const user = (socket as any).user as UserPayload | null;
@@ -222,7 +209,6 @@ export default function initSocket(app: Express): http.Server {
 
         const ticketData = buildTicketData(reg);
 
-        // optionnel : join room auto
         socket.join(roomName(ticketData.registrationId));
 
         socket.emit("registration:previewed", {
@@ -238,10 +224,6 @@ export default function initSocket(app: Express): http.Server {
       }
     });
 
-    /**
-     * ✅ SCAN/VALIDATION : check autorisation + check-in
-     * front: socket.emit("registration:scan", { registrationId }) ou { eventId }
-     */
     socket.on("registration:scan", async (payload: TicketPayload) => {
       try {
         const user = (socket as any).user as UserPayload | null;
@@ -284,7 +266,6 @@ export default function initSocket(app: Express): http.Server {
         const result = await checkInRegistration(reg, user._id);
         const ticketData = buildTicketData(result.registration);
 
-        // room + emit global
         socket.join(roomName(ticketData.registrationId));
         nsp
           .to(roomName(ticketData.registrationId))
@@ -318,5 +299,48 @@ export default function initSocket(app: Express): http.Server {
     });
   });
 
+  liveNsp.on("connection", (socket: Socket) => {
+    console.log("🔴 live connected:", socket.id);
+
+    socket.on("live:joinEvent", (eventId: string) => {
+      if (!eventId) return;
+      socket.join(`event:${eventId}`);
+      socket.emit("live:joined", { eventId });
+      console.log(`Socket ${socket.id} joined live room event:${eventId}`);
+    });
+
+    socket.on("live:leaveEvent", (eventId: string) => {
+      if (!eventId) return;
+      socket.leave(`event:${eventId}`);
+      socket.emit("live:left", { eventId });
+      console.log(`Socket ${socket.id} left live room event:${eventId}`);
+    });
+
+    socket.on("disconnect", () => {
+      console.log("🔴 live disconnected:", socket.id);
+    });
+  });
+
   return server;
 }
+
+export const getIO = () => {
+  if (!ioRef) {
+    throw new Error("Socket.IO not initialized");
+  }
+  return ioRef;
+};
+
+export const getLiveNsp = () => {
+  if (!liveNspRef) {
+    throw new Error("Live namespace not initialized");
+  }
+  return liveNspRef;
+};
+
+export const getTicketsNsp = () => {
+  if (!ticketsNspRef) {
+    throw new Error("Tickets namespace not initialized");
+  }
+  return ticketsNspRef;
+};

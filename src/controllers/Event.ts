@@ -18,6 +18,8 @@ import { sendExpoPushNotifications } from "../utils/push";
 import Owner from "../models/Owner";
 import { MailerSend, EmailParams, Sender, Recipient } from "mailersend";
 import { trackCityConsultationStat } from "../library/TrackCityConsultationStat";
+import EventPresence from "../models/EventPresence";
+import EventLivePhoto from "../models/EventLivePhoto";
 const CryptoJS = require("crypto-js");
 
 // Utiliser promisify pour rendre les fonctions fs asynchrones
@@ -2860,6 +2862,93 @@ const scanATicketForAnEvent = async (req: Request, res: Response) => {
   }
 };
 
+const PRESENCE_TIMEOUT_MINUTES = 20;
+
+const getLiveEvent = async (req: Request, res: Response) => {
+  try {
+    const { eventId } = req.params;
+    const customerId = (req as any).customer?._id || req.body?.admin?._id;
+
+    if (!mongoose.isValidObjectId(eventId)) {
+      return res.status(400).json({ message: "eventId invalide" });
+    }
+
+    const event = await Event.findById(eventId).select(
+      "_id title startingDate endingDate isDraft",
+    );
+
+    if (!event) {
+      return res.status(404).json({ message: "Événement introuvable" });
+    }
+
+    const now = new Date();
+
+    const isLive =
+      !!event.startingDate &&
+      !!event.endingDate &&
+      new Date(event.startingDate) <= now &&
+      new Date(event.endingDate) >= now &&
+      !event.isDraft;
+
+    const activeSince = new Date(
+      Date.now() - PRESENCE_TIMEOUT_MINUTES * 60 * 1000,
+    );
+
+    const participantsCount = await EventPresence.countDocuments({
+      event: event._id,
+      isActive: true,
+      lastSeenAt: { $gte: activeSince },
+    });
+
+    const livePhotosCount = await EventLivePhoto.countDocuments({
+      event: event._id,
+      status: "approved",
+    });
+
+    const recentPhotos = await EventLivePhoto.find({
+      event: event._id,
+      status: "approved",
+    })
+      .populate({
+        path: "customer",
+        model: "Customer",
+        select: "account.firstname account.lastname",
+      })
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .lean();
+
+    let userIsPresent = false;
+
+    if (customerId) {
+      const presence = await EventPresence.findOne({
+        event: event._id,
+        customer: customerId,
+        isActive: true,
+        lastSeenAt: { $gte: activeSince },
+      });
+
+      userIsPresent = !!presence;
+    }
+
+    return res.status(200).json({
+      eventId: event._id,
+      isLive,
+      participantsCount,
+      livePhotosCount,
+      userIsPresent,
+      recentPhotos,
+    });
+  } catch (error) {
+    console.error("Erreur getLiveEvent:", error);
+
+    return res.status(500).json({
+      message: "Erreur récupération live event",
+      error,
+    });
+  }
+};
+
 // Fonction pour supprimer un événement
 const deleteEvent = async (req: Request, res: Response, next: NextFunction) => {
   const eventId = req.params.eventId;
@@ -3268,6 +3357,7 @@ export default {
   registrationToAnEvent,
   canScan,
   scanATicketForAnEvent,
+  getLiveEvent,
   deleteEvent,
   deleteDuplicateEvents,
   removeMidnightDates,
