@@ -11,26 +11,29 @@ const getTodayDateString = () => {
 export const trackCityConsultationStat = async ({
   city,
 }: TrackCityConsultationStatParams) => {
-  const date = getTodayDateString();
+  try {
+    const normalizedCity = city?.trim();
+    if (!normalizedCity) return;
 
-  const normalizedCity = city?.trim();
+    const date = getTodayDateString();
 
-  if (!normalizedCity) return;
-
-  let stat = await DailyCityConsultationStat.findOne({
-    date,
-    city: normalizedCity,
-  });
-
-  if (!stat) {
-    stat = new DailyCityConsultationStat({
-      date,
-      city: normalizedCity,
-      totalConsultations: 0,
-    });
+    await DailyCityConsultationStat.updateOne(
+      { date, city: normalizedCity },
+      {
+        $inc: { totalConsultations: 1 },
+        $setOnInsert: {
+          date,
+          city: normalizedCity,
+          createdAt: new Date(),
+        },
+        $set: {
+          updatedAt: new Date(),
+        },
+      },
+      { upsert: true },
+    );
+  } catch (error) {
+    // Ne jamais casser la route principale
+    console.error("[trackCityConsultationStat] non blocking error:", error);
   }
-
-  stat.totalConsultations += 1;
-
-  await stat.save();
 };

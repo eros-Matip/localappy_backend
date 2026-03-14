@@ -763,10 +763,16 @@ const updateEstablishment = async (req: Request, res: Response) => {
       ?.photos;
 
     if (files && files.length > 0) {
-      const folderName = slugify(establishment.name, {
-        lower: true,
-        strict: true,
-      });
+      const folderName = `establishments/${establishment._id}`;
+
+      // 📤 Upload des nouvelles images
+      const uploadedUrls: string[] = [];
+      for (const file of files) {
+        const result = await cloudinary.uploader.upload(file.path, {
+          folder: folderName,
+        });
+        uploadedUrls.push(result.secure_url);
+      }
 
       // 🧹 Supprimer les anciennes images
       if (Array.isArray(establishment.photos) && establishment.photos.length) {
@@ -780,15 +786,6 @@ const updateEstablishment = async (req: Request, res: Response) => {
             }
           }
         }
-      }
-
-      // 📤 Upload des nouvelles images
-      const uploadedUrls: string[] = [];
-      for (const file of files) {
-        const result = await cloudinary.uploader.upload(file.path, {
-          folder: `establishments/${folderName}`,
-        });
-        uploadedUrls.push(result.secure_url);
       }
 
       establishment.photos = uploadedUrls;

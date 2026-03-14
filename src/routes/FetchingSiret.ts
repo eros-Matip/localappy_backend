@@ -50,14 +50,7 @@ try {
     ASSOCIATIONS_64 = JSON.parse(
       fs.readFileSync(ASSOCIATIONS_64_PATH, "utf-8"),
     );
-
     console.log(`✅ Associations 64 chargées: ${ASSOCIATIONS_64.length}`);
-    if (ASSOCIATIONS_64.length > 0) {
-      console.log(
-        "ℹ️ Exemple de clés du 1er objet association:",
-        Object.keys(ASSOCIATIONS_64[0]),
-      );
-    }
   } else {
     console.warn(
       `⚠️ associations_dpt_64.json introuvable: ${ASSOCIATIONS_64_PATH}`,

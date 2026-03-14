@@ -18,23 +18,26 @@ const getTodayDateString = () => {
     return new Date().toISOString().slice(0, 10);
 };
 const trackCityConsultationStat = (_a) => __awaiter(void 0, [_a], void 0, function* ({ city, }) {
-    const date = getTodayDateString();
-    const normalizedCity = city === null || city === void 0 ? void 0 : city.trim();
-    if (!normalizedCity)
-        return;
-    let stat = yield DailyCityConsultationStat_1.default.findOne({
-        date,
-        city: normalizedCity,
-    });
-    if (!stat) {
-        stat = new DailyCityConsultationStat_1.default({
-            date,
-            city: normalizedCity,
-            totalConsultations: 0,
-        });
+    try {
+        const normalizedCity = city === null || city === void 0 ? void 0 : city.trim();
+        if (!normalizedCity)
+            return;
+        const date = getTodayDateString();
+        yield DailyCityConsultationStat_1.default.updateOne({ date, city: normalizedCity }, {
+            $inc: { totalConsultations: 1 },
+            $setOnInsert: {
+                date,
+                city: normalizedCity,
+                createdAt: new Date(),
+            },
+            $set: {
+                updatedAt: new Date(),
+            },
+        }, { upsert: true });
     }
-    stat.totalConsultations += 1;
-    yield stat.save();
+    catch (error) {
+        console.error("[trackCityConsultationStat] non blocking error:", error);
+    }
 });
 exports.trackCityConsultationStat = trackCityConsultationStat;
-//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiVHJhY2tDaXR5Q29uc3VsdGF0aW9uU3RhdC5qcyIsInNvdXJjZVJvb3QiOiIiLCJzb3VyY2VzIjpbIi4uLy4uL3NyYy9saWJyYXJ5L1RyYWNrQ2l0eUNvbnN1bHRhdGlvblN0YXQudHMiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6Ijs7Ozs7Ozs7Ozs7Ozs7O0FBQUEsb0dBQTRFO0FBTTVFLE1BQU0sa0JBQWtCLEdBQUcsR0FBRyxFQUFFO0lBQzlCLE9BQU8sSUFBSSxJQUFJLEVBQUUsQ0FBQyxXQUFXLEVBQUUsQ0FBQyxLQUFLLENBQUMsQ0FBQyxFQUFFLEVBQUUsQ0FBQyxDQUFDO0FBQy9DLENBQUMsQ0FBQztBQUVLLE1BQU0seUJBQXlCLEdBQUcsS0FFTCxFQUFFLDRDQUZVLEVBQzlDLElBQUksR0FDNEI7SUFDaEMsTUFBTSxJQUFJLEdBQUcsa0JBQWtCLEVBQUUsQ0FBQztJQUVsQyxNQUFNLGNBQWMsR0FBRyxJQUFJLGFBQUosSUFBSSx1QkFBSixJQUFJLENBQUUsSUFBSSxFQUFFLENBQUM7SUFFcEMsSUFBSSxDQUFDLGNBQWM7UUFBRSxPQUFPO0lBRTVCLElBQUksSUFBSSxHQUFHLE1BQU0sbUNBQXlCLENBQUMsT0FBTyxDQUFDO1FBQ2pELElBQUk7UUFDSixJQUFJLEVBQUUsY0FBYztLQUNyQixDQUFDLENBQUM7SUFFSCxJQUFJLENBQUMsSUFBSSxFQUFFLENBQUM7UUFDVixJQUFJLEdBQUcsSUFBSSxtQ0FBeUIsQ0FBQztZQUNuQyxJQUFJO1lBQ0osSUFBSSxFQUFFLGNBQWM7WUFDcEIsa0JBQWtCLEVBQUUsQ0FBQztTQUN0QixDQUFDLENBQUM7SUFDTCxDQUFDO0lBRUQsSUFBSSxDQUFDLGtCQUFrQixJQUFJLENBQUMsQ0FBQztJQUU3QixNQUFNLElBQUksQ0FBQyxJQUFJLEVBQUUsQ0FBQztBQUNwQixDQUFDLENBQUEsQ0FBQztBQXpCVyxRQUFBLHlCQUF5Qiw2QkF5QnBDIn0=
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiVHJhY2tDaXR5Q29uc3VsdGF0aW9uU3RhdC5qcyIsInNvdXJjZVJvb3QiOiIiLCJzb3VyY2VzIjpbIi4uLy4uL3NyYy9saWJyYXJ5L1RyYWNrQ2l0eUNvbnN1bHRhdGlvblN0YXQudHMiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6Ijs7Ozs7Ozs7Ozs7Ozs7O0FBQUEsb0dBQTRFO0FBTTVFLE1BQU0sa0JBQWtCLEdBQUcsR0FBRyxFQUFFO0lBQzlCLE9BQU8sSUFBSSxJQUFJLEVBQUUsQ0FBQyxXQUFXLEVBQUUsQ0FBQyxLQUFLLENBQUMsQ0FBQyxFQUFFLEVBQUUsQ0FBQyxDQUFDO0FBQy9DLENBQUMsQ0FBQztBQUVLLE1BQU0seUJBQXlCLEdBQUcsS0FFTCxFQUFFLDRDQUZVLEVBQzlDLElBQUksR0FDNEI7SUFDaEMsSUFBSSxDQUFDO1FBQ0gsTUFBTSxjQUFjLEdBQUcsSUFBSSxhQUFKLElBQUksdUJBQUosSUFBSSxDQUFFLElBQUksRUFBRSxDQUFDO1FBQ3BDLElBQUksQ0FBQyxjQUFjO1lBQUUsT0FBTztRQUU1QixNQUFNLElBQUksR0FBRyxrQkFBa0IsRUFBRSxDQUFDO1FBRWxDLE1BQU0sbUNBQXlCLENBQUMsU0FBUyxDQUN2QyxFQUFFLElBQUksRUFBRSxJQUFJLEVBQUUsY0FBYyxFQUFFLEVBQzlCO1lBQ0UsSUFBSSxFQUFFLEVBQUUsa0JBQWtCLEVBQUUsQ0FBQyxFQUFFO1lBQy9CLFlBQVksRUFBRTtnQkFDWixJQUFJO2dCQUNKLElBQUksRUFBRSxjQUFjO2dCQUNwQixTQUFTLEVBQUUsSUFBSSxJQUFJLEVBQUU7YUFDdEI7WUFDRCxJQUFJLEVBQUU7Z0JBQ0osU0FBUyxFQUFFLElBQUksSUFBSSxFQUFFO2FBQ3RCO1NBQ0YsRUFDRCxFQUFFLE1BQU0sRUFBRSxJQUFJLEVBQUUsQ0FDakIsQ0FBQztJQUNKLENBQUM7SUFBQyxPQUFPLEtBQUssRUFBRSxDQUFDO1FBRWYsT0FBTyxDQUFDLEtBQUssQ0FBQyxpREFBaUQsRUFBRSxLQUFLLENBQUMsQ0FBQztJQUMxRSxDQUFDO0FBQ0gsQ0FBQyxDQUFBLENBQUM7QUE1QlcsUUFBQSx5QkFBeUIsNkJBNEJwQyJ9
