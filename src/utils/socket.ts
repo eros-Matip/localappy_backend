@@ -300,7 +300,7 @@ export default function initSocket(app: Express): http.Server {
   });
 
   liveNsp.on("connection", (socket: Socket) => {
-    console.log("🔴 live connected:", socket.id);
+    console.log("🔵 live connected:", socket.id);
 
     socket.on("live:joinEvent", (eventId: string) => {
       if (!eventId) return;

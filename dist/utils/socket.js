@@ -253,7 +253,7 @@ function initSocket(app) {
         });
     });
     liveNsp.on("connection", (socket) => {
-        console.log("🔴 live connected:", socket.id);
+        console.log("🔵 live connected:", socket.id);
         socket.on("live:joinEvent", (eventId) => {
             if (!eventId)
                 return;
