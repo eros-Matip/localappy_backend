@@ -1417,9 +1417,12 @@ const getEventsByPostalCode = async (
 //   }
 // };
 
-const getCityFromCoordinates = async (lat: number, lon: number) => {
+const getCityFromCoordinates = async (
+  lat: number,
+  lon: number,
+): Promise<string | null> => {
   try {
-    const { data } = await axios.get(
+    const response = await axios.get(
       "https://nominatim.openstreetmap.org/reverse",
       {
         params: {
@@ -1429,26 +1432,31 @@ const getCityFromCoordinates = async (lat: number, lon: number) => {
           addressdetails: 1,
         },
         headers: {
-          "User-Agent": "my-app/1.0 contact@localappy.com",
+          "User-Agent": "localappy/1.0 contact@localappy.com",
         },
         timeout: 5000,
       },
     );
 
-    const address = data?.address;
+    const address = response.data?.address;
 
-    const city =
-      address?.city ??
-      address?.town ??
-      address?.village ??
-      address?.municipality ??
-      address?.hamlet ??
-      address?.county ??
-      null;
+    return (
+      address?.city ||
+      address?.town ||
+      address?.village ||
+      address?.municipality ||
+      null
+    );
+  } catch (error: any) {
+    if (error?.response?.status === 429) {
+      console.error("Nominatim rate limit atteint (429)");
+      return null;
+    }
 
-    return city;
-  } catch (error) {
-    console.error("Erreur reverse geocoding (Nominatim) :", error);
+    console.error(
+      "Erreur reverse geocoding (Nominatim) :",
+      error?.message || error,
+    );
     return null;
   }
 };
@@ -1460,13 +1468,13 @@ const getEventsByPosition = async (req: Request, res: Response) => {
     const page = parseInt(req.query.page as string, 10) || 1;
     const limit = parseInt(req.query.limit as string, 10) || 100;
 
-    // radius en km -> mètres, fallback 50km
-    const maxDistance =
-      (radius !== undefined && radius !== null && radius !== ""
+    const parsedRadius =
+      radius !== undefined && radius !== null && radius !== ""
         ? parseFloat(radius)
-        : NaN) * 1000;
+        : NaN;
 
-    const finalMaxDistance = !isNaN(maxDistance) ? maxDistance : 50000;
+    // radius en km -> mètres, fallback 50km
+    const finalMaxDistance = !isNaN(parsedRadius) ? parsedRadius * 1000 : 50000;
 
     if (latitude === undefined || longitude === undefined) {
       return res
@@ -1486,12 +1494,11 @@ const getEventsByPosition = async (req: Request, res: Response) => {
 
     const currentDate = new Date();
 
-    // Fonction pour récupérer les événements uniques par titre + total
     const fetchUniqueEventsWithCount = async (matchCondition: any) => {
       const totalAgg = await Event.aggregate([
         {
           $geoNear: {
-            near: { type: "Point", coordinates: [lon, lat] }, // Mongo: [lon, lat]
+            near: { type: "Point", coordinates: [lon, lat] },
             distanceField: "distance",
             maxDistance: finalMaxDistance,
             spherical: true,
@@ -1510,7 +1517,7 @@ const getEventsByPosition = async (req: Request, res: Response) => {
       const events = await Event.aggregate([
         {
           $geoNear: {
-            near: { type: "Point", coordinates: [lon, lat] }, // Mongo: [lon, lat]
+            near: { type: "Point", coordinates: [lon, lat] },
             distanceField: "distance",
             maxDistance: finalMaxDistance,
             spherical: true,
@@ -1535,9 +1542,8 @@ const getEventsByPosition = async (req: Request, res: Response) => {
       };
     };
 
-    // Reverse geocoding + 3 agrégations en parallèle
-    const [city, pastData, currentData, upcomingData] = await Promise.all([
-      getCityFromCoordinates(lat, lon), // Nominatim: lat, lon
+    // On récupère d'abord les événements
+    const [pastData, currentData, upcomingData] = await Promise.all([
       fetchUniqueEventsWithCount({
         endingDate: { $lt: currentDate },
         isDraft: false,
@@ -1552,17 +1558,37 @@ const getEventsByPosition = async (req: Request, res: Response) => {
         isDraft: false,
       }),
     ]);
-    await trackCityConsultationStat({ city });
-    Retour.info(`all event from ${city} as been read`);
+
+    // Reverse geocoding non bloquant
+    let city: string | null = null;
+
+    try {
+      city = await getCityFromCoordinates(lat, lon);
+    } catch (geoError: any) {
+      console.error(
+        "Erreur reverse geocoding :",
+        geoError?.message || geoError,
+      );
+    }
+
+    // Tracking non bloquant
+    if (city) {
+      try {
+        await trackCityConsultationStat({ city });
+      } catch (statError: any) {
+        console.error(
+          "Erreur lors du tracking de la consultation ville :",
+          statError?.message || statError,
+        );
+      }
+    }
+
+    Retour.info(`all events from ${city ?? "unknown"} have been read`);
+
     return res.status(200).json({
       metadata: {
-        radiusKm: !isNaN(
-          radius !== undefined && radius !== null && radius !== ""
-            ? parseFloat(radius)
-            : NaN,
-        )
-          ? parseFloat(radius)
-          : 50,
+        city,
+        radiusKm: !isNaN(parsedRadius) ? parsedRadius : 50,
         pastTotal: pastData.total,
         currentTotal: currentData.total,
         upcomingTotal: upcomingData.total,
@@ -1575,9 +1601,9 @@ const getEventsByPosition = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error("Erreur lors de la récupération des événements :", error);
-    return res
-      .status(500)
-      .json({ message: "Erreur interne du serveur.", error });
+    return res.status(500).json({
+      message: "Erreur interne du serveur.",
+    });
   }
 };
 
@@ -2960,14 +2986,17 @@ const deleteEvent = async (req: Request, res: Response, next: NextFunction) => {
     );
 
     if (!owner) {
+      Retour.error("Non autorisé à supprimer");
       return res.status(403).json({ message: "Non autorisé à supprimer" });
     }
 
     if (!eventFinded) {
+      Retour.error("Événement non trouvé");
       return res.status(404).json({ message: "Événement non trouvé" });
     }
 
     if ((eventFinded as any).deletedAt) {
+      Retour.error("Événement déjà supprimé");
       return res.status(409).json({ message: "Événement déjà supprimé" });
     }
 
@@ -2976,6 +3005,9 @@ const deleteEvent = async (req: Request, res: Response, next: NextFunction) => {
       (eventFinded as any).registrations.length > 0;
 
     if (hasRegistrations) {
+      Retour.error(
+        "Impossible de supprimer un événement avec des inscriptions",
+      );
       return res.status(409).json({
         message: "Impossible de supprimer un événement avec des inscriptions",
       });

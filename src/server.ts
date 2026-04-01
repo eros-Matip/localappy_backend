@@ -49,6 +49,13 @@ import Bill from "./models/Bill";
 import Retour from "./library/Retour";
 import Customer from "./models/Customer";
 import OpenAI from "openai";
+import Establishment from "./models/Establishment";
+import {
+  createQueuedNotification,
+  finalizeNotificationSend,
+} from "./utils/notificationUtils";
+const { Expo } = require("expo-server-sdk");
+const expo = new Expo();
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -716,6 +723,259 @@ Tu DOIS renvoyer STRICTEMENT un JSON valide, sans texte avant ou après, de la f
           console.log(error);
           Retour.error("error catched");
           return res.status(500).json({ message: "error catched", error });
+        }
+      } else if (req.body.test === "send notif") {
+        try {
+          const { establishmentId } = req.body;
+
+          const establishment = await Establishment.findById(establishmentId);
+          if (!establishment) {
+            return res
+              .status(404)
+              .json({ message: "Établissement introuvable" });
+          }
+
+          const customers = await Customer.find({
+            expoPushToken: { $exists: true, $ne: null },
+          });
+
+          // ✅ FIX TypeScript ici
+          const validCustomers = customers.filter(
+            (c): c is typeof c & { expoPushToken: string } =>
+              typeof c.expoPushToken === "string" &&
+              Expo.isExpoPushToken(c.expoPushToken),
+          );
+
+          if (!validCustomers.length) {
+            return res.status(200).json({
+              success: true,
+              message: "Aucun token valide",
+              sent: 0,
+            });
+          }
+
+          const title = `🎉 ${establishment.name} arrive sur Localappy !`;
+          const body = `Découvrez ce nouvel établissement près de chez vous 👀`;
+
+          const url = `https://localappy.fr/open?link=${encodeURIComponent(
+            `localappy://entreprise/${String(establishment._id)}`,
+          )}`;
+
+          const notificationsMap: Record<string, string> = {};
+          const messages: any[] = [];
+
+          // 🔁 boucle sur tous les users valides
+          for (const customer of validCustomers) {
+            const userId = String(customer._id);
+            const token = customer.expoPushToken; // ✅ string garanti
+
+            const notification = await createQueuedNotification({
+              userId,
+              title,
+              body,
+              establishmentId: String(establishment._id),
+              tokens: [token],
+              ttlDays: 7,
+              data: { url },
+            });
+
+            notificationsMap[token] = String(notification._id);
+
+            messages.push({
+              to: token,
+              sound: "default" as const,
+              title,
+              body,
+              data: {
+                url,
+                notificationId: String(notification._id),
+              },
+            });
+          }
+
+          const chunks = expo.chunkPushNotifications(messages);
+
+          let sentCount = 0;
+          let failedCount = 0;
+          const invalidTokens: string[] = [];
+
+          let cursor = 0;
+
+          for (const chunk of chunks) {
+            try {
+              const ticketChunk = await expo.sendPushNotificationsAsync(chunk);
+
+              for (let i = 0; i < ticketChunk.length; i++) {
+                const ticket = ticketChunk[i];
+                const message = messages[cursor + i];
+                const token = message.to;
+                const notificationId = notificationsMap[token];
+
+                const success = ticket.status === "ok";
+
+                if (success) {
+                  sentCount++;
+                } else {
+                  failedCount++;
+
+                  if (ticket.details?.error === "DeviceNotRegistered") {
+                    invalidTokens.push(token);
+                  }
+                }
+
+                await finalizeNotificationSend(notificationId, {
+                  tickets: [ticket],
+                  invalidTokens:
+                    ticket.details?.error === "DeviceNotRegistered"
+                      ? [token]
+                      : [],
+                  hadAnySuccess: success,
+                  hadAnyError: !success,
+                });
+              }
+
+              cursor += chunk.length;
+            } catch (error) {
+              console.error("Erreur chunk Expo:", error);
+
+              for (let i = 0; i < chunk.length; i++) {
+                const message = messages[cursor + i];
+                const token = message.to;
+                const notificationId = notificationsMap[token];
+
+                failedCount++;
+
+                await finalizeNotificationSend(notificationId, {
+                  tickets: [],
+                  invalidTokens: [],
+                  hadAnySuccess: false,
+                  hadAnyError: true,
+                });
+              }
+
+              cursor += chunk.length;
+            }
+          }
+
+          return res.status(200).json({
+            success: true,
+            total: customers.length,
+            valid: validCustomers.length,
+            sent: sentCount,
+            failed: failedCount,
+            invalidTokens,
+            url,
+          });
+        } catch (error) {
+          console.error(error);
+          return res.status(500).json({
+            message: "error catched",
+            error,
+          });
+        }
+      } else if (req.body.test === "send notif one") {
+        try {
+          const { userId, establishmentId } = req.body;
+
+          const user = await Customer.findById(userId);
+          if (!user) {
+            return res.status(404).json({ message: "Utilisateur introuvable" });
+          }
+
+          const establishment = await Establishment.findById(establishmentId);
+          if (!establishment) {
+            return res
+              .status(404)
+              .json({ message: "Établissement introuvable" });
+          }
+
+          if (!user.expoPushToken) {
+            return res.status(400).json({ message: "Aucun expoPushToken" });
+          }
+
+          if (!Expo.isExpoPushToken(user.expoPushToken)) {
+            return res.status(400).json({ message: "Token Expo invalide" });
+          }
+
+          const establishmentIdStr = String(establishment._id);
+          const userIdStr = String(user._id);
+          const deepLink = `https://localappy.fr/open?link=${encodeURIComponent(
+            `localappy://entreprise/${String(establishment._id)}`,
+          )}`;
+
+          const title = `🎉 ${establishment.name} arrive sur Localappy !`;
+          const body = `Découvrez ce nouvel établissement près de chez vous 👀`;
+
+          const notification = await createQueuedNotification({
+            userId: userIdStr,
+            title,
+            body,
+            establishmentId: establishmentIdStr,
+            tokens: [user.expoPushToken],
+            ttlDays: 7,
+            data: {
+              url: deepLink,
+            },
+          });
+
+          const message = {
+            to: user.expoPushToken,
+            sound: "default" as const,
+            title,
+            body,
+            data: {
+              url: deepLink,
+              notificationId: String(notification._id),
+            },
+          };
+
+          const tickets: any[] = [];
+          const invalidTokens: string[] = [];
+          let hadAnySuccess = false;
+          let hadAnyError = false;
+
+          const chunks = expo.chunkPushNotifications([message]);
+
+          for (const chunk of chunks) {
+            try {
+              const ticketChunk = await expo.sendPushNotificationsAsync(chunk);
+              tickets.push(...ticketChunk);
+
+              for (const ticket of ticketChunk) {
+                if (ticket.status === "ok") {
+                  hadAnySuccess = true;
+                } else {
+                  hadAnyError = true;
+
+                  if (ticket.details?.error === "DeviceNotRegistered") {
+                    invalidTokens.push(user.expoPushToken);
+                  }
+                }
+              }
+            } catch (error) {
+              hadAnyError = true;
+              console.error("Erreur Expo:", error);
+            }
+          }
+
+          await finalizeNotificationSend(String(notification._id), {
+            tickets,
+            invalidTokens,
+            hadAnySuccess,
+            hadAnyError,
+          });
+
+          return res.status(200).json({
+            success: true,
+            deepLink,
+            sentTo: user.expoPushToken,
+          });
+        } catch (error) {
+          console.error(error);
+          return res.status(500).json({
+            message: "error catched",
+            error,
+          });
         }
       } else {
         Retour.info("test passed without function");
