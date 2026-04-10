@@ -393,7 +393,7 @@ const createEstablishment = async (req: Request, res: Response) => {
       activated: false,
     });
 
-    establishment.owner.push(owner._id);
+    establishment?.owner?.push(owner._id);
     await establishment.save();
     owner.establishments.push((establishment as any)._id);
     await owner.save();

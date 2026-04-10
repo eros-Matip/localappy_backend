@@ -872,9 +872,10 @@ const createEventForAnEstablishment = async (req: Request, res: Response) => {
 
     // 📍 Gestion de l'adresse et de la localisation
     let { address } = req.body;
-    let latitude = draftEvent.location?.lat || establishmentFinded.location.lat;
+    let latitude =
+      draftEvent.location?.lat || establishmentFinded?.location?.lat;
     let longitude =
-      draftEvent.location?.lng || establishmentFinded.location.lng;
+      draftEvent.location?.lng || establishmentFinded?.location?.lng;
 
     if (address) {
       const responseApiGouv = await axios.get(
@@ -941,8 +942,8 @@ const createEventForAnEstablishment = async (req: Request, res: Response) => {
 
     await draftEvent.save();
 
-    if (!establishmentFinded.events.includes(draftEvent._id)) {
-      establishmentFinded.events.push(draftEvent._id);
+    if (!establishmentFinded?.events?.includes(draftEvent._id)) {
+      establishmentFinded?.events?.push(draftEvent._id);
       await establishmentFinded.save();
     }
     // MAILERSEND - Merci pour la publication (uniquement si pas brouillon)
@@ -977,20 +978,20 @@ const createEventForAnEstablishment = async (req: Request, res: Response) => {
             data: {
               year: new Date().getFullYear().toString(),
               establishment_name: establishmentFinded.name,
-              event_title: draftEvent.title,
+              event_title: draftEvent.title ?? "",
               starting_date: formatDate(draftEvent.startingDate),
               ending_date: formatDate(draftEvent.endingDate),
-              event_address: draftEvent.address,
+              event_address: draftEvent.address ?? "",
               event_price:
                 typeof draftEvent.price === "number"
                   ? draftEvent.price.toString()
-                  : draftEvent.price,
+                  : String(draftEvent.price ?? ""),
               event_capacity:
                 typeof draftEvent.capacity === "number"
                   ? draftEvent.capacity.toString()
-                  : draftEvent.capacity,
+                  : String(draftEvent.capacity ?? ""),
               registration_status: draftEvent.registrationOpen ? "Oui" : "Non",
-              event_link: `localappy://event/${draftEvent?._id}`,
+              event_link: `localappy://event/${draftEvent._id}`,
             },
           },
         ];
@@ -1100,7 +1101,9 @@ const createDraftEvent = async (req: Request, res: Response) => {
         .replace(/-+/g, "-")
         .replace(/^-|-$/g, "");
 
-    const folderName = sanitizeFolderName(establishmentFinded.name);
+    const folderName = sanitizeFolderName(
+      establishmentFinded?.name ?? "default",
+    );
 
     // 📤 Upload des fichiers sur Cloudinary dans le dossier spécifique à l'établissement
     const uploadedImageUrls: string[] = [];
@@ -1147,7 +1150,7 @@ const createDraftEvent = async (req: Request, res: Response) => {
     await newEvent.save();
 
     // 🔗 Ajoute l'event au modèle Establishment
-    establishmentFinded.events.push(newEvent._id);
+    establishmentFinded?.events?.push(newEvent._id);
     await establishmentFinded.save();
 
     return res.status(201).json({

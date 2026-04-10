@@ -65,6 +65,7 @@ const CustomerIsAuthenticated = async (
 
       // Pour les autres routes, ajouter l'utilisateur à req.body et passer à la suite
       req.body.admin = CustomerFinded;
+      (req as any).customer = CustomerFinded;
 
       // Vérifier le statut premium si requis par d'autres routes
       // if (!CustomerFinded.premiumStatus && !isLoginRoute) {

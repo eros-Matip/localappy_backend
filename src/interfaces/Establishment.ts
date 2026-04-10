@@ -13,6 +13,17 @@ export interface IStaffPublic {
   isActive?: boolean;
 }
 
+export interface ILoyaltyProgram {
+  _id?: Types.ObjectId;
+  title: string;
+  stampGoal: number;
+  rewardDescription: string;
+  isActive: boolean;
+  startsAt?: Date | null;
+  endsAt?: Date | null;
+  createdBy?: Types.ObjectId | null;
+}
+
 interface IOpeningSlot {
   opens: string;
   closes: string;
@@ -24,17 +35,17 @@ interface IOpeningHours {
 }
 
 interface IAddress {
-  street: string;
-  city: string;
-  postalCode: string;
-  department: string;
-  region: string;
-  country: string;
+  street?: string;
+  city?: string;
+  postalCode?: string;
+  department?: string;
+  region?: string;
+  country?: string;
 }
 
 interface ILocation {
-  lat: number;
-  lng: number;
+  lat?: number;
+  lng?: number;
 }
 
 interface IContact {
@@ -50,8 +61,8 @@ interface IContact {
 }
 
 interface IPaymentMethod {
-  type: string;
-  label: string;
+  type?: string;
+  label?: string;
 }
 
 interface ILegalInfo {
@@ -59,33 +70,34 @@ interface ILegalInfo {
   rna?: string;
   insuranceCertificate?: string;
   KBis?: {
-    public_id: string;
-    secure_url: string;
+    public_id?: string;
+    secure_url?: string;
   };
   legalDocument?: {
-    public_id: string;
-    secure_url: string;
+    public_id?: string;
+    secure_url?: string;
     label?: string;
   };
   activityCodeNAF?: string;
-  rib: {
-    iban: string;
-    bic: string;
+  rib?: {
+    iban?: string;
+    bic?: string;
   };
 }
 
 interface IEstablishment extends Document {
-  name: string;
+  name?: string;
   email: string;
-  phone: string;
-  type: string[];
-  creationDate: Date;
-  lastUpdate: Date;
-  address: IAddress;
-  location: ILocation;
+  phone?: string;
+  type?: string[];
+
+  address?: IAddress;
+  location?: ILocation;
   contact?: IContact;
-  logo: string;
-  photos: string[];
+
+  logo?: string;
+  photos?: string[];
+
   description?: string;
   descriptionI18n?: {
     fr?: string;
@@ -95,26 +107,36 @@ interface IEstablishment extends Document {
     it?: string;
     eu?: string;
   };
-  openingHours: IOpeningHours[];
-  acceptedPayments: IPaymentMethod[];
-  legalForm: "company" | "association";
+
+  openingHours?: IOpeningHours[];
+  acceptedPayments?: IPaymentMethod[];
+
+  legalForm?: "company" | "association";
   legalInfo?: ILegalInfo;
-  owner: Types.ObjectId[];
-  staff: Types.ObjectId[] | IStaffPublic[];
-  events: Types.ObjectId[];
-  notifications: Types.ObjectId[];
-  refund: Types.ObjectId[];
-  ads: Types.ObjectId[];
-  activated: boolean;
-  amountAvailable: number;
-  banned: boolean;
-  deletedAt: Date;
-  // 🔔 Workflow activation
-  activationRequested: boolean;
+
+  owner?: Types.ObjectId[];
+  staff?: (Types.ObjectId | IStaffPublic)[];
+  events?: Types.ObjectId[];
+  notifications?: Types.ObjectId[];
+  refund?: Types.ObjectId[];
+  ads?: Types.ObjectId[];
+
+  loyaltyPrograms?: ILoyaltyProgram[];
+
+  activated?: boolean;
+  amountAvailable?: number;
+  banned?: boolean;
+
+  deletedAt?: Date | null;
+
+  activationRequested?: boolean;
   activationRequestedAt?: Date | null;
-  activationStatus: "pending" | "approved" | "rejected";
+  activationStatus?: "pending" | "approved" | "rejected";
   activationReviewedAt?: Date | null;
   activationReviewedBy?: Types.ObjectId | null;
+
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export default IEstablishment;

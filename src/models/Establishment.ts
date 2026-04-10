@@ -134,6 +134,40 @@ const EstablishmentSchema = new Schema<IEstablishment>(
       default: "pending",
     },
     activationReviewedAt: { type: Date, default: null },
+    loyaltyPrograms: [
+      {
+        title: {
+          type: String,
+          default: "Carte de fidélité",
+        },
+        stampGoal: {
+          type: Number,
+          default: 10,
+          min: 1,
+        },
+        rewardDescription: {
+          type: String,
+          trim: true,
+        },
+        isActive: {
+          type: Boolean,
+          default: true,
+        },
+        startsAt: {
+          type: Date,
+          default: null,
+        },
+        endsAt: {
+          type: Date,
+          default: null,
+        },
+        createdBy: {
+          type: Schema.Types.ObjectId,
+          ref: "Owner",
+          default: null,
+        },
+      },
+    ],
     activationReviewedBy: {
       type: Schema.Types.ObjectId,
       ref: "Admin",

@@ -82,7 +82,7 @@ const createAd = async (req: Request, res: Response) => {
     });
 
     await newAd.save();
-    establishmentFinded.ads.push(newAd._id as Types.ObjectId);
+    establishmentFinded?.ads?.push(newAd._id as Types.ObjectId);
     await establishmentFinded.save();
     Retour.info("Ad created");
     return res.status(201).json(newAd);
