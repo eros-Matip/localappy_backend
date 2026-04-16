@@ -867,6 +867,109 @@ Tu DOIS renvoyer STRICTEMENT un JSON valide, sans texte avant ou après, de la f
           error,
         });
       }
+    } else if (req.body.test === "send notif creator activated") {
+      try {
+        const { userId } = req.body;
+
+        const user = await Customer.findById(userId);
+        if (!user) {
+          return res.status(404).json({ message: "Utilisateur introuvable" });
+        }
+
+        if (!user.expoPushToken) {
+          return res.status(400).json({ message: "Aucun expoPushToken" });
+        }
+
+        if (!Expo.isExpoPushToken(user.expoPushToken)) {
+          return res.status(400).json({ message: "Token Expo invalide" });
+        }
+
+        const userIdStr = String(user._id);
+
+        const deepLink = `https://localappy.fr/open?link=${encodeURIComponent(
+          `localappy://profile`,
+        )}`;
+
+        const title = `✅ Compte créateur activé`;
+        const body = `Bonne nouvelle ! Ton compte créateur d’événement est maintenant activé. Tu peux dès maintenant publier ton premier événement 🎉`;
+
+        const notification = await createQueuedNotification({
+          userId: userIdStr,
+          title,
+          body,
+          tokens: [user.expoPushToken],
+          ttlDays: 7,
+          data: {
+            url: deepLink,
+          },
+        });
+
+        const message = {
+          to: user.expoPushToken,
+          sound: "default" as const,
+          title,
+          body,
+          data: {
+            url: deepLink,
+            notificationId: String(notification._id),
+          },
+        };
+
+        const tickets: any[] = [];
+        const invalidTokens: string[] = [];
+        let hadAnySuccess = false;
+        let hadAnyError = false;
+
+        const chunks = expo.chunkPushNotifications([message]);
+
+        for (const chunk of chunks) {
+          try {
+            const ticketChunk = await expo.sendPushNotificationsAsync(chunk);
+            tickets.push(...ticketChunk);
+
+            for (const ticket of ticketChunk) {
+              if (ticket.status === "ok") {
+                hadAnySuccess = true;
+              } else {
+                hadAnyError = true;
+
+                if (ticket.details?.error === "DeviceNotRegistered") {
+                  invalidTokens.push(user.expoPushToken);
+                }
+              }
+            }
+          } catch (error) {
+            hadAnyError = true;
+            console.error("Erreur Expo:", error);
+          }
+        }
+
+        await finalizeNotificationSend(String(notification._id), {
+          tickets,
+          invalidTokens,
+          hadAnySuccess,
+          hadAnyError,
+        });
+
+        if (invalidTokens.length > 0) {
+          await Customer.updateOne(
+            { _id: user._id },
+            { $set: { expoPushToken: "" } },
+          );
+        }
+
+        return res.status(200).json({
+          success: true,
+          deepLink,
+          sentTo: user.expoPushToken,
+        });
+      } catch (error) {
+        console.error(error);
+        return res.status(500).json({
+          message: "error catched",
+          error,
+        });
+      }
     } else if (req.body.test === "send notif one") {
       try {
         const { userId, establishmentId } = req.body;
