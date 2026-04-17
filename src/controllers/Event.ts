@@ -1084,12 +1084,28 @@ const createDraftEvent = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Establishment not found" });
     }
 
-    // Gestion sécurisée des fichiers
-    const filesObject =
-      req.files && !Array.isArray(req.files)
-        ? (req.files as Record<string, Express.Multer.File[]>)
-        : {};
+    const parseJsonField = (value: any, fallback: any) => {
+      if (value === undefined || value === null || value === "") {
+        return fallback;
+      }
 
+      if (Array.isArray(value) || typeof value === "object") {
+        return value;
+      }
+
+      if (typeof value === "string") {
+        try {
+          return JSON.parse(value);
+        } catch (error) {
+          return fallback;
+        }
+      }
+
+      return fallback;
+    };
+
+    // 🔍 Gestion sécurisée des fichiers envoyés
+    const filesObject = req.files && !Array.isArray(req.files) ? req.files : {};
     const allFiles: Express.Multer.File[] = Object.values(filesObject).flat();
 
     const sanitizeFolderName = (name: string) =>
@@ -1103,9 +1119,8 @@ const createDraftEvent = async (req: Request, res: Response) => {
       establishmentFinded?.name ?? "default",
     );
 
-    // Upload Cloudinary uniquement si des images existent
+    // 📤 Upload des fichiers sur Cloudinary si des images existent
     const uploadedImageUrls: string[] = [];
-
     for (const file of allFiles) {
       const result = await cloudinary.v2.uploader.upload(file.path, {
         folder: `establishments/${folderName}`,
@@ -1113,100 +1128,20 @@ const createDraftEvent = async (req: Request, res: Response) => {
       uploadedImageUrls.push(result.secure_url);
     }
 
-    // Theme
-    const normalizedTheme: string[] = Array.isArray(req.body.theme)
-      ? req.body.theme
+    // 🎨 Gestion theme
+    const parsedTheme = parseJsonField(req.body.theme, []);
+    const normalizedTheme: string[] = Array.isArray(parsedTheme)
+      ? parsedTheme.filter(
+          (theme: any) => typeof theme === "string" && theme.trim() !== "",
+        )
       : typeof req.body.theme === "string" && req.body.theme.trim() !== ""
         ? [req.body.theme]
         : [];
 
-    // Dates
-    const parsedStartingDate = req.body.startingDate
-      ? new Date(req.body.startingDate)
-      : null;
-    const parsedEndingDate = req.body.endingDate
-      ? new Date(req.body.endingDate)
-      : null;
-
-    const startingDate =
-      parsedStartingDate && !isNaN(parsedStartingDate.getTime())
-        ? parsedStartingDate
-        : undefined;
-
-    const endingDate =
-      parsedEndingDate && !isNaN(parsedEndingDate.getTime())
-        ? parsedEndingDate
-        : undefined;
-
-    // Adresse + géoloc
-    let address =
-      typeof req.body.address === "string" ? req.body.address.trim() : "";
-
-    let longitude = establishmentFinded.location?.lng ?? 0;
-    let latitude = establishmentFinded.location?.lat ?? 0;
-
-    if (address.length > 0) {
-      try {
-        const responseApiGouv = await axios.get(
-          `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(
-            address,
-          )}`,
-        );
-
-        if (
-          responseApiGouv.data.features?.length > 0 &&
-          responseApiGouv.data.features[0].geometry?.coordinates?.length === 2
-        ) {
-          longitude = responseApiGouv.data.features[0].geometry.coordinates[0];
-          latitude = responseApiGouv.data.features[0].geometry.coordinates[1];
-        }
-      } catch (geoError) {
-        console.error("Erreur géocodage createDraftEvent:", geoError);
-      }
-    }
-
-    // Prix
-    const parsedPrice =
-      req.body.price !== undefined &&
-      req.body.price !== null &&
-      req.body.price !== ""
-        ? Number(req.body.price)
-        : 0;
-
-    const safePrice = Number.isFinite(parsedPrice) ? parsedPrice : 0;
-
-    const parsedMinPrice =
-      req.body.priceSpecification?.minPrice !== undefined &&
-      req.body.priceSpecification?.minPrice !== null &&
-      req.body.priceSpecification?.minPrice !== ""
-        ? Number(req.body.priceSpecification.minPrice)
-        : 0;
-
-    const parsedMaxPrice =
-      req.body.priceSpecification?.maxPrice !== undefined &&
-      req.body.priceSpecification?.maxPrice !== null &&
-      req.body.priceSpecification?.maxPrice !== ""
-        ? Number(req.body.priceSpecification.maxPrice)
-        : safePrice;
-
-    const minPrice = Number.isFinite(parsedMinPrice) ? parsedMinPrice : 0;
-    const maxPrice = Number.isFinite(parsedMaxPrice)
-      ? parsedMaxPrice
-      : safePrice;
-
-    // Capacité
-    const parsedCapacity =
-      req.body.capacity !== undefined &&
-      req.body.capacity !== null &&
-      req.body.capacity !== ""
-        ? Number(req.body.capacity)
-        : 0;
-
-    const safeCapacity = Number.isFinite(parsedCapacity) ? parsedCapacity : 0;
-
-    // Translations
-    const safeTranslations = Array.isArray(req.body.translations)
-      ? req.body.translations
+    // 🌍 Gestion translations
+    const parsedTranslations = parseJsonField(req.body.translations, []);
+    const safeTranslations = Array.isArray(parsedTranslations)
+      ? parsedTranslations
           .filter(
             (tr: any) =>
               tr && typeof tr.lang === "string" && tr.lang.trim() !== "",
@@ -1223,30 +1158,119 @@ const createDraftEvent = async (req: Request, res: Response) => {
           }))
       : [];
 
-    // Accepted payment methods
-    const acceptedPaymentMethod = Array.isArray(req.body.acceptedPaymentMethod)
-      ? req.body.acceptedPaymentMethod.filter(
-          (m: any) => typeof m === "string" && m.trim() !== "",
+    // 💳 Gestion acceptedPaymentMethod
+    const parsedAcceptedPaymentMethod = parseJsonField(
+      req.body.acceptedPaymentMethod,
+      [],
+    );
+
+    const acceptedPaymentMethod = Array.isArray(parsedAcceptedPaymentMethod)
+      ? parsedAcceptedPaymentMethod.filter(
+          (method: any) => typeof method === "string" && method.trim() !== "",
         )
       : [];
 
+    // 📅 Gestion dates
+    const parsedStartingDate = req.body.startingDate
+      ? new Date(req.body.startingDate)
+      : null;
+    const parsedEndingDate = req.body.endingDate
+      ? new Date(req.body.endingDate)
+      : null;
+
+    const safeStartingDate =
+      parsedStartingDate && !isNaN(parsedStartingDate.getTime())
+        ? parsedStartingDate
+        : undefined;
+
+    const safeEndingDate =
+      parsedEndingDate && !isNaN(parsedEndingDate.getTime())
+        ? parsedEndingDate
+        : undefined;
+
+    // 📍 Localisation : fallback sur les coordonnées de l'établissement
+    let address =
+      typeof req.body.address === "string" ? req.body.address.trim() : "";
+
+    let longitude = establishmentFinded.location?.lng || 0;
+    let latitude = establishmentFinded.location?.lat || 0;
+
+    if (address) {
+      try {
+        const responseApiGouv = await axios.get(
+          `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(
+            address,
+          )}`,
+        );
+
+        if (
+          responseApiGouv.data.features?.length > 0 &&
+          responseApiGouv.data.features[0].geometry?.coordinates?.length === 2
+        ) {
+          longitude = responseApiGouv.data.features[0].geometry.coordinates[0];
+          latitude = responseApiGouv.data.features[0].geometry.coordinates[1];
+        }
+      } catch (error) {
+        console.error("Erreur géocodage createDraftEvent:", error);
+      }
+    }
+
+    // 💰 Prix
+    const parsedPrice =
+      req.body.price !== undefined &&
+      req.body.price !== null &&
+      req.body.price !== ""
+        ? Number(req.body.price)
+        : 0;
+
+    const parsedMinPrice =
+      req.body.priceSpecification?.minPrice !== undefined &&
+      req.body.priceSpecification?.minPrice !== null &&
+      req.body.priceSpecification?.minPrice !== ""
+        ? Number(req.body.priceSpecification.minPrice)
+        : 0;
+
+    const parsedMaxPrice =
+      req.body.priceSpecification?.maxPrice !== undefined &&
+      req.body.priceSpecification?.maxPrice !== null &&
+      req.body.priceSpecification?.maxPrice !== ""
+        ? Number(req.body.priceSpecification.maxPrice)
+        : parsedPrice;
+
+    const safePrice = Number.isFinite(parsedPrice) ? parsedPrice : 0;
+    const safeMinPrice = Number.isFinite(parsedMinPrice) ? parsedMinPrice : 0;
+    const safeMaxPrice = Number.isFinite(parsedMaxPrice)
+      ? parsedMaxPrice
+      : safePrice;
+
+    // 👥 Capacité
+    const parsedCapacity =
+      req.body.capacity !== undefined &&
+      req.body.capacity !== null &&
+      req.body.capacity !== ""
+        ? Number(req.body.capacity)
+        : 0;
+
+    const safeCapacity = Number.isFinite(parsedCapacity) ? parsedCapacity : 0;
+
+    // 📝 Création du brouillon
     const newEvent = new Event({
-      title: typeof req.body.title === "string" ? req.body.title : "",
-      description:
-        typeof req.body.description === "string" ? req.body.description : "",
+      title: req.body.title || "",
+      description: req.body.description || "",
       address,
       image: uploadedImageUrls,
       theme: normalizedTheme,
-      startingDate,
-      endingDate,
+      startingDate: safeStartingDate,
+      endingDate: safeEndingDate,
       price: safePrice,
       priceSpecification: {
-        minPrice,
-        maxPrice,
-        priceCurrency: req.body.priceSpecification?.priceCurrency ?? "EUR",
+        minPrice: safeMinPrice,
+        maxPrice: safeMaxPrice,
+        priceCurrency: req.body.priceSpecification?.priceCurrency || "EUR",
       },
       capacity: safeCapacity,
       translations: safeTranslations,
+      acceptedPaymentMethod,
       location: {
         lat: latitude,
         lng: longitude,
@@ -1257,26 +1281,26 @@ const createDraftEvent = async (req: Request, res: Response) => {
       },
       organizer: {
         establishment: establishmentFinded._id,
-        legalName: establishmentFinded.name ?? "Organisateur inconnu",
+        legalName: establishmentFinded.name,
         email:
-          req.body.organizer?.email ??
-          establishmentFinded.email ??
+          req.body.organizer?.email ||
+          establishmentFinded.email ||
           "Email inconnu",
         phone:
-          req.body.organizer?.phone ??
-          establishmentFinded.phone ??
+          req.body.organizer?.phone ||
+          establishmentFinded.phone ||
           "Téléphone inconnu",
       },
       registrationOpen: false,
       isDraft: true,
-      acceptedPaymentMethod,
-      color: typeof req.body.color === "string" ? req.body.color : undefined,
+      color: req.body.color || undefined,
     });
 
     await newEvent.save();
 
+    // 🔗 Ajoute l'event au modèle Establishment
     if (!establishmentFinded?.events?.includes(newEvent._id)) {
-      establishmentFinded.events?.push(newEvent._id);
+      establishmentFinded?.events?.push(newEvent._id);
       await establishmentFinded.save();
     }
 
@@ -1741,20 +1765,18 @@ const updateEvent = async (req: Request, res: Response, next: NextFunction) => {
   const eventId = req.params.eventId;
 
   try {
+    // Recherche de l'événement par ID
     const event = await Event.findById(eventId);
 
     if (!event) {
       return res.status(404).json({ message: "Événement non trouvé" });
     }
 
-    // Champs simples
-    if (req.body.title !== undefined) {
-      event.title = req.body.title;
-    }
-
-    if (req.body.description !== undefined) {
-      event.description = req.body.description;
-    }
+    // Appliquer les mises à jour des champs basiques
+    event.title = req.body.title ?? event.title;
+    event.description = req.body.description ?? event.description;
+    event.address = req.body.address ?? event.address;
+    event.color = req.body.color ?? event.color;
 
     if (req.body.price !== undefined && req.body.price !== null) {
       const parsedPrice = Number(req.body.price);
@@ -1763,24 +1785,21 @@ const updateEvent = async (req: Request, res: Response, next: NextFunction) => {
       }
     }
 
-    if (req.body.startingDate !== undefined) {
+    if (req.body.startingDate) {
       const parsedStartingDate = new Date(req.body.startingDate);
       if (!isNaN(parsedStartingDate.getTime())) {
         event.startingDate = parsedStartingDate;
       }
     }
 
-    if (req.body.endingDate !== undefined) {
+    if (req.body.endingDate) {
       const parsedEndingDate = new Date(req.body.endingDate);
       if (!isNaN(parsedEndingDate.getTime())) {
         event.endingDate = parsedEndingDate;
       }
     }
 
-    if (req.body.address !== undefined) {
-      event.address = req.body.address;
-    }
-
+    // Mise à jour du theme
     if (req.body.theme !== undefined) {
       event.theme = Array.isArray(req.body.theme)
         ? req.body.theme.filter(
@@ -1791,6 +1810,7 @@ const updateEvent = async (req: Request, res: Response, next: NextFunction) => {
           : event.theme;
     }
 
+    // Mise à jour de la capacité
     if (req.body.capacity !== undefined && req.body.capacity !== null) {
       const parsedCapacity = Number(req.body.capacity);
       if (Number.isFinite(parsedCapacity)) {
@@ -1798,6 +1818,7 @@ const updateEvent = async (req: Request, res: Response, next: NextFunction) => {
       }
     }
 
+    // Mise à jour des traductions
     if (
       req.body.translations !== undefined &&
       Array.isArray(req.body.translations)
@@ -1816,11 +1837,7 @@ const updateEvent = async (req: Request, res: Response, next: NextFunction) => {
         }));
     }
 
-    if (req.body.color !== undefined) {
-      event.color = req.body.color;
-    }
-
-    // Prix détaillé
+    // Mise à jour du prix (minPrice, maxPrice et priceCurrency)
     if (req.body.priceSpecification) {
       const { minPrice, maxPrice, priceCurrency } = req.body.priceSpecification;
 
@@ -1830,25 +1847,27 @@ const updateEvent = async (req: Request, res: Response, next: NextFunction) => {
       event.priceSpecification = {
         minPrice: Number.isFinite(parsedMinPrice)
           ? parsedMinPrice
-          : (event.priceSpecification?.minPrice ?? 0),
+          : event.priceSpecification?.minPrice || 0,
         maxPrice: Number.isFinite(parsedMaxPrice)
           ? parsedMaxPrice
-          : (event.priceSpecification?.maxPrice ?? 0),
+          : event.priceSpecification?.maxPrice || 0,
         priceCurrency:
-          priceCurrency ?? event.priceSpecification?.priceCurrency ?? "EUR",
+          priceCurrency || event.priceSpecification?.priceCurrency || "EUR",
       };
     }
 
-    // Paiements
-    if (req.body.acceptedPaymentMethod !== undefined) {
-      if (Array.isArray(req.body.acceptedPaymentMethod)) {
-        event.acceptedPaymentMethod = req.body.acceptedPaymentMethod.filter(
-          (m: any) => typeof m === "string" && m.trim() !== "",
-        );
-      }
+    // Mise à jour des méthodes de paiement
+    if (req.body.acceptedPaymentMethod) {
+      event.acceptedPaymentMethod = Array.isArray(
+        req.body.acceptedPaymentMethod,
+      )
+        ? req.body.acceptedPaymentMethod.filter(
+            (method: any) => typeof method === "string" && method.trim() !== "",
+          )
+        : event.acceptedPaymentMethod;
     }
 
-    // Organisateur
+    // Vérification et mise à jour des informations sur l'organisateur
     if (req.body.organizer) {
       const organizer = req.body.organizer;
 
@@ -1860,13 +1879,13 @@ const updateEvent = async (req: Request, res: Response, next: NextFunction) => {
 
       event.organizer = {
         establishment:
-          organizer.establishment ?? event.organizer?.establishment,
+          organizer.establishment || event.organizer?.establishment,
         legalName:
-          organizer.legalName ??
-          event.organizer?.legalName ??
+          organizer.legalName ||
+          event.organizer?.legalName ||
           "Organisateur inconnu",
-        email: organizer.email ?? event.organizer?.email ?? "Email inconnu",
-        phone: organizer.phone ?? event.organizer?.phone ?? "Téléphone inconnu",
+        email: organizer.email || event.organizer?.email || "Email inconnu",
+        phone: organizer.phone || event.organizer?.phone || "Téléphone inconnu",
       };
     }
 
@@ -1878,17 +1897,18 @@ const updateEvent = async (req: Request, res: Response, next: NextFunction) => {
       event.registrationOpen = req.body.registrationOpen;
     }
 
-    if (req.body.image !== undefined) {
-      if (Array.isArray(req.body.image)) {
-        event.image = req.body.image.filter(
-          (img: any) => typeof img === "string" && img.trim() !== "",
-        );
-      }
+    // Mise à jour de l'image, si fournie
+    if (req.body.image) {
+      event.image = Array.isArray(req.body.image)
+        ? req.body.image.filter(
+            (img: any) => typeof img === "string" && img.trim() !== "",
+          )
+        : event.image;
     }
 
-    // Recalcule géoloc si adresse modifiée
+    // Recalcule location si adresse modifiée
     if (
-      req.body.address !== undefined &&
+      req.body.address &&
       typeof req.body.address === "string" &&
       req.body.address.trim() !== ""
     ) {
@@ -1917,11 +1937,12 @@ const updateEvent = async (req: Request, res: Response, next: NextFunction) => {
             },
           };
         }
-      } catch (geoError) {
-        console.error("Erreur géocodage updateEvent:", geoError);
+      } catch (error) {
+        console.error("Erreur géocodage updateEvent:", error);
       }
     }
 
+    // Sauvegarde de l'événement mis à jour dans la base de données
     const updatedEvent = await event.save();
 
     return res.status(200).json({
