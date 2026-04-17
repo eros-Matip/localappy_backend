@@ -104,7 +104,11 @@ const eventSchema = new Schema<IEvent>(
       type: [String],
       validate: {
         validator: function (images: string[]) {
-          return images.every((img) => img.trim() !== "");
+          if (!images) return true;
+          if (!Array.isArray(images)) return false;
+          return images.every(
+            (img) => typeof img === "string" && img.trim() !== "",
+          );
         },
         message: "Une ou plusieurs images sont invalides.",
       },
