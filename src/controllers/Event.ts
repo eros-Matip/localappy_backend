@@ -2626,6 +2626,7 @@ const normalizeDayRange = (input: Date) => {
   dayEnd.setHours(23, 59, 59, 999);
   return { dayStart, dayEnd };
 };
+
 const registrationToAnEvent = async (req: Request, res: Response) => {
   const session = await mongoose.startSession();
 
@@ -2702,11 +2703,18 @@ const registrationToAnEvent = async (req: Request, res: Response) => {
       }
       if (eventFinded.endingDate) {
         const end = new Date(eventFinded.endingDate);
-        if (selected > end)
+        const selectedDate = new Date(selected);
+
+        // Reset heure à 00:00:00
+        end.setHours(23, 59, 59, 999); // inclure toute la journée
+        selectedDate.setHours(0, 0, 0, 0);
+
+        if (selectedDate > end) {
           throw {
             status: 400,
             message: "Date hors plage (après fin de l'événement)",
           };
+        }
       }
 
       // ---- capacité PAR JOUR (on ne décrémente plus l'event)

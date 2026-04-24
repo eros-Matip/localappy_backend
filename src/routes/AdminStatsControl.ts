@@ -17,7 +17,11 @@ const router = Router();
    USER STATS
 ========================= */
 
-router.get("/admin/stats/new-customers-per-day", newCustomersPerDay);
+router.get(
+  "/admin/stats/new-customers-per-day",
+  AdminIsAuthenticated,
+  newCustomersPerDay,
+);
 
 /* =========================
    PLATFORM / DASHBOARD STATS
