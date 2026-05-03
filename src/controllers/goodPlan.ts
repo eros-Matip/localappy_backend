@@ -4,6 +4,10 @@ import GoodPlan from "../models/GoodPlan";
 import Establishment from "../models/Establishment";
 import Owner from "../models/Owner";
 import { GoodPlanDayOfWeek } from "../interfaces/GoodPlan";
+import Customer from "../models/Customer";
+import GoodPlanUse from "../models/GoodPlanUse";
+
+const CryptoJS = require("crypto-js");
 
 const isValidObjectId = (id: any) => mongoose.isValidObjectId(id);
 
@@ -57,6 +61,151 @@ const normalizeDate = (value: any): Date | null => {
   const date = new Date(value);
 
   return isNaN(date.getTime()) ? null : date;
+};
+
+const GOOD_PLAN_QR_TTL_MS = 5 * 60 * 1000;
+
+const getCustomerIdFromRequest = (req: Request): string | null => {
+  const customer = (req as any).customer || req.body?.admin;
+
+  if (!customer) return null;
+
+  if (typeof customer === "string") return customer;
+
+  if (customer._id) return String(customer._id);
+
+  return null;
+};
+
+const createRandomNonce = () => {
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+};
+
+const decryptGoodPlanQrPayload = (encryptedValue: string) => {
+  try {
+    if (!process.env.SALT_SCAN) {
+      throw new Error("SALT_SCAN manquant");
+    }
+
+    const bytes = CryptoJS.AES.decrypt(encryptedValue, process.env.SALT_SCAN);
+    const originalText = bytes.toString(CryptoJS.enc.Utf8);
+
+    if (!originalText) return null;
+
+    return JSON.parse(originalText);
+  } catch (error) {
+    return null;
+  }
+};
+
+const encryptGoodPlanQrPayload = (payload: any) => {
+  if (!process.env.SALT_SCAN) {
+    throw new Error("SALT_SCAN manquant");
+  }
+
+  return CryptoJS.AES.encrypt(
+    JSON.stringify(payload),
+    process.env.SALT_SCAN,
+  ).toString();
+};
+
+const checkCustomerCanScanForEstablishment = async (
+  scannerCustomerId: string,
+  establishmentId: string,
+) => {
+  const [scannerCustomer, establishment] = await Promise.all([
+    Customer.findById(scannerCustomerId)
+      .select("_id establishmentStaffOf ownerAccount")
+      .lean(),
+
+    Establishment.findById(establishmentId).select("_id staff owner").lean(),
+  ]);
+
+  if (!scannerCustomer) {
+    return {
+      allowed: false,
+      ownerId: null,
+      reason: "Scanneur introuvable.",
+    };
+  }
+
+  if (!establishment) {
+    return {
+      allowed: false,
+      ownerId: null,
+      reason: "Établissement introuvable.",
+    };
+  }
+
+  const staffOfIds = Array.isArray(scannerCustomer.establishmentStaffOf)
+    ? scannerCustomer.establishmentStaffOf.map((id: any) => String(id))
+    : [];
+
+  const establishmentStaffIds = Array.isArray(establishment.staff)
+    ? establishment.staff.map((id: any) => String(id))
+    : [];
+
+  const isStaff =
+    staffOfIds.includes(String(establishmentId)) ||
+    establishmentStaffIds.includes(String(scannerCustomerId));
+
+  if (isStaff) {
+    return {
+      allowed: true,
+      ownerId: null,
+      reason: "Staff autorisé.",
+    };
+  }
+
+  const ownerAccountId = scannerCustomer.ownerAccount
+    ? String(scannerCustomer.ownerAccount)
+    : null;
+
+  if (!ownerAccountId || !mongoose.isValidObjectId(ownerAccountId)) {
+    return {
+      allowed: false,
+      ownerId: null,
+      reason: "Le scanneur n'est pas staff ou owner de cet établissement.",
+    };
+  }
+
+  const owner = await Owner.findById(ownerAccountId)
+    .select("_id establishments")
+    .lean();
+
+  if (!owner) {
+    return {
+      allowed: false,
+      ownerId: null,
+      reason: "Compte owner introuvable.",
+    };
+  }
+
+  const ownerEstablishmentIds = Array.isArray(owner.establishments)
+    ? owner.establishments.map((id: any) => String(id))
+    : [];
+
+  const establishmentOwnerIds = Array.isArray(establishment.owner)
+    ? establishment.owner.map((id: any) => String(id))
+    : [];
+
+  const isOwner =
+    ownerEstablishmentIds.includes(String(establishmentId)) ||
+    establishmentOwnerIds.includes(String(owner._id));
+
+  if (!isOwner) {
+    return {
+      allowed: false,
+      ownerId: null,
+      reason: "Le owner ne gère pas cet établissement.",
+    };
+  }
+
+  return {
+    allowed: true,
+    ownerId: owner._id,
+    reason: "Owner autorisé.",
+  };
 };
 
 const getOwnerIdFromBody = (req: Request): string | null => {
@@ -937,6 +1086,270 @@ const disableGoodPlan = async (req: Request, res: Response) => {
   }
 };
 
+const generateGoodPlanQr = async (req: Request, res: Response) => {
+  try {
+    const { goodPlanId } = req.params;
+
+    if (!isValidObjectId(goodPlanId)) {
+      return res.status(400).json({
+        message: "Identifiant de bon plan invalide.",
+      });
+    }
+
+    const customerId = getCustomerIdFromRequest(req);
+
+    if (!customerId || !isValidObjectId(customerId)) {
+      return res.status(401).json({
+        message: "Utilisateur non authentifié.",
+      });
+    }
+
+    const goodPlan = await GoodPlan.findOne({
+      _id: goodPlanId,
+      ...buildPublicGoodPlanFilter(),
+    }).select(
+      "_id establishment title redemption status isActive startDate endDate deletedAt",
+    );
+
+    if (!goodPlan) {
+      return res.status(404).json({
+        message: "Bon plan indisponible ou expiré.",
+      });
+    }
+
+    const maxUses = goodPlan.redemption?.maxUses;
+    const usesCount = goodPlan.redemption?.usesCount || 0;
+
+    if (typeof maxUses === "number" && usesCount >= maxUses) {
+      return res.status(409).json({
+        message: "Ce bon plan a atteint sa limite d'utilisation.",
+      });
+    }
+
+    if (goodPlan.redemption?.oneUsePerUser) {
+      const alreadyUsed = await GoodPlanUse.exists({
+        goodPlan: goodPlan._id,
+        customer: customerId,
+        status: "validated",
+      });
+
+      if (alreadyUsed) {
+        return res.status(409).json({
+          message: "Vous avez déjà utilisé ce bon plan.",
+        });
+      }
+    }
+
+    const issuedAt = new Date();
+    const expiresAt = new Date(Date.now() + GOOD_PLAN_QR_TTL_MS);
+
+    const payload = {
+      type: "goodPlan",
+      goodPlanId: String(goodPlan._id),
+      customerId: String(customerId),
+      issuedAt: issuedAt.toISOString(),
+      expiresAt: expiresAt.toISOString(),
+      nonce: createRandomNonce(),
+    };
+
+    const qrValue = encryptGoodPlanQrPayload(payload);
+
+    return res.status(200).json({
+      message: "QR code généré avec succès.",
+      qrValue,
+      expiresAt,
+      goodPlan: {
+        _id: goodPlan._id,
+        title: goodPlan.title,
+      },
+    });
+  } catch (error) {
+    console.error("Erreur generateGoodPlanQr:", error);
+
+    return res.status(500).json({
+      message: "Erreur lors de la génération du QR code.",
+      error: error instanceof Error ? error.message : error,
+    });
+  }
+};
+
+const scanGoodPlanQr = async (req: Request, res: Response) => {
+  try {
+    const scannerCustomerId = getCustomerIdFromRequest(req);
+    const encryptedValue = req.body?.url || req.body?.qrValue;
+
+    if (!scannerCustomerId || !isValidObjectId(scannerCustomerId)) {
+      return res.status(401).json({
+        message: "Scanneur non authentifié.",
+      });
+    }
+
+    if (!encryptedValue || typeof encryptedValue !== "string") {
+      return res.status(400).json({
+        message: "QR code manquant ou invalide.",
+      });
+    }
+
+    const payload = decryptGoodPlanQrPayload(encryptedValue);
+
+    if (!payload || payload.type !== "goodPlan") {
+      return res.status(400).json({
+        message: "QR code de bon plan invalide.",
+      });
+    }
+
+    const { goodPlanId, customerId, issuedAt, expiresAt } = payload;
+
+    if (!isValidObjectId(goodPlanId)) {
+      return res.status(400).json({
+        message: "Identifiant de bon plan invalide dans le QR code.",
+      });
+    }
+
+    if (!isValidObjectId(customerId)) {
+      return res.status(400).json({
+        message: "Identifiant client invalide dans le QR code.",
+      });
+    }
+
+    const expirationDate = new Date(expiresAt);
+
+    if (!expiresAt || isNaN(expirationDate.getTime())) {
+      return res.status(400).json({
+        message: "Date d'expiration du QR code invalide.",
+      });
+    }
+
+    if (expirationDate < new Date()) {
+      return res.status(410).json({
+        message: "QR code expiré. Demandez au client d'en générer un nouveau.",
+      });
+    }
+
+    const goodPlan = await GoodPlan.findOne({
+      _id: goodPlanId,
+      ...buildPublicGoodPlanFilter(),
+    });
+
+    if (!goodPlan) {
+      return res.status(404).json({
+        message: "Bon plan indisponible ou expiré.",
+      });
+    }
+
+    const establishmentId = String(goodPlan.establishment);
+
+    const establishment = await Establishment.findOne({
+      _id: establishmentId,
+      activated: true,
+      banned: false,
+      deletedAt: null,
+    }).select("_id name");
+
+    if (!establishment) {
+      return res.status(404).json({
+        message: "Établissement introuvable ou indisponible.",
+      });
+    }
+
+    const authorization = await checkCustomerCanScanForEstablishment(
+      scannerCustomerId,
+      establishmentId,
+    );
+
+    if (!authorization.allowed) {
+      return res.status(403).json({
+        message:
+          authorization.reason ||
+          "Vous n'êtes pas autorisé à valider ce bon plan.",
+      });
+    }
+
+    const customer =
+      await Customer.findById(customerId).select("_id email account");
+
+    if (!customer) {
+      return res.status(404).json({
+        message: "Client introuvable.",
+      });
+    }
+
+    const maxUses = goodPlan.redemption?.maxUses;
+    const usesCount = goodPlan.redemption?.usesCount || 0;
+
+    if (typeof maxUses === "number" && usesCount >= maxUses) {
+      return res.status(409).json({
+        message: "Ce bon plan a atteint sa limite d'utilisation.",
+      });
+    }
+
+    if (goodPlan.redemption?.oneUsePerUser) {
+      const alreadyUsed = await GoodPlanUse.exists({
+        goodPlan: goodPlan._id,
+        customer: customer._id,
+        status: "validated",
+      });
+
+      if (alreadyUsed) {
+        return res.status(409).json({
+          message: "Ce client a déjà utilisé ce bon plan.",
+        });
+      }
+    }
+
+    const use = await GoodPlanUse.create({
+      goodPlan: goodPlan._id,
+      establishment: establishment._id,
+      customer: customer._id,
+      scannedByCustomer: scannerCustomerId,
+      scannedByOwner: authorization.ownerId || null,
+      source: "qr_scan",
+      status: "validated",
+      qrIssuedAt: issuedAt ? new Date(issuedAt) : null,
+      qrExpiresAt: expirationDate,
+      usedAt: new Date(),
+    });
+
+    goodPlan.redemption.usesCount = (goodPlan.redemption.usesCount || 0) + 1;
+
+    goodPlan.stats = {
+      views: goodPlan.stats?.views || 0,
+      clicks: goodPlan.stats?.clicks || 0,
+      uses: (goodPlan.stats?.uses || 0) + 1,
+    };
+
+    await goodPlan.save();
+
+    return res.status(200).json({
+      ok: true,
+      message: "Bon plan validé avec succès.",
+      use,
+      customer: {
+        _id: customer._id,
+        email: customer.email,
+        account: customer.account,
+      },
+      goodPlan: {
+        _id: goodPlan._id,
+        title: goodPlan.title,
+        redemption: goodPlan.redemption,
+        stats: goodPlan.stats,
+      },
+      establishment: {
+        _id: establishment._id,
+        name: establishment.name,
+      },
+    });
+  } catch (error) {
+    console.error("Erreur scanGoodPlanQr:", error);
+
+    return res.status(500).json({
+      message: "Erreur lors de la validation du bon plan.",
+      error: error instanceof Error ? error.message : error,
+    });
+  }
+};
+
 const deleteGoodPlan = async (req: Request, res: Response) => {
   try {
     const { goodPlanId } = req.params;
@@ -1045,6 +1458,8 @@ export default {
   updateGoodPlan,
   publishGoodPlan,
   disableGoodPlan,
+  generateGoodPlanQr,
+  scanGoodPlanQr,
   deleteGoodPlan,
   declareGoodPlanUse,
 };

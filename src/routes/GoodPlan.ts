@@ -6,10 +6,11 @@ import CustomerIsAuthenticated from "../middlewares/IsAuthenticated";
 const router = express.Router();
 
 /**
- * PUBLIC
+ * CUSTOMER
+ * Routes accessibles aux utilisateurs connectés.
  */
 
-// Récupérer les bons plans publics actifs
+// Récupérer les bons plans visibles
 router.get("/", CustomerIsAuthenticated, GoodPlanController.getPublicGoodPlans);
 
 // Récupérer les bons plans autour d'une position
@@ -19,7 +20,14 @@ router.post(
   GoodPlanController.getGoodPlansByPosition,
 );
 
-// Récupérer les bons plans publics d'un établissement
+// Scanner un QR code de bon plan côté commerçant / staff
+router.post(
+  "/scan",
+  CustomerIsAuthenticated,
+  GoodPlanController.scanGoodPlanQr,
+);
+
+// Récupérer les bons plans visibles d'un établissement
 router.get(
   "/establishment/:establishmentId",
   CustomerIsAuthenticated,
@@ -33,12 +41,19 @@ router.post(
   GoodPlanController.readGoodPlan,
 );
 
-// Déclarer une utilisation
+// Générer le QR code client pour utiliser un bon plan
 router.post(
-  "/:goodPlanId/use",
+  "/:goodPlanId/qr",
   CustomerIsAuthenticated,
-  GoodPlanController.declareGoodPlanUse,
+  GoodPlanController.generateGoodPlanQr,
 );
+
+// Ancien système à éviter : le client ne doit pas valider seul une utilisation.
+// router.post(
+//   "/:goodPlanId/use",
+//   CustomerIsAuthenticated,
+//   GoodPlanController.declareGoodPlanUse,
+// );
 
 /**
  * OWNER / GESTION ÉTABLISSEMENT
@@ -59,7 +74,6 @@ router.post(
 );
 
 // Modifier un bon plan
-
 router.patch(
   "/:goodPlanId",
   OwnerIsAuthenticated,
@@ -67,7 +81,6 @@ router.patch(
 );
 
 // Publier un bon plan
-
 router.patch(
   "/:goodPlanId/publish",
   OwnerIsAuthenticated,
