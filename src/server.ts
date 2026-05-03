@@ -38,6 +38,7 @@ import AdminUsersControlRoutes from "./routes/AdminUsersControl";
 import AdminOwnersControlRoutes from "./routes/AdminOwnerControl";
 import AdminStatsControlRoutes from "./routes/AdminStatsControl";
 import LoyaltyControlRoutes from "./routes/LoyaltyController";
+import GoodPlanControlRoutes from "./routes/GoodPlan";
 
 // Middlewares
 import AdminIsAuthenticated from "./middlewares/IsAuthenticated";
@@ -249,6 +250,7 @@ const configureApp = () => {
   router.use("/ownersControl/", AdminOwnersControlRoutes);
   router.use("/statsControl/", AdminStatsControlRoutes);
   router.use("/loyalty/", LoyaltyControlRoutes);
+  router.use("/good-plans/", GoodPlanControlRoutes);
 
   router.use(LoginRoute);
   router.use(ToolsRoutes);
@@ -1364,7 +1366,7 @@ Tu DOIS renvoyer STRICTEMENT un JSON valide, sans texte avant ou après, de la f
           `localappy://events`,
         )}`;
 
-        const title = `🔥 Tu fais quoi ce week-end ?`;
+        const title = `☀️ Des idées pour ton dimanche ?`;
         const body = `Plein d’événements près de toi à ne pas rater. Ouvre l’app et découvre les sorties autour de toi !`;
 
         const messages: {

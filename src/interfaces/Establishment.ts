@@ -120,6 +120,7 @@ interface IEstablishment extends Document {
   notifications?: Types.ObjectId[];
   refund?: Types.ObjectId[];
   ads?: Types.ObjectId[];
+  goodPlans?: Types.ObjectId[];
 
   loyaltyPrograms?: ILoyaltyProgram[];
 
