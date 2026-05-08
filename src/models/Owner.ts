@@ -37,7 +37,7 @@ const OwnerSchema = new Schema<IOwner>(
       code: { type: String },
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 const Owner = model<IOwner>("Owner", OwnerSchema);
