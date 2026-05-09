@@ -263,18 +263,6 @@ const checkOwnerCanManageEstablishment = async (
     };
   }
 
-  const ownerId = getOwnerIdFromBody(req);
-
-  if (!ownerId || !isValidObjectId(ownerId)) {
-    return {
-      allowed: false,
-      status: 401,
-      message: "Owner non authentifié.",
-      establishment: null,
-      owner: null,
-    };
-  }
-
   const [owner, establishment] = await Promise.all([
     Owner.findById(ownerId).select("_id establishments isValidated isVerified"),
     Establishment.findById(establishmentId).select(
