@@ -106,6 +106,18 @@ const getCustomerIdFromRequest = (req: Request): string | null => {
   return null;
 };
 
+const getOwnerIdFromRequest = (req: Request): string | null => {
+  const owner = (req as any).owner || req.body?.owner;
+
+  if (!owner) return null;
+
+  if (typeof owner === "string") return owner;
+
+  if (owner._id) return String(owner._id);
+
+  return null;
+};
+
 const createRandomNonce = () => {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 };
@@ -237,18 +249,6 @@ const checkCustomerCanScanForEstablishment = async (
   };
 };
 
-const getOwnerIdFromBody = (req: Request): string | null => {
-  const owner = req.body.owner;
-
-  if (!owner) return null;
-
-  if (typeof owner === "string") return owner;
-
-  if (owner._id) return String(owner._id);
-
-  return null;
-};
-
 const checkOwnerCanManageEstablishment = async (
   req: Request,
   establishmentId: string,
@@ -258,6 +258,18 @@ const checkOwnerCanManageEstablishment = async (
       allowed: false,
       status: 400,
       message: "Identifiant d'établissement invalide.",
+      establishment: null,
+      owner: null,
+    };
+  }
+
+  const ownerId = getOwnerIdFromRequest(req);
+
+  if (!ownerId || !isValidObjectId(ownerId)) {
+    return {
+      allowed: false,
+      status: 401,
+      message: "Owner non authentifié.",
       establishment: null,
       owner: null,
     };
