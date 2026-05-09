@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import mongoose from "mongoose";
+import cloudinary from "cloudinary";
 import GoodPlan from "../models/GoodPlan";
 import Establishment from "../models/Establishment";
 import Owner from "../models/Owner";
@@ -39,6 +40,34 @@ const parseJsonField = (value: any, fallback: any) => {
   }
 
   return fallback;
+};
+
+const sanitizeFolderName = (name: string) =>
+  name
+    .toLowerCase()
+    .replace(/[^a-z0-9]/gi, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+
+const getUploadedGoodPlanImageUrl = async (
+  req: Request,
+  establishmentName: string,
+): Promise<string | null> => {
+  const filesObject = req.files && !Array.isArray(req.files) ? req.files : {};
+  const allFiles: Express.Multer.File[] = Object.values(filesObject).flat();
+
+  if (!allFiles.length) {
+    return null;
+  }
+
+  const folderName = sanitizeFolderName(establishmentName || "default");
+  const firstFile = allFiles[0];
+
+  const result = await cloudinary.v2.uploader.upload(firstFile.path, {
+    folder: `good-plans/${folderName}`,
+  });
+
+  return result.secure_url;
 };
 
 const normalizeText = (value: string) => {
@@ -418,6 +447,15 @@ const createGoodPlanForAnEstablishment = async (
       });
     }
 
+    const uploadedImageUrl = await getUploadedGoodPlanImageUrl(
+      req,
+      access.establishment.name || "default",
+    );
+
+    const finalImage =
+      uploadedImageUrl ||
+      (typeof image === "string" && image.trim() !== "" ? image.trim() : null);
+
     const parsedAvailability = parseJsonField(availability, {});
     const parsedRedemption = parseJsonField(redemption, {});
 
@@ -444,7 +482,7 @@ const createGoodPlanForAnEstablishment = async (
       createdByOwner: access.owner._id,
       createdByCustomer: null,
 
-      image: typeof image === "string" && image.trim() !== "" ? image : null,
+      image: finalImage,
 
       startDate: parsedStartDate,
       endDate: parsedEndDate,
@@ -843,6 +881,20 @@ const updateGoodPlan = async (req: Request, res: Response) => {
       return res.status(access.status).json({ message: access.message });
     }
 
+    const uploadedImageUrl = await getUploadedGoodPlanImageUrl(
+      req,
+      access.establishment?.name || "default",
+    );
+
+    if (uploadedImageUrl) {
+      goodPlan.image = uploadedImageUrl;
+    } else if (req.body.image !== undefined) {
+      goodPlan.image =
+        typeof req.body.image === "string" && req.body.image.trim() !== ""
+          ? req.body.image.trim()
+          : null;
+    }
+
     if (req.body.title !== undefined) {
       if (typeof req.body.title !== "string" || req.body.title.trim() === "") {
         return res.status(400).json({
@@ -875,13 +927,6 @@ const updateGoodPlan = async (req: Request, res: Response) => {
 
     if (req.body.type !== undefined) {
       goodPlan.type = req.body.type;
-    }
-
-    if (req.body.image !== undefined) {
-      goodPlan.image =
-        typeof req.body.image === "string" && req.body.image.trim() !== ""
-          ? req.body.image
-          : null;
     }
 
     if (req.body.startDate !== undefined) {

@@ -2,9 +2,12 @@ import express from "express";
 import GoodPlanController from "../controllers/goodPlan";
 import OwnerIsAuthenticated from "../middlewares/OwnerIsAuthenticated";
 import CustomerIsAuthenticated from "../middlewares/IsAuthenticated";
+import { multerConfig } from "../middlewares/Multer";
+import multer from "multer";
 
 const router = express.Router();
-
+const upload = multer(multerConfig);
+const cpUpload = upload.fields([{ name: "file", maxCount: 3 }]);
 /**
  * CUSTOMER
  * Routes accessibles aux utilisateurs connectés.
@@ -63,6 +66,7 @@ router.post(
 router.post(
   "/establishment/:establishmentId/draft",
   OwnerIsAuthenticated,
+  cpUpload,
   GoodPlanController.createGoodPlanForAnEstablishment,
 );
 
@@ -77,6 +81,7 @@ router.post(
 router.patch(
   "/:goodPlanId",
   OwnerIsAuthenticated,
+  cpUpload,
   GoodPlanController.updateGoodPlan,
 );
 
