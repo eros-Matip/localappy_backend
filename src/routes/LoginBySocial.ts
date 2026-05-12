@@ -40,9 +40,40 @@ const verifyAppleToken = (accessToken: string) => {
     );
   });
 };
+const facebookClient = jwksClient({
+  jwksUri: "https://www.facebook.com/.well-known/oauth/openid/jwks/",
+});
 
+const getFacebookKey = (header: any, callback: any) => {
+  facebookClient.getSigningKey(header.kid, (err, key) => {
+    if (err) {
+      callback(err, null);
+    } else {
+      const signingKey = key?.getPublicKey();
+      callback(null, signingKey);
+    }
+  });
+};
+
+const verifyFacebookAuthenticationToken = (authenticationToken: string) => {
+  return new Promise((resolve, reject) => {
+    jwt.verify(
+      authenticationToken,
+      getFacebookKey,
+      {
+        algorithms: ["RS256"],
+        audience: "503623619325287",
+        issuer: "https://www.facebook.com",
+      },
+      (err, decoded) => {
+        if (err) return reject(err);
+        resolve(decoded);
+      },
+    );
+  });
+};
 router.post("/socialLogin", async (req: Request, res: Response) => {
-  const { provider, accessToken, expoPushToken } = req.body;
+  const { provider, accessToken, tokenType, expoPushToken } = req.body;
 
   if (!provider || !accessToken) {
     Retour.error("Provider and accessToken are required");
@@ -95,62 +126,108 @@ router.post("/socialLogin", async (req: Request, res: Response) => {
     // ✅ FACEBOOK
     // =========================
     else if (provider === "facebook") {
-      try {
-        const facebookResponse = await axios.get(
-          "https://graph.facebook.com/v20.0/me",
-          {
-            params: {
-              fields: "id,name,email",
-              access_token: accessToken,
-            },
-          },
-        );
+      if (tokenType === "authentication_token") {
+        try {
+          const decodedToken: any =
+            await verifyFacebookAuthenticationToken(accessToken);
 
-        const fb = facebookResponse.data;
+          console.log("FACEBOOK LIMITED TOKEN DECODED =", decodedToken);
 
-        console.log("FACEBOOK ME RESPONSE =", fb);
+          const facebookUserId = decodedToken.sub;
+          const email = decodedToken.email;
 
-        if (!fb?.id) {
+          if (!facebookUserId) {
+            return res.status(400).json({
+              message: "Facebook authentication token missing sub",
+            });
+          }
+
+          if (!email) {
+            return res.status(400).json({
+              message:
+                "Facebook Limited Login token missing email. Impossible de créer le compte sans email.",
+            });
+          }
+
+          userData = {
+            email,
+            given_name:
+              decodedToken.given_name ||
+              decodedToken.name?.split(" ")?.[0] ||
+              "Utilisateur",
+            family_name:
+              decodedToken.family_name ||
+              decodedToken.name?.split(" ")?.slice(1).join(" ") ||
+              "",
+            picture:
+              decodedToken.picture || "https://example.com/default-avatar.png",
+            sub: facebookUserId,
+          };
+        } catch (error: any) {
+          console.log("FACEBOOK LIMITED TOKEN ERROR =", error?.message);
+
           return res.status(400).json({
-            message: "Facebook token invalid: missing id",
+            message: "Invalid Facebook authentication token",
+            error: error?.message,
           });
         }
-
-        if (!fb?.email) {
-          return res.status(400).json({
-            message:
-              "Facebook account has no email OR permission 'email' not granted",
-            facebookUser: {
-              id: fb.id,
-              name: fb.name,
+      } else {
+        try {
+          const facebookResponse = await axios.get(
+            "https://graph.facebook.com/v20.0/me",
+            {
+              params: {
+                fields: "id,name,email",
+                access_token: accessToken,
+              },
             },
+          );
+
+          const fb = facebookResponse.data;
+
+          console.log("FACEBOOK ME RESPONSE =", fb);
+
+          if (!fb?.id) {
+            return res.status(400).json({
+              message: "Facebook token invalid: missing id",
+            });
+          }
+
+          if (!fb?.email) {
+            return res.status(400).json({
+              message:
+                "Facebook account has no email OR permission 'email' not granted",
+              facebookUser: {
+                id: fb.id,
+                name: fb.name,
+              },
+            });
+          }
+
+          const fullName = (fb?.name ?? "").trim();
+          const parts = fullName ? fullName.split(" ") : [];
+          const given = parts.length ? parts[0] : "Utilisateur";
+          const family = parts.length > 1 ? parts.slice(1).join(" ") : "";
+
+          userData = {
+            email: fb.email,
+            given_name: given,
+            family_name: family,
+            picture: `https://graph.facebook.com/${fb.id}/picture?type=large`,
+            sub: fb.id,
+          };
+        } catch (error: any) {
+          console.log("FACEBOOK ME ERROR STATUS =", error?.response?.status);
+          console.log("FACEBOOK ME ERROR DATA =", error?.response?.data);
+          console.log("FACEBOOK ME ERROR MESSAGE =", error?.message);
+
+          return res.status(400).json({
+            message: "Invalid Facebook access token",
+            facebookError: error?.response?.data || error?.message,
           });
         }
-
-        const fullName = (fb?.name ?? "").trim();
-        const parts = fullName ? fullName.split(" ") : [];
-        const given = parts.length ? parts[0] : "Utilisateur";
-        const family = parts.length > 1 ? parts.slice(1).join(" ") : "";
-
-        userData = {
-          email: fb.email,
-          given_name: given,
-          family_name: family,
-          picture: `https://graph.facebook.com/${fb.id}/picture?type=large`,
-          sub: fb.id,
-        };
-      } catch (error: any) {
-        console.log("FACEBOOK ME ERROR STATUS =", error?.response?.status);
-        console.log("FACEBOOK ME ERROR DATA =", error?.response?.data);
-        console.log("FACEBOOK ME ERROR MESSAGE =", error?.message);
-
-        return res.status(400).json({
-          message: "Invalid Facebook access token",
-          facebookError: error?.response?.data || error?.message,
-        });
       }
     }
-
     // =========================
     // 🚫 APPLE
     // =========================
