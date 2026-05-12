@@ -1343,8 +1343,8 @@ Tu DOIS renvoyer STRICTEMENT un JSON valide, sans texte avant ou après, de la f
             `localappy://event/${String(event._id)}`,
           )}`;
 
-          const title = `🎉 Nouvel événement ajouté !`;
-          const body = `${event.title} est maintenant disponible sur Localappy 👀`;
+          const title = `🎉 C’est maintenant !`;
+          const body = `${event.title} est en cours sur Localappy 👀`;
 
           const notification = await createQueuedNotification({
             userId: String(user._id),
@@ -1380,6 +1380,216 @@ Tu DOIS renvoyer STRICTEMENT un JSON valide, sans texte avant ou après, de la f
         } catch (error) {
           console.error(error);
           return res.status(500).json({ message: "error catched", error });
+        }
+      } else if (req.body.test === "send notif all users one event") {
+        try {
+          const { eventId } = req.body;
+
+          if (!eventId) {
+            return res.status(400).json({
+              success: false,
+              message: "eventId manquant",
+            });
+          }
+
+          const event = await Event.findById(eventId);
+
+          if (!event) {
+            return res.status(404).json({
+              success: false,
+              message: "Événement introuvable",
+            });
+          }
+
+          const users = await Customer.find({
+            expoPushToken: { $exists: true, $nin: [null, ""] },
+            activated: true,
+            banned: false,
+          }).select("_id expoPushToken");
+
+          if (!users.length) {
+            return res.status(404).json({
+              success: false,
+              message: "Aucun utilisateur avec expoPushToken",
+            });
+          }
+
+          const validUsers = users.filter(
+            (user): user is typeof user & { expoPushToken: string } =>
+              typeof user.expoPushToken === "string" &&
+              user.expoPushToken.trim() !== "" &&
+              Expo.isExpoPushToken(user.expoPushToken),
+          );
+
+          if (!validUsers.length) {
+            return res.status(400).json({
+              success: false,
+              message: "Aucun token Expo valide",
+            });
+          }
+
+          const deepLink = `https://localappy.fr/open?link=${encodeURIComponent(
+            `localappy://event/${String(event._id)}`,
+          )}`;
+
+          const title = `🎉 C’est maintenant !`;
+          const body = `${event.title} est en cours sur Localappy 👀`;
+
+          const messages: {
+            to: string;
+            sound: "default";
+            title: string;
+            body: string;
+            data: {
+              url: string;
+              notificationId: string;
+            };
+          }[] = [];
+
+          const notificationMap = new Map<
+            string,
+            {
+              notificationId: string;
+              userId: string;
+            }
+          >();
+
+          for (const user of validUsers) {
+            const notification = await createQueuedNotification({
+              userId: String(user._id),
+              title,
+              body,
+              eventId: String(event._id),
+              tokens: [user.expoPushToken],
+              ttlDays: 7,
+              data: {
+                url: deepLink,
+              },
+            });
+
+            notificationMap.set(user.expoPushToken, {
+              notificationId: String(notification._id),
+              userId: String(user._id),
+            });
+
+            messages.push({
+              to: user.expoPushToken,
+              sound: "default",
+              title,
+              body,
+              data: {
+                url: deepLink,
+                notificationId: String(notification._id),
+              },
+            });
+          }
+
+          const chunks = expo.chunkPushNotifications(messages);
+
+          const invalidTokens: string[] = [];
+          let hadAnySuccess = false;
+          let hadAnyError = false;
+          let successCount = 0;
+          let errorCount = 0;
+
+          for (const chunk of chunks) {
+            try {
+              const ticketChunk = await expo.sendPushNotificationsAsync(chunk);
+
+              for (let i = 0; i < ticketChunk.length; i++) {
+                const ticket = ticketChunk[i];
+                const message = chunk[i];
+                const token = message.to;
+                const notificationEntry = notificationMap.get(token);
+
+                if (!notificationEntry) continue;
+
+                if (ticket.status === "ok") {
+                  hadAnySuccess = true;
+                  successCount += 1;
+
+                  await finalizeNotificationSend(
+                    notificationEntry.notificationId,
+                    {
+                      tickets: [ticket],
+                      invalidTokens: [],
+                      hadAnySuccess: true,
+                      hadAnyError: false,
+                    },
+                  );
+                } else {
+                  hadAnyError = true;
+                  errorCount += 1;
+
+                  const tokenInvalid =
+                    ticket.details?.error === "DeviceNotRegistered";
+
+                  if (tokenInvalid) {
+                    invalidTokens.push(token);
+                  }
+
+                  await finalizeNotificationSend(
+                    notificationEntry.notificationId,
+                    {
+                      tickets: [ticket],
+                      invalidTokens: tokenInvalid ? [token] : [],
+                      hadAnySuccess: false,
+                      hadAnyError: true,
+                    },
+                  );
+                }
+              }
+            } catch (error) {
+              hadAnyError = true;
+              console.error("Erreur Expo:", error);
+
+              for (const message of chunk) {
+                const notificationEntry = notificationMap.get(message.to);
+                if (!notificationEntry) continue;
+
+                errorCount += 1;
+
+                await finalizeNotificationSend(
+                  notificationEntry.notificationId,
+                  {
+                    tickets: [],
+                    invalidTokens: [],
+                    hadAnySuccess: false,
+                    hadAnyError: true,
+                  },
+                );
+              }
+            }
+          }
+
+          if (invalidTokens.length > 0) {
+            await Customer.updateMany(
+              { expoPushToken: { $in: invalidTokens } },
+              { $set: { expoPushToken: "" } },
+            );
+          }
+
+          return res.status(200).json({
+            success: true,
+            message: "Notification événement envoyée à tous les utilisateurs",
+            eventId: String(event._id),
+            eventTitle: event.title,
+            totalUsersFound: users.length,
+            validUsers: validUsers.length,
+            sent: successCount,
+            failed: errorCount,
+            invalidTokens: invalidTokens.length,
+            hadAnySuccess,
+            hadAnyError,
+            deepLink,
+          });
+        } catch (error) {
+          console.error(error);
+          return res.status(500).json({
+            success: false,
+            message: "error catched",
+            error,
+          });
         }
       } else if (req.body.test === "send notif all users new events") {
         try {
@@ -1603,7 +1813,7 @@ Tu DOIS renvoyer STRICTEMENT un JSON valide, sans texte avant ou après, de la f
             `localappy://events`,
           )}`;
 
-          const title = `☀️ Des idées pour ton dimanche ?`;
+          const title = `☀️ Des idées pour ton weekend ?`;
           const body = `Plein d’événements près de toi à ne pas rater. Ouvre l’app et découvre les sorties autour de toi !`;
 
           const messages: {

@@ -92,35 +92,63 @@ router.post("/socialLogin", async (req: Request, res: Response) => {
     }
 
     // =========================
-    // ✅ FACEBOOK (email requis)
+    // ✅ FACEBOOK
     // =========================
     else if (provider === "facebook") {
-      const facebookResponse = await axios.get(
-        `https://graph.facebook.com/me?fields=id,name,email&access_token=${accessToken}`,
-      );
+      try {
+        const facebookResponse = await axios.get(
+          "https://graph.facebook.com/v20.0/me",
+          {
+            params: {
+              fields: "id,name,email",
+              access_token: accessToken,
+            },
+          },
+        );
 
-      const fb = facebookResponse.data;
+        const fb = facebookResponse.data;
 
-      if (!fb?.email) {
+        console.log("FACEBOOK ME RESPONSE =", fb);
+
+        if (!fb?.id) {
+          return res.status(400).json({
+            message: "Facebook token invalid: missing id",
+          });
+        }
+
+        if (!fb?.email) {
+          return res.status(400).json({
+            message:
+              "Facebook account has no email OR permission 'email' not granted",
+            facebookUser: {
+              id: fb.id,
+              name: fb.name,
+            },
+          });
+        }
+
+        const fullName = (fb?.name ?? "").trim();
+        const parts = fullName ? fullName.split(" ") : [];
+        const given = parts.length ? parts[0] : "Utilisateur";
+        const family = parts.length > 1 ? parts.slice(1).join(" ") : "";
+
+        userData = {
+          email: fb.email,
+          given_name: given,
+          family_name: family,
+          picture: `https://graph.facebook.com/${fb.id}/picture?type=large`,
+          sub: fb.id,
+        };
+      } catch (error: any) {
+        console.log("FACEBOOK ME ERROR STATUS =", error?.response?.status);
+        console.log("FACEBOOK ME ERROR DATA =", error?.response?.data);
+        console.log("FACEBOOK ME ERROR MESSAGE =", error?.message);
+
         return res.status(400).json({
-          message:
-            "Facebook account has no email OR permission 'email' not granted",
+          message: "Invalid Facebook access token",
+          facebookError: error?.response?.data || error?.message,
         });
       }
-
-      const fullName = (fb?.name ?? "").trim();
-      const parts = fullName ? fullName.split(" ") : [];
-      const given = parts.length ? parts[0] : "Utilisateur";
-      const family = parts.length > 1 ? parts.slice(1).join(" ") : "";
-
-      userData = {
-        email: fb.email,
-        given_name: given,
-        family_name: family,
-        // (facultatif) tu peux récupérer une photo plus tard via /me/picture si tu veux
-        picture: "https://example.com/default-avatar.png",
-        sub: fb.id,
-      };
     }
 
     // =========================
@@ -196,11 +224,16 @@ router.post("/socialLogin", async (req: Request, res: Response) => {
       message: "Social login successful",
       customer,
     });
-  } catch (error) {
+  } catch (error: any) {
     Retour.error("Erreur de connexion sociale");
+
+    console.log("SOCIAL LOGIN ERROR STATUS =", error?.response?.status);
+    console.log("SOCIAL LOGIN ERROR DATA =", error?.response?.data);
+    console.log("SOCIAL LOGIN ERROR MESSAGE =", error?.message);
+
     return res.status(500).json({
       message: "Une erreur est survenue lors de la connexion sociale",
-      error,
+      error: error?.response?.data || error?.message,
     });
   }
 });
