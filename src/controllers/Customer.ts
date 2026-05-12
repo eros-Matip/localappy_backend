@@ -741,16 +741,46 @@ const respondToStaffInvitation = async (req: Request, res: Response) => {
 };
 
 const deleteCustomer = async (req: Request, res: Response) => {
-  return Customer.findByIdAndDelete(req.body.admin)
-    .then((customer) =>
-      customer
-        ? res.status(200).json({ message: "Customer is deleted" })
-        : res.status(404).json({ message: "Customer not found" }),
-    )
-    .catch((error) => {
-      Retour.error("Error catched");
-      return res.status(500).json({ message: "Error catched", error });
+  try {
+    const customerId = req.body.admin;
+
+    if (!customerId) {
+      return res.status(401).json({
+        message: "Customer not authenticated",
+      });
+    }
+
+    const customer = await Customer.findByIdAndUpdate(
+      customerId,
+      {
+        $set: {
+          deletedAt: new Date(),
+          activated: false,
+          banned: true,
+          token: "",
+          expoPushToken: "",
+        },
+      },
+      { new: true },
+    );
+
+    if (!customer) {
+      return res.status(404).json({
+        message: "Customer not found",
+      });
+    }
+
+    return res.status(200).json({
+      message: "Customer account deleted",
     });
+  } catch (error) {
+    Retour.error("Error while deleting customer");
+
+    return res.status(500).json({
+      message: "Error while deleting customer",
+      error,
+    });
+  }
 };
 
 export default {

@@ -271,7 +271,7 @@ const configureApp = () => {
   /** Healthcheck */
   router.all(
     "/test",
-    AdminIsAuthenticated,
+
     async (req: Request, res: Response) => {
       if (req.body.test === "registrations") {
         try {

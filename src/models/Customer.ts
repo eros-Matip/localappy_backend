@@ -92,6 +92,14 @@ const customerSchema = new Schema<ICustomer>(
     salt: { type: String, default: "" },
     activated: { type: Boolean, default: true },
     banned: { type: Boolean, default: false },
+    deleted: {
+      type: Boolean,
+      default: false,
+    },
+    deletedAt: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true },
 );

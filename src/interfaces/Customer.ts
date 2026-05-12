@@ -71,4 +71,6 @@ export default interface ICustomer extends Document {
   salt: string;
   activated: boolean;
   banned: boolean;
+  deleted: boolean;
+  deletedAt: Date;
 }
