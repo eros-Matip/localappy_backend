@@ -1432,8 +1432,8 @@ Tu DOIS renvoyer STRICTEMENT un JSON valide, sans texte avant ou après, de la f
             `localappy://event/${String(event._id)}`,
           )}`;
 
-          const title = `🎉 C’est maintenant !`;
-          const body = `${event.title} est en cours sur Localappy 👀`;
+          const title = `🎶 Fête de la Musique le 21 juin !`;
+          const body = `${event.title} vous attend sur Localappy. Découvrez le programme et préparez votre sortie 👀`;
 
           const messages: {
             to: string;

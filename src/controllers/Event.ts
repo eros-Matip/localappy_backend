@@ -1622,18 +1622,21 @@ const getEventsByPosition = async (req: Request, res: Response) => {
     const page = parseInt(req.query.page as string, 10) || 1;
     const limit = parseInt(req.query.limit as string, 10) || 100;
 
+    const safePage = page > 0 ? page : 1;
+    const safeLimit = limit > 0 ? limit : 100;
+
     const parsedRadius =
       radius !== undefined && radius !== null && radius !== ""
         ? parseFloat(radius)
         : NaN;
 
-    // radius en km -> mètres, fallback 50km
-    const finalMaxDistance = !isNaN(parsedRadius) ? parsedRadius * 1000 : 50000;
+    const finalMaxDistance =
+      !isNaN(parsedRadius) && parsedRadius > 0 ? parsedRadius * 1000 : 50000;
 
     if (latitude === undefined || longitude === undefined) {
-      return res
-        .status(400)
-        .json({ message: "La latitude et la longitude sont requises." });
+      return res.status(400).json({
+        message: "La latitude et la longitude sont requises.",
+      });
     }
 
     const lat = typeof latitude === "number" ? latitude : parseFloat(latitude);
@@ -1641,53 +1644,216 @@ const getEventsByPosition = async (req: Request, res: Response) => {
       typeof longitude === "number" ? longitude : parseFloat(longitude);
 
     if (isNaN(lat) || isNaN(lon)) {
-      return res
-        .status(400)
-        .json({ message: "Les coordonnées fournies ne sont pas valides." });
+      return res.status(400).json({
+        message: "Les coordonnées fournies ne sont pas valides.",
+      });
     }
 
     const currentDate = new Date();
 
-    const fetchUniqueEventsWithCount = async (matchCondition: any) => {
-      const totalAgg = await Event.aggregate([
+    const EVENT_TIMEZONE = "Europe/Paris";
+
+    const getParisDateParts = (date: Date) => {
+      const formatter = new Intl.DateTimeFormat("en-US", {
+        timeZone: EVENT_TIMEZONE,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        weekday: "long",
+        hour12: false,
+      });
+
+      const parts = formatter.formatToParts(date);
+
+      const get = (type: string) =>
+        parts.find((part) => part.type === type)?.value ?? "";
+
+      return {
+        dateString: `${get("year")}-${get("month")}-${get("day")}`,
+        timeString: `${get("hour")}:${get("minute")}:${get("second")}`,
+        dayName: get("weekday"),
+      };
+    };
+
+    const nowParts = getParisDateParts(currentDate);
+
+    const todayDateString = nowParts.dateString;
+    const currentTimeString = nowParts.timeString;
+    const currentDayName = nowParts.dayName;
+
+    const todayStart = new Date(`${todayDateString}T00:00:00.000Z`);
+    const todayEnd = new Date(`${todayDateString}T23:59:59.999Z`);
+
+    const validStartTimeCondition = {
+      $or: [
+        { startTime: { $exists: false } },
+        { startTime: null },
+        { startTime: "" },
+        { startTime: { $lte: currentTimeString } },
+      ],
+    };
+
+    const validEndTimeCondition = {
+      $or: [
+        { endTime: { $exists: false } },
+        { endTime: null },
+        { endTime: "" },
+        { endTime: { $gte: currentTimeString } },
+      ],
+    };
+
+    const validDayOfWeekCondition = {
+      $or: [
+        { daysOfWeek: { $exists: false } },
+        { daysOfWeek: { $size: 0 } },
+        { daysOfWeek: currentDayName },
+      ],
+    };
+
+    /**
+     * ÉVÉNEMENTS EN COURS
+     */
+    const currentMatchCondition = {
+      isDraft: false,
+      $or: [
         {
-          $geoNear: {
-            near: { type: "Point", coordinates: [lon, lat] },
-            distanceField: "distance",
-            maxDistance: finalMaxDistance,
-            spherical: true,
+          occurrences: {
+            $elemMatch: {
+              startDate: { $lte: todayEnd },
+              endDate: { $gte: todayStart },
+              isRecurring: { $ne: true },
+              $and: [validStartTimeCondition, validEndTimeCondition],
+            },
           },
         },
-        { $match: matchCondition },
+        {
+          occurrences: {
+            $elemMatch: {
+              startDate: { $lte: todayEnd },
+              endDate: { $gte: todayStart },
+              isRecurring: true,
+              $and: [
+                validDayOfWeekCondition,
+                validStartTimeCondition,
+                validEndTimeCondition,
+              ],
+            },
+          },
+        },
+        {
+          "occurrences.0": { $exists: false },
+          startingDate: { $lte: currentDate },
+          endingDate: { $gte: currentDate },
+        },
+      ],
+    };
+
+    /**
+     * ÉVÉNEMENTS À VENIR
+     */
+    const upcomingMatchCondition = {
+      isDraft: false,
+      $or: [
+        {
+          occurrences: {
+            $elemMatch: {
+              isRecurring: { $ne: true },
+              $or: [
+                {
+                  startDate: { $gt: todayEnd },
+                },
+                {
+                  startDate: { $gte: todayStart, $lte: todayEnd },
+                  startTime: { $gt: currentTimeString },
+                },
+              ],
+            },
+          },
+        },
+        {
+          occurrences: {
+            $elemMatch: {
+              isRecurring: true,
+              endDate: { $gte: todayStart },
+              $or: [
+                {
+                  startDate: { $gt: todayEnd },
+                },
+                {
+                  startDate: { $lte: todayEnd },
+                  endDate: { $gt: todayEnd },
+                },
+                {
+                  startDate: { $lte: todayEnd },
+                  endDate: { $gte: todayStart },
+                  startTime: { $gt: currentTimeString },
+                  $and: [validDayOfWeekCondition],
+                },
+              ],
+            },
+          },
+        },
+        {
+          "occurrences.0": { $exists: false },
+          startingDate: { $gt: currentDate },
+        },
+      ],
+    };
+
+    const fetchUniqueEventsWithCount = async (matchCondition: any) => {
+      const baseGeoNearStage = {
+        $geoNear: {
+          near: {
+            type: "Point",
+            coordinates: [lon, lat],
+          },
+          distanceField: "distance",
+          maxDistance: finalMaxDistance,
+          spherical: true,
+        },
+      };
+
+      const basePipeline: any[] = [
+        baseGeoNearStage,
+        {
+          $match: matchCondition,
+        },
         {
           $group: {
             _id: "$title",
             event: { $first: "$$ROOT" },
           },
         },
-        { $count: "total" },
-      ]);
+        {
+          $replaceRoot: {
+            newRoot: "$event",
+          },
+        },
+      ];
+
+      const totalAgg = await Event.aggregate([
+        ...basePipeline,
+        {
+          $count: "total",
+        },
+      ]).allowDiskUse(true);
 
       const events = await Event.aggregate([
+        ...basePipeline,
         {
-          $geoNear: {
-            near: { type: "Point", coordinates: [lon, lat] },
-            distanceField: "distance",
-            maxDistance: finalMaxDistance,
-            spherical: true,
+          $sort: {
+            distance: 1,
           },
         },
-        { $match: matchCondition },
         {
-          $group: {
-            _id: "$title",
-            event: { $first: "$$ROOT" },
-          },
+          $skip: (safePage - 1) * safeLimit,
         },
-        { $replaceRoot: { newRoot: "$event" } },
-        { $sort: { distance: 1 } },
-        { $skip: (page - 1) * limit },
-        { $limit: limit },
+        {
+          $limit: safeLimit,
+        },
       ]).allowDiskUse(true);
 
       return {
@@ -1696,24 +1862,11 @@ const getEventsByPosition = async (req: Request, res: Response) => {
       };
     };
 
-    // On récupère d'abord les événements
-    const [pastData, currentData, upcomingData] = await Promise.all([
-      fetchUniqueEventsWithCount({
-        endingDate: { $lt: currentDate },
-        isDraft: false,
-      }),
-      fetchUniqueEventsWithCount({
-        startingDate: { $lte: currentDate },
-        endingDate: { $gte: currentDate },
-        isDraft: false,
-      }),
-      fetchUniqueEventsWithCount({
-        startingDate: { $gt: currentDate },
-        isDraft: false,
-      }),
+    const [currentData, upcomingData] = await Promise.all([
+      fetchUniqueEventsWithCount(currentMatchCondition),
+      fetchUniqueEventsWithCount(upcomingMatchCondition),
     ]);
 
-    // Reverse geocoding non bloquant
     let city: string | null = null;
 
     try {
@@ -1725,7 +1878,6 @@ const getEventsByPosition = async (req: Request, res: Response) => {
       );
     }
 
-    // Tracking non bloquant
     if (city) {
       try {
         await trackCityConsultationStat({ city });
@@ -1737,24 +1889,30 @@ const getEventsByPosition = async (req: Request, res: Response) => {
       }
     }
 
-    Retour.info(`all events from ${city ?? "unknown"} have been read`);
+    Retour.info(`events from ${city ?? "unknown"} have been read`);
 
     return res.status(200).json({
       metadata: {
         city,
         radiusKm: !isNaN(parsedRadius) ? parsedRadius : 50,
-        pastTotal: pastData.total,
         currentTotal: currentData.total,
         upcomingTotal: upcomingData.total,
-        currentPage: page,
-        pageSize: limit,
+        currentPage: safePage,
+        pageSize: safeLimit,
       },
-      pastEvents: pastData.events,
       currentEvents: currentData.events,
       upcomingEvents: upcomingData.events,
+
+      /**
+       * Optionnel :
+       * Je laisse pastEvents vide pour ne pas casser le front
+       * s'il attend encore cette clé.
+       */
+      pastEvents: [],
     });
   } catch (error) {
     console.error("Erreur lors de la récupération des événements :", error);
+
     return res.status(500).json({
       message: "Erreur interne du serveur.",
     });
