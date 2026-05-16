@@ -157,7 +157,11 @@ router.patch(
   OwnerIsAuthenticated,
   EventLivePhotoController.moderateLivePhoto,
 );
-router.post("/getAllForEventScreen", controller.getEventsForEventScreen);
+router.post(
+  "/getAllForEventScreen",
+  CustomerIsAuthenticated,
+  controller.getEventsForEventScreen,
+);
 router.get("/live/:eventId", CustomerIsAuthenticated, controller.getLiveEvent);
 
 export default router;
