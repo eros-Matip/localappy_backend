@@ -3796,6 +3796,7 @@ function cleanHTML(description: string): string {
   return cleaned;
 }
 // ---------------------- function for EventScreen -------------------
+
 const EVENT_SCREEN_TIMEZONE = "Europe/Paris";
 
 const getParisDateKeyForEventScreen = (dateInput: Date): string => {
@@ -3876,6 +3877,118 @@ const getDistanceInKmForEventScreen = (distanceInMeters?: number): number => {
   return Math.round((distanceInMeters / 1000) * 10) / 10;
 };
 
+const getMainEventImageForEventScreen = (event: any): string[] => {
+  if (Array.isArray(event.image) && event.image.length > 0) {
+    const firstValidImage = event.image.find(
+      (img: any) =>
+        typeof img === "string" &&
+        img.trim() !== "" &&
+        img !== "Image par défaut",
+    );
+
+    return firstValidImage ? [firstValidImage] : [];
+  }
+
+  return [];
+};
+
+const getMainEventImagesForEventScreen = (event: any): any[] => {
+  if (!Array.isArray(event.images) || event.images.length === 0) {
+    return [];
+  }
+
+  const mainImage =
+    event.images.find((img: any) => img?.isMain && img?.url) ||
+    event.images.find((img: any) => img?.url);
+
+  return mainImage ? [mainImage] : [];
+};
+
+const getLightDisplayOccurrenceForEventScreen = (occurrence: any) => {
+  if (!occurrence) return null;
+
+  return {
+    startDate: occurrence.startDate || null,
+    endDate: occurrence.endDate || null,
+    startTime: occurrence.startTime || null,
+    endTime: occurrence.endTime || null,
+    daysOfWeek: Array.isArray(occurrence.daysOfWeek)
+      ? occurrence.daysOfWeek
+      : [],
+    label: occurrence.label || null,
+    isRecurring: occurrence.isRecurring === true,
+  };
+};
+
+const buildLightEventScreenEntry = ({
+  event,
+  displayId,
+  displayDate,
+  displayDateKey,
+  displayStartDate,
+  displayEndDate,
+  displayStartTime,
+  displayEndTime,
+  displayOccurrence,
+  displaySource,
+}: {
+  event: any;
+  displayId: string;
+  displayDate: Date;
+  displayDateKey: string;
+  displayStartDate: Date;
+  displayEndDate: Date;
+  displayStartTime: string | null;
+  displayEndTime: string | null;
+  displayOccurrence: any;
+  displaySource: string;
+}) => {
+  return {
+    _id: event._id,
+    originalEventId: String(event._id),
+
+    displayId,
+    displayDate,
+    displayDateKey,
+    displayStartDate,
+    displayEndDate,
+    displayStartTime,
+    displayEndTime,
+    displayOccurrence:
+      getLightDisplayOccurrenceForEventScreen(displayOccurrence),
+    displaySource,
+
+    title: event.title || "",
+    translations: Array.isArray(event.translations)
+      ? event.translations.map((translation: any) => ({
+          lang: translation.lang,
+          title: translation.title,
+          description: translation.description,
+          shortDescription: translation.shortDescription,
+        }))
+      : [],
+
+    theme: Array.isArray(event.theme) ? event.theme : [],
+
+    address: event.address || "",
+    addressDetails: event.addressDetails || null,
+
+    image: getMainEventImageForEventScreen(event),
+    images: getMainEventImagesForEventScreen(event),
+
+    startingDate: event.startingDate || null,
+    endingDate: event.endingDate || null,
+
+    distance: event.distance || 0,
+    distanceKm: getDistanceInKmForEventScreen(event.distance),
+
+    price: event.price || 0,
+    priceLabel: event.priceLabel || null,
+    isFree: event.isFree === true,
+    registrationOpen: event.registrationOpen === true,
+  };
+};
+
 const buildLegacyDisplayEntriesForEventScreen = (
   event: any,
   now: Date,
@@ -3931,20 +4044,20 @@ const buildLegacyDisplayEntriesForEventScreen = (
       : buildDateWithTimeForEventScreen(cursor, "23:59:59");
 
     if (displayEndDate >= now) {
-      entries.push({
-        ...event,
-        originalEventId: String(event._id),
-        displayId: `${String(event._id)}-${displayDateKey}-legacy`,
-        displayDate: cursor,
-        displayDateKey,
-        displayStartDate,
-        displayEndDate,
-        displayStartTime: null,
-        displayEndTime: null,
-        displayOccurrence: null,
-        displaySource: "legacy",
-        distanceKm: getDistanceInKmForEventScreen(event.distance),
-      });
+      entries.push(
+        buildLightEventScreenEntry({
+          event,
+          displayId: `${String(event._id)}-${displayDateKey}-legacy`,
+          displayDate: cursor,
+          displayDateKey,
+          displayStartDate,
+          displayEndDate,
+          displayStartTime: null,
+          displayEndTime: null,
+          displayOccurrence: null,
+          displaySource: "legacy",
+        }),
+      );
     }
 
     cursor = addDaysForEventScreen(cursor, 1);
@@ -3992,6 +4105,7 @@ const buildOccurrenceDisplayEntriesForEventScreen = (
 
     const occurrenceStartDay =
       startOfParisDayForEventScreen(occurrenceStartRaw);
+
     const occurrenceEndDay = startOfParisDayForEventScreen(occurrenceEndRaw);
 
     const firstDisplayDay =
@@ -4040,20 +4154,20 @@ const buildOccurrenceDisplayEntriesForEventScreen = (
       );
 
       if (displayEndDate >= now) {
-        entries.push({
-          ...event,
-          originalEventId: String(event._id),
-          displayId: `${String(event._id)}-${displayDateKey}-occ-${occurrenceIndex}`,
-          displayDate: cursor,
-          displayDateKey,
-          displayStartDate,
-          displayEndDate,
-          displayStartTime: occurrence.startTime || null,
-          displayEndTime: occurrence.endTime || null,
-          displayOccurrence: occurrence,
-          displaySource: isRecurring ? "recurring_occurrence" : "occurrence",
-          distanceKm: getDistanceInKmForEventScreen(event.distance),
-        });
+        entries.push(
+          buildLightEventScreenEntry({
+            event,
+            displayId: `${String(event._id)}-${displayDateKey}-occ-${occurrenceIndex}`,
+            displayDate: cursor,
+            displayDateKey,
+            displayStartDate,
+            displayEndDate,
+            displayStartTime: occurrence.startTime || null,
+            displayEndTime: occurrence.endTime || null,
+            displayOccurrence: occurrence,
+            displaySource: isRecurring ? "recurring_occurrence" : "occurrence",
+          }),
+        );
       }
 
       cursor = addDaysForEventScreen(cursor, 1);
@@ -4098,10 +4212,10 @@ const getEventsForEventScreen = async (req: Request, res: Response) => {
     const { latitude, longitude, radius, daysAhead } = req.body;
 
     const page = parseInt(req.query.page as string, 10) || 1;
-    const limit = parseInt(req.query.limit as string, 10) || 800;
+    const limit = parseInt(req.query.limit as string, 10) || 150;
 
     const safePage = page > 0 ? page : 1;
-    const safeLimit = limit > 0 && limit <= 1500 ? limit : 800;
+    const safeLimit = limit > 0 && limit <= 300 ? limit : 150;
 
     if (latitude === undefined || longitude === undefined) {
       return res.status(400).json({
@@ -4132,14 +4246,14 @@ const getEventsForEventScreen = async (req: Request, res: Response) => {
     const parsedDaysAhead =
       daysAhead !== undefined && daysAhead !== null && daysAhead !== ""
         ? parseInt(daysAhead, 10)
-        : 180;
+        : 15;
 
     const safeDaysAhead =
       Number.isFinite(parsedDaysAhead) &&
       parsedDaysAhead > 0 &&
-      parsedDaysAhead <= 370
+      parsedDaysAhead <= 30
         ? parsedDaysAhead
-        : 180;
+        : 15;
 
     const now = new Date();
     const rangeStart = startOfParisDayForEventScreen(now);
@@ -4189,7 +4303,27 @@ const getEventsForEventScreen = async (req: Request, res: Response) => {
         },
       },
       {
-        $limit: 2000,
+        $project: {
+          _id: 1,
+          title: 1,
+          translations: 1,
+          theme: 1,
+          address: 1,
+          addressDetails: 1,
+          image: 1,
+          images: 1,
+          startingDate: 1,
+          endingDate: 1,
+          occurrences: 1,
+          price: 1,
+          priceLabel: 1,
+          isFree: 1,
+          registrationOpen: 1,
+          distance: 1,
+        },
+      },
+      {
+        $limit: 300,
       },
     ]).allowDiskUse(true);
 
@@ -4217,6 +4351,7 @@ const getEventsForEventScreen = async (req: Request, res: Response) => {
       });
 
     const startIndex = (safePage - 1) * safeLimit;
+
     const paginatedEvents = displayEntries.slice(
       startIndex,
       startIndex + safeLimit,
@@ -4240,7 +4375,9 @@ const getEventsForEventScreen = async (req: Request, res: Response) => {
     });
   }
 };
+
 // ----------------------End function for EventScreen -------------------
+
 export default {
   // createEventFromJSON,
   createDraftEvent,
