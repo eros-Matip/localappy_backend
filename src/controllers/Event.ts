@@ -3795,7 +3795,452 @@ function cleanHTML(description: string): string {
 
   return cleaned;
 }
+// ---------------------- function for EventScreen -------------------
+const EVENT_SCREEN_TIMEZONE = "Europe/Paris";
 
+const getParisDateKeyForEventScreen = (dateInput: Date): string => {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: EVENT_SCREEN_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(dateInput);
+};
+
+const getParisWeekdayForEventScreen = (dateInput: Date): string => {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: EVENT_SCREEN_TIMEZONE,
+    weekday: "long",
+  }).format(dateInput);
+};
+
+const normalizeEventScreenTime = (
+  time?: string | null,
+  fallback = "00:00:00",
+): string => {
+  if (!time || typeof time !== "string" || !time.trim()) {
+    return fallback;
+  }
+
+  const clean = time.trim();
+
+  if (/^\d{2}:\d{2}$/.test(clean)) {
+    return `${clean}:00`;
+  }
+
+  if (/^\d{2}:\d{2}:\d{2}$/.test(clean)) {
+    return clean;
+  }
+
+  return fallback;
+};
+
+const buildUtcDateFromParisDateKey = (
+  dateKey: string,
+  time = "00:00:00",
+): Date => {
+  return new Date(`${dateKey}T${time}.000Z`);
+};
+
+const startOfParisDayForEventScreen = (dateInput: Date): Date => {
+  const dateKey = getParisDateKeyForEventScreen(dateInput);
+  return buildUtcDateFromParisDateKey(dateKey, "00:00:00");
+};
+
+const endOfParisDayForEventScreen = (dateInput: Date): Date => {
+  const dateKey = getParisDateKeyForEventScreen(dateInput);
+  return buildUtcDateFromParisDateKey(dateKey, "23:59:59");
+};
+
+const addDaysForEventScreen = (dateInput: Date, days: number): Date => {
+  const nextDate = new Date(dateInput);
+  nextDate.setUTCDate(nextDate.getUTCDate() + days);
+  return nextDate;
+};
+
+const buildDateWithTimeForEventScreen = (
+  dayDate: Date,
+  timeInput?: string | null,
+  fallback = "00:00:00",
+): Date => {
+  const dateKey = getParisDateKeyForEventScreen(dayDate);
+  const safeTime = normalizeEventScreenTime(timeInput, fallback);
+  return buildUtcDateFromParisDateKey(dateKey, safeTime);
+};
+
+const getDistanceInKmForEventScreen = (distanceInMeters?: number): number => {
+  if (typeof distanceInMeters !== "number" || Number.isNaN(distanceInMeters)) {
+    return 0;
+  }
+
+  return Math.round((distanceInMeters / 1000) * 10) / 10;
+};
+
+const buildLegacyDisplayEntriesForEventScreen = (
+  event: any,
+  now: Date,
+  rangeStart: Date,
+  rangeEnd: Date,
+) => {
+  const entries: any[] = [];
+
+  const rawStartDate = event.startingDate ? new Date(event.startingDate) : null;
+  const rawEndDate = event.endingDate
+    ? new Date(event.endingDate)
+    : rawStartDate;
+
+  if (!rawStartDate || Number.isNaN(rawStartDate.getTime())) {
+    return entries;
+  }
+
+  if (!rawEndDate || Number.isNaN(rawEndDate.getTime())) {
+    return entries;
+  }
+
+  if (rawEndDate < now) {
+    return entries;
+  }
+
+  const firstDisplayDay =
+    rawStartDate < rangeStart
+      ? rangeStart
+      : startOfParisDayForEventScreen(rawStartDate);
+
+  const lastDisplayDay =
+    rawEndDate > rangeEnd
+      ? rangeEnd
+      : startOfParisDayForEventScreen(rawEndDate);
+
+  let cursor = startOfParisDayForEventScreen(firstDisplayDay);
+
+  while (cursor <= lastDisplayDay) {
+    const displayDateKey = getParisDateKeyForEventScreen(cursor);
+
+    const isFirstDay =
+      displayDateKey === getParisDateKeyForEventScreen(rawStartDate);
+
+    const isLastDay =
+      displayDateKey === getParisDateKeyForEventScreen(rawEndDate);
+
+    const displayStartDate = isFirstDay
+      ? rawStartDate
+      : buildDateWithTimeForEventScreen(cursor, "00:00:00");
+
+    const displayEndDate = isLastDay
+      ? rawEndDate
+      : buildDateWithTimeForEventScreen(cursor, "23:59:59");
+
+    if (displayEndDate >= now) {
+      entries.push({
+        ...event,
+        originalEventId: String(event._id),
+        displayId: `${String(event._id)}-${displayDateKey}-legacy`,
+        displayDate: cursor,
+        displayDateKey,
+        displayStartDate,
+        displayEndDate,
+        displayStartTime: null,
+        displayEndTime: null,
+        displayOccurrence: null,
+        displaySource: "legacy",
+        distanceKm: getDistanceInKmForEventScreen(event.distance),
+      });
+    }
+
+    cursor = addDaysForEventScreen(cursor, 1);
+  }
+
+  return entries;
+};
+
+const buildOccurrenceDisplayEntriesForEventScreen = (
+  event: any,
+  now: Date,
+  rangeStart: Date,
+  rangeEnd: Date,
+) => {
+  const entries: any[] = [];
+
+  const occurrences = Array.isArray(event.occurrences) ? event.occurrences : [];
+
+  for (const occurrenceIndex in occurrences) {
+    const occurrence = occurrences[occurrenceIndex];
+
+    if (!occurrence?.startDate && !occurrence?.endDate) {
+      continue;
+    }
+
+    const occurrenceStartRaw = occurrence.startDate
+      ? new Date(occurrence.startDate)
+      : null;
+
+    const occurrenceEndRaw = occurrence.endDate
+      ? new Date(occurrence.endDate)
+      : occurrenceStartRaw;
+
+    if (!occurrenceStartRaw || Number.isNaN(occurrenceStartRaw.getTime())) {
+      continue;
+    }
+
+    if (!occurrenceEndRaw || Number.isNaN(occurrenceEndRaw.getTime())) {
+      continue;
+    }
+
+    if (occurrenceEndRaw < now) {
+      continue;
+    }
+
+    const occurrenceStartDay =
+      startOfParisDayForEventScreen(occurrenceStartRaw);
+    const occurrenceEndDay = startOfParisDayForEventScreen(occurrenceEndRaw);
+
+    const firstDisplayDay =
+      occurrenceStartDay < rangeStart ? rangeStart : occurrenceStartDay;
+
+    const lastDisplayDay =
+      occurrenceEndDay > rangeEnd ? rangeEnd : occurrenceEndDay;
+
+    const isRecurring = occurrence.isRecurring === true;
+
+    let cursor = startOfParisDayForEventScreen(firstDisplayDay);
+
+    while (cursor <= lastDisplayDay) {
+      const displayDateKey = getParisDateKeyForEventScreen(cursor);
+
+      if (isRecurring) {
+        const daysOfWeek = Array.isArray(occurrence.daysOfWeek)
+          ? occurrence.daysOfWeek
+          : [];
+
+        const weekday = getParisWeekdayForEventScreen(cursor);
+
+        if (daysOfWeek.length > 0 && !daysOfWeek.includes(weekday)) {
+          cursor = addDaysForEventScreen(cursor, 1);
+          continue;
+        }
+      }
+
+      const startTime = normalizeEventScreenTime(
+        occurrence.startTime,
+        "00:00:00",
+      );
+
+      const endTime = normalizeEventScreenTime(occurrence.endTime, "23:59:59");
+
+      const displayStartDate = buildDateWithTimeForEventScreen(
+        cursor,
+        startTime,
+        "00:00:00",
+      );
+
+      const displayEndDate = buildDateWithTimeForEventScreen(
+        cursor,
+        endTime,
+        "23:59:59",
+      );
+
+      if (displayEndDate >= now) {
+        entries.push({
+          ...event,
+          originalEventId: String(event._id),
+          displayId: `${String(event._id)}-${displayDateKey}-occ-${occurrenceIndex}`,
+          displayDate: cursor,
+          displayDateKey,
+          displayStartDate,
+          displayEndDate,
+          displayStartTime: occurrence.startTime || null,
+          displayEndTime: occurrence.endTime || null,
+          displayOccurrence: occurrence,
+          displaySource: isRecurring ? "recurring_occurrence" : "occurrence",
+          distanceKm: getDistanceInKmForEventScreen(event.distance),
+        });
+      }
+
+      cursor = addDaysForEventScreen(cursor, 1);
+    }
+  }
+
+  return entries;
+};
+
+const buildEventScreenDisplayEntries = (
+  event: any,
+  now: Date,
+  rangeStart: Date,
+  rangeEnd: Date,
+) => {
+  const hasOccurrences =
+    Array.isArray(event.occurrences) && event.occurrences.length > 0;
+
+  if (hasOccurrences) {
+    const occurrenceEntries = buildOccurrenceDisplayEntriesForEventScreen(
+      event,
+      now,
+      rangeStart,
+      rangeEnd,
+    );
+
+    if (occurrenceEntries.length > 0) {
+      return occurrenceEntries;
+    }
+  }
+
+  return buildLegacyDisplayEntriesForEventScreen(
+    event,
+    now,
+    rangeStart,
+    rangeEnd,
+  );
+};
+
+const getEventsForEventScreen = async (req: Request, res: Response) => {
+  try {
+    const { latitude, longitude, radius, daysAhead } = req.body;
+
+    const page = parseInt(req.query.page as string, 10) || 1;
+    const limit = parseInt(req.query.limit as string, 10) || 800;
+
+    const safePage = page > 0 ? page : 1;
+    const safeLimit = limit > 0 && limit <= 1500 ? limit : 800;
+
+    if (latitude === undefined || longitude === undefined) {
+      return res.status(400).json({
+        message: "La latitude et la longitude sont requises.",
+      });
+    }
+
+    const lat = typeof latitude === "number" ? latitude : parseFloat(latitude);
+    const lon =
+      typeof longitude === "number" ? longitude : parseFloat(longitude);
+
+    if (Number.isNaN(lat) || Number.isNaN(lon)) {
+      return res.status(400).json({
+        message: "Les coordonnées fournies ne sont pas valides.",
+      });
+    }
+
+    const parsedRadius =
+      radius !== undefined && radius !== null && radius !== ""
+        ? parseFloat(radius)
+        : NaN;
+
+    const finalMaxDistance =
+      !Number.isNaN(parsedRadius) && parsedRadius > 0
+        ? parsedRadius * 1000
+        : 50000;
+
+    const parsedDaysAhead =
+      daysAhead !== undefined && daysAhead !== null && daysAhead !== ""
+        ? parseInt(daysAhead, 10)
+        : 180;
+
+    const safeDaysAhead =
+      Number.isFinite(parsedDaysAhead) &&
+      parsedDaysAhead > 0 &&
+      parsedDaysAhead <= 370
+        ? parsedDaysAhead
+        : 180;
+
+    const now = new Date();
+    const rangeStart = startOfParisDayForEventScreen(now);
+    const rangeEnd = endOfParisDayForEventScreen(
+      addDaysForEventScreen(rangeStart, safeDaysAhead),
+    );
+
+    const events = await Event.aggregate([
+      {
+        $geoNear: {
+          near: {
+            type: "Point",
+            coordinates: [lon, lat],
+          },
+          distanceField: "distance",
+          maxDistance: finalMaxDistance,
+          spherical: true,
+          key: "location.geo",
+        },
+      },
+      {
+        $match: {
+          isDraft: false,
+          $and: [
+            {
+              $or: [{ deletedAt: { $exists: false } }, { deletedAt: null }],
+            },
+            {
+              $or: [
+                {
+                  "occurrences.0": { $exists: true },
+                  "occurrences.endDate": { $gte: rangeStart },
+                  "occurrences.startDate": { $lte: rangeEnd },
+                },
+                {
+                  "occurrences.0": { $exists: false },
+                  endingDate: { $gte: now },
+                  startingDate: { $lte: rangeEnd },
+                },
+                {
+                  "occurrences.0": { $exists: false },
+                  startingDate: { $gte: now, $lte: rangeEnd },
+                },
+              ],
+            },
+          ],
+        },
+      },
+      {
+        $limit: 2000,
+      },
+    ]).allowDiskUse(true);
+
+    const displayEntries = events
+      .flatMap((event: any) =>
+        buildEventScreenDisplayEntries(event, now, rangeStart, rangeEnd),
+      )
+      .sort((a: any, b: any) => {
+        const dateDiff =
+          new Date(a.displayDate).getTime() - new Date(b.displayDate).getTime();
+
+        if (dateDiff !== 0) {
+          return dateDiff;
+        }
+
+        const startDiff =
+          new Date(a.displayStartDate).getTime() -
+          new Date(b.displayStartDate).getTime();
+
+        if (startDiff !== 0) {
+          return startDiff;
+        }
+
+        return (a.distance || 0) - (b.distance || 0);
+      });
+
+    const startIndex = (safePage - 1) * safeLimit;
+    const paginatedEvents = displayEntries.slice(
+      startIndex,
+      startIndex + safeLimit,
+    );
+
+    return res.status(200).json({
+      metadata: {
+        radiusKm: !Number.isNaN(parsedRadius) ? parsedRadius : 50,
+        daysAhead: safeDaysAhead,
+        total: displayEntries.length,
+        page: safePage,
+        pageSize: safeLimit,
+      },
+      events: paginatedEvents,
+    });
+  } catch (error) {
+    console.error("Erreur getEventsForEventScreen:", error);
+
+    return res.status(500).json({
+      message: "Erreur interne du serveur.",
+    });
+  }
+};
+// ----------------------End function for EventScreen -------------------
 export default {
   // createEventFromJSON,
   createDraftEvent,
@@ -3822,5 +4267,6 @@ export default {
   deleteDuplicateEvents,
   removeMidnightDates,
   removeExpiredEvents,
+  getEventsForEventScreen,
   deleteInvalidEvents,
 };
